@@ -13,6 +13,7 @@ clone git github.com/gorilla/mux e444e69cbd
 clone git github.com/kr/pty 5cf931ef8f
 clone git github.com/mattn/go-sqlite3 542ae647f8601bafd96233961b150cae198e0295
 clone git github.com/mistifyio/go-zfs v2.1.1
+clone git github.com/natefinch/npipe 0938d701e50e580f5925c773055eb6d6b32a0cbc
 clone git github.com/tchap/go-patricia v2.1.0
 clone hg code.google.com/p/go.net 84a4013f96e0
 clone hg code.google.com/p/gosqlite 74691fb6f837
