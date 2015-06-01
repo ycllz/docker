@@ -201,8 +201,11 @@ func (container *Container) LogEvent(action string) {
 //       symlinking to a different path) between using this method and using the
 //       path. See symlink.FollowSymlinkInScope for more details.
 func (container *Container) GetResourcePath(path string) (string, error) {
-	cleanPath := filepath.Join("/", path)
-	return symlink.FollowSymlinkInScope(filepath.Join(container.basefs, cleanPath), container.basefs)
+	// IMPORTANT - These are paths on the OS where the daemon is running, hence
+	// any filepath operations must be done in an OS agnostic way.
+	cleanPath := filepath.Join(string(os.PathSeparator), path)
+	r, e := symlink.FollowSymlinkInScope(filepath.Join(container.basefs, cleanPath), container.basefs)
+	return r, e
 }
 
 // Evaluates `path` in the scope of the container's root, with proper path
@@ -218,7 +221,9 @@ func (container *Container) GetResourcePath(path string) (string, error) {
 //       symlinking to a different path) between using this method and using the
 //       path. See symlink.FollowSymlinkInScope for more details.
 func (container *Container) GetRootResourcePath(path string) (string, error) {
-	cleanPath := filepath.Join("/", path)
+	// IMPORTANT - These are paths on the OS where the daemon is running, hence
+	// any filepath operations must be done in an OS agnostic way.
+	cleanPath := filepath.Join(string(os.PathSeparator), path)
 	return symlink.FollowSymlinkInScope(filepath.Join(container.root, cleanPath), container.root)
 }
 
@@ -1168,4 +1173,19 @@ func (container *Container) copyImagePathContent(v volume.Volume, destination st
 	}
 
 	return v.Unmount()
+}
+
+func (container *Container) ExportRw() (archive.Archive, error) {
+	if container.daemon == nil {
+		return nil, fmt.Errorf("Can't load storage driver for unregistered container %s", container.ID)
+	}
+	archive, err := container.daemon.Diff(container)
+	if err != nil {
+		return nil, err
+	}
+	return ioutils.NewReadCloserWrapper(archive, func() error {
+			err := archive.Close()
+			return err
+		}),
+		nil
 }

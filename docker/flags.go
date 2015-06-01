@@ -93,7 +93,6 @@ var (
 	flTls       = flag.Bool([]string{"-tls"}, false, "Use TLS; implied by --tlsverify")
 	flHelp      = flag.Bool([]string{"h", "-help"}, false, "Print usage")
 	flTlsVerify = flag.Bool([]string{"-tlsverify"}, dockerTlsVerify, "Use TLS and verify the remote")
-
 	// these are initialized in init() below since their default values depend on dockerCertPath which isn't fully initialized until init() runs
 	tlsOptions tlsconfig.Options
 	flTrustKey *string
