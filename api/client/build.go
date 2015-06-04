@@ -188,12 +188,6 @@ func (cli *DockerCli) CmdBuild(args ...string) error {
 		}
 	}
 
-	// windows: show error message about modified file permissions
-	// FIXME: this is not a valid warning when the daemon is running windows. should be removed once docker engine for windows can build.
-	if runtime.GOOS == "windows" {
-		fmt.Fprintln(cli.err, `SECURITY WARNING: You are building a Docker image from Windows against a Linux Docker host. All files and directories added to build context will have '-rwxr-xr-x' permissions. It is recommended to double check and reset permissions for sensitive files and directories.`)
-	}
-
 	var body io.Reader
 	// Setup an upload progress bar
 	// FIXME: ProgressReader shouldn't be this annoying to use
@@ -298,7 +292,14 @@ func (cli *DockerCli) CmdBuild(args ...string) error {
 		out:         cli.out,
 		headers:     headers,
 	}
-	err = cli.stream("POST", fmt.Sprintf("/build?%s", v.Encode()), sopts)
+
+	serverResp, err := cli.stream("POST", fmt.Sprintf("/build?%s", v.Encode()), sopts)
+
+	// Windows: show error message about modified file permissions.
+	if runtime.GOOS == "windows" && serverOSFromServerHeader(serverResp.serverHeader) != "windows" {
+		fmt.Fprintln(cli.err, `SECURITY WARNING: You are building a Docker image from Windows against a non-Windows Docker host. All files and directories added to build context will have '-rwxr-xr-x' permissions. It is recommended to double check and reset permissions for sensitive files and directories.`)
+	}
+
 	if jerr, ok := err.(*jsonmessage.JSONError); ok {
 		// If no error code is set, default to 1
 		if jerr.Code == 0 {
