@@ -867,6 +867,10 @@ func (container *Container) getIpcContainer() (*Container, error) {
 	return c, nil
 }
 
-func (container *Container) cleanupStorage() error {
+func (container *Container) PrepareStorage() error {
+	return nil
+}
+
+func (container *Container) CleanupStorage() error {
 	return nil
 }

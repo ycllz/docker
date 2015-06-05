@@ -4,7 +4,6 @@ package windows
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -318,13 +317,6 @@ func (d *WindowsGraphDriver) DiffSize(id, parent string) (size int64, err error)
 }
 
 func (d *WindowsGraphDriver) CopyDiff(sourceId, id string, parentLayerPaths []string) error {
-	// TEMPORARY WORKAROUND
-	mountPath, err := d.Get(sourceId, "")
-	if err != nil {
-		return err
-	}
-	defer d.Put(sourceId)
-
 	d.Lock()
 	defer d.Unlock()
 
@@ -339,15 +331,6 @@ func (d *WindowsGraphDriver) CopyDiff(sourceId, id string, parentLayerPaths []st
 				log.Warnf("Failed to activate %s: %s", sourceId, err)
 			}
 		}()
-	} else {
-		// TEMPORARY WORKAROUND
-		tempFolder := filepath.Join(mountPath, "docker")
-		if err := os.RemoveAll(tempFolder); err != nil {
-			return err
-		}
-		if err := os.Mkdir(tempFolder, 0700); err != nil {
-			return err
-		}
 	}
 
 	return hcsshim.CopyLayer(d.info, sourceId, id, parentLayerPaths)

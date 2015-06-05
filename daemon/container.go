@@ -291,7 +291,7 @@ func (container *Container) cleanup() {
 		}
 	}
 
-	if err := container.cleanupStorage(); err != nil {
+	if err := container.CleanupStorage(); err != nil {
 		log.Errorf("%v: Failed to cleanup storage: %v", container.ID, err)
 	}
 
@@ -526,8 +526,15 @@ func (container *Container) Copy(resource string) (io.ReadCloser, error) {
 		container.Unmount()
 		return nil, err
 	}
+
+	if err := container.PrepareStorage(); err != nil {
+		container.Unmount()
+		return nil, err
+	}
+
 	return ioutils.NewReadCloserWrapper(archive, func() error {
 			err := archive.Close()
+			container.CleanupStorage()
 			container.Unmount()
 			return err
 		}),
