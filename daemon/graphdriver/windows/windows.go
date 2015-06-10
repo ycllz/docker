@@ -5,7 +5,6 @@ package windows
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -179,32 +178,7 @@ func (d *WindowsGraphDriver) Cleanup() error {
 func (d *WindowsGraphDriver) Diff(id, parent string) (arch archive.Archive, err error) {
 	// Always include the diff disk for the given layer.
 	if d.info.Flavor == diffDriver {
-		diffFiles := []string{id + ".vhdx"}
-		prevLayer := d.dir(parent)
-		curParent, err := hcsshim.GetVhdParentPath(d.dir(id) + ".vhdx")
-		if err != nil {
-			return nil, err
-		}
-		for strings.EqualFold((prevLayer+".vhdx"), curParent) && curParent != "" {
-			log.Debugf("Parent %s does not match parent %s.", (prevLayer + ".vhdx"), curParent)
-			// Add that diff to the list of files.
-			_, diffFile := filepath.Split(curParent)
-			diffFiles = append(diffFiles, diffFile)
-			curParent, err = hcsshim.GetVhdParentPath(curParent)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		opts := &archive.TarOptions{
-			IncludeFiles: diffFiles,
-		}
-
-		arch, err = archive.TarWithOptions(d.info.HomeDir, opts)
-		if err != nil {
-			return nil, err
-		}
-		return arch, nil
+		return nil, fmt.Errorf("Windows Diff Disk Driver: Not Implemented")
 	} else if d.info.Flavor == filterDriver {
 		// Perform a naive diff
 		layerFs, err := d.Get(id, "")
