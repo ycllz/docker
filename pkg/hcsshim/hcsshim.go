@@ -20,7 +20,7 @@ var (
 	procWaitForProcessInComputeSystem   = modvmcompute.NewProc("WaitForProcessInComputeSystem")
 	procShutdownComputeSystem           = modvmcompute.NewProc("ShutdownComputeSystem")
 	procTerminateProcessInComputeSystem = modvmcompute.NewProc("TerminateProcessInComputeSystem")
-	procResizeTTY                       = modvmcompute.NewProc("ResizeTTY")
+	procResizeConsoleInComputeSystem    = modvmcompute.NewProc("ResizeConsoleInComputeSystem")
 )
 
 // The redirection devices as passed in from callers
@@ -309,33 +309,31 @@ func ShutdownComputeSystem(ID string) error {
 	return nil
 } // ShutdownComputeSystem
 
-func ResizeTTY(ID string, h, w int) error {
-	log.Debugf("hcsshim::ResizeTTY %s (%d,%d) - NOT IMPLEMENTED", ID, h, w)
+func ResizeTTY(ID string, ProcessId uint32, h, w int) error {
+	log.Debugf("hcsshim::ResizeTTY %s:%d (%d,%d)", ID, ProcessId, h, w)
+
+	// Make sure ResizeConsoleInComputeSystem is supported
+	err := procResizeConsoleInComputeSystem.Find()
+	if err != nil {
+		return err
+	}
+
+	// Convert ID to uint16 pointers for calling the procedure
+	IDp, err := syscall.UTF16PtrFromString(ID)
+	if err != nil {
+		log.Debugln("Failed conversion of ID to pointer ", err)
+		return err
+	}
+
+	h16 := uint16(h)
+	w16 := uint16(w)
+
+	r1, _, _ := procResizeConsoleInComputeSystem.Call(uintptr(unsafe.Pointer(IDp)), uintptr(ProcessId), uintptr(h16), uintptr(w16), uintptr(0))
+	if r1 != 0 {
+		return syscall.Errno(r1)
+	}
+
 	return nil
-	/*
-		// Make sure ResizeTTY is supported
-		err := procResizeTTY.Find()
-		if err != nil {
-			return err
-		}
-
-		// Convert ID to uint16 pointers for calling the procedure
-		IDp, err := syscall.UTF16PtrFromString(ID)
-		if err != nil {
-			log.Debugln("Failed conversion of ID to pointer ", err)
-			return err
-		}
-
-		h32 := uint32(h)
-		w32 := uint32(w)
-
-		r1, _, _ := procResizeTTY.Call(uintptr(unsafe.Pointer(IDp)), uintptr(h32), uintptr(w32))
-		if r1 != 0 {
-			return syscall.Errno(r1)
-		}
-
-		return nil
-	*/
 }
 
 // use is a no-op, but the compiler cannot see that it is.

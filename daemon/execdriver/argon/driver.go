@@ -129,8 +129,7 @@ func checkSupportedOptions(c *execdriver.Command) error {
 func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (execdriver.ExitStatus, error) {
 
 	var (
-		term execdriver.Terminal
-		err  error
+		err error
 	)
 
 	// Make sure the client isn't asking for options which aren't supported
@@ -287,13 +286,6 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		go stdouterrAccept(errListen, stdDevices.StdErrPipe, pipes.Stderr)
 	}
 
-	if c.ProcessConfig.Tty {
-		term, err = NewTtyConsole(c.ID)
-	} else {
-		term, err = NewStdConsole(c.ID)
-	}
-	c.ProcessConfig.Terminal = term
-
 	// Sure this would get caught earlier, but just in case - validate that we
 	// have something to run
 	if c.ProcessConfig.Entrypoint == "" {
@@ -332,6 +324,14 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	//Save the PID as we'll need this in Kill()
 	log.Debugln("PID ", pid)
 	c.ContainerPid = int(pid)
+
+	var term execdriver.Terminal
+	if c.ProcessConfig.Tty {
+		term, err = NewTtyConsole(c.ID, pid)
+	} else {
+		term, err = NewStdConsole(c.ID)
+	}
+	c.ProcessConfig.Terminal = term
 
 	// Maintain our list of active containers. We'll need this later for exec
 	// and other commands.
@@ -443,8 +443,7 @@ func (d *driver) Exec(c *execdriver.Command, processConfig *execdriver.ProcessCo
 	}
 
 	var (
-		term execdriver.Terminal
-		err  error
+		err error
 	)
 
 	// We use another unique ID here for each exec instance otherwise it
@@ -505,13 +504,6 @@ func (d *driver) Exec(c *execdriver.Command, processConfig *execdriver.ProcessCo
 		go stdouterrAccept(errListen, stdDevices.StdErrPipe, pipes.Stderr)
 	}
 
-	if c.ProcessConfig.Tty {
-		term, err = NewTtyConsole(c.ID)
-	} else {
-		term, err = NewStdConsole(c.ID)
-	}
-	processConfig.Terminal = term
-
 	// Sure this would get caught earlier, but just in case - validate that we
 	// have something to run
 	if processConfig.Entrypoint == "" {
@@ -546,6 +538,14 @@ func (d *driver) Exec(c *execdriver.Command, processConfig *execdriver.ProcessCo
 		log.Debugln("CreateProcessInComputeSystem() failed ", err)
 		return -1, err
 	}
+
+	var term execdriver.Terminal
+	if c.ProcessConfig.Tty {
+		term, err = NewTtyConsole(c.ID, pid)
+	} else {
+		term, err = NewStdConsole(c.ID)
+	}
+	processConfig.Terminal = term
 
 	log.Debugln("PID ", pid)
 
