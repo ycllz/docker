@@ -2,19 +2,22 @@ package graphdriver
 
 import (
 	_ "github.com/docker/docker/daemon/graphdriver/vfs"
-
-	// TODO Windows - Add references to real graph driver when PR'd
+	_ "github.com/docker/docker/daemon/graphdriver/windows"
+	"github.com/docker/docker/pkg/hcsshim"
 )
 
-type DiffDiskDriver interface {
+type WindowsGraphDriver interface {
 	Driver
-	CopyDiff(id, sourceId string) error
+	CopyDiff(id, sourceId string, parentLayerPaths []string) error
+	LayerIdsToPaths(ids []string) []string
+	Info() hcsshim.DriverInfo
 }
 
 var (
 	// Slice of drivers that should be used in order
 	priority = []string{
-		"windows",
+		"windowsfilter",
+		"windowsdiff",
 		"vfs",
 	}
 )

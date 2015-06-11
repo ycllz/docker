@@ -257,6 +257,13 @@ func (container *Container) Start() (err error) {
 	if err := container.Mount(); err != nil {
 		return err
 	}
+
+	// No-op if non-Windows. Once the container filesystem is mounted,
+	// prepare the layer to boot using the Windows driver.
+	if err := container.PrepareStorage(); err != nil {
+		return err
+	}
+
 	if err := container.initializeNetworking(); err != nil {
 		return err
 	}
@@ -346,6 +353,10 @@ func (container *Container) cleanup() {
 	container.ReleaseNetwork()
 
 	disableAllActiveLinks(container)
+
+	if err := container.CleanupStorage(); err != nil {
+		logrus.Errorf("%v: Failed to cleanup storage: %v", container.ID, err)
+	}
 
 	if err := container.Unmount(); err != nil {
 		logrus.Errorf("%v: Failed to umount filesystem: %v", container.ID, err)
@@ -654,8 +665,15 @@ func (container *Container) Copy(resource string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if err := container.PrepareStorage(); err != nil {
+		container.Unmount()
+		return nil, err
+	}
+
 	reader := ioutils.NewReadCloserWrapper(archive, func() error {
 		err := archive.Close()
+		container.CleanupStorage()
 		container.UnmountVolumes(true)
 		container.Unmount()
 		return err

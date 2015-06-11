@@ -157,3 +157,33 @@ func (container *Container) DisableLink(name string) {
 func (container *Container) UnmountVolumes(forceSyscall bool) error {
 	return nil
 }
+
+func (container *Container) PrepareStorage() error {
+	if wd, ok := container.daemon.driver.(*windows.WindowsGraphDriver); ok {
+		// Get list of paths to parent layers.
+		var ids []string
+		if container.ImageID != "" {
+			img, err := container.daemon.graph.Get(container.ImageID)
+			if err != nil {
+				return err
+			}
+
+			ids, err = container.daemon.graph.ParentLayerIds(img)
+			if err != nil {
+				return err
+			}
+		}
+
+		if err := hcsshim.PrepareLayer(wd.Info(), container.ID, wd.LayerIdsToPaths(ids)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (container *Container) CleanupStorage() error {
+	if wd, ok := container.daemon.driver.(*windows.WindowsGraphDriver); ok {
+		return hcsshim.UnprepareLayer(wd.Info(), container.ID)
+	}
+	return nil
+}

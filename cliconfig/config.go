@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/pkg/homedir"
+	"github.com/docker/docker/pkg/system"
 )
 
 const (
@@ -162,7 +163,7 @@ func (configFile *ConfigFile) Save() error {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(configFile.filename), 0700); err != nil {
+	if err := system.MkdirAll(filepath.Dir(configFile.filename), 0700); err != nil {
 		return err
 	}
 

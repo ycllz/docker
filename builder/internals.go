@@ -223,10 +223,18 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowDecomp
 	}
 	defer container.Unmount()
 
+	if err := container.PrepareStorage(); err != nil {
+		return err
+	}
+
 	for _, ci := range copyInfos {
 		if err := b.addContext(container, ci.origPath, ci.destPath, ci.decompress); err != nil {
 			return err
 		}
+	}
+
+	if err := container.CleanupStorage(); err != nil {
+		return err
 	}
 
 	if err := b.commit(container.ID, cmd, fmt.Sprintf("%s %s in %s", cmdName, origPaths, dest)); err != nil {

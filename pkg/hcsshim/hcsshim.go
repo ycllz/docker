@@ -25,6 +25,18 @@ const (
 	procShutdownComputeSystem           = "ShutdownComputeSystem"
 	procTerminateProcessInComputeSystem = "TerminateProcessInComputeSystem"
 	procResizeTTY                       = "ResizeTTY"
+
+	// Storage related functions in the shim DLL
+	procLayerExists        = "LayerExists"
+	procCreateLayer        = "CreateLayer"
+	procDestroyLayer       = "DestroyLayer"
+	procActivateLayer      = "ActivateLayer"
+	procDeactivateLayer    = "DeactivateLayer"
+	procGetLayerMountPath  = "GetLayerMountPath"
+	procCopyLayer          = "CopyLayer"
+	procCreateSandboxLayer = "CreateSandboxLayer"
+	procPrepareLayer       = "PrepareLayer"
+	procUnprepareLayer     = "UnprepareLayer"
 )
 
 // use is a no-op, but the compiler cannot see that it is.
