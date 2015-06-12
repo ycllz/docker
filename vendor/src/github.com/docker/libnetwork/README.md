@@ -18,7 +18,7 @@ There are many networking solutions available to suit a broad range of use-cases
 
 ```go
         // Create a new controller instance
-        controller := libnetwork.New()
+        controller := libnetwork.New("/etc/default/libnetwork.toml")
 
         // Select and configure the network driver
         networkType := "bridge"
@@ -48,10 +48,9 @@ There are many networking solutions available to suit a broad range of use-cases
         }
 
         // A container can join the endpoint by providing the container ID to the join
-        // api which returns the sandbox key which can be used to access the sandbox
-        // created for the container during join.
+        // api.
         // Join acceps Variadic arguments which will be made use of by libnetwork and Drivers
-        _, err = ep.Join("container1",
+        err = ep.Join("container1",
                 libnetwork.JoinOptionHostname("test"),
                 libnetwork.JoinOptionDomainname("docker.io"))
         if err != nil {
