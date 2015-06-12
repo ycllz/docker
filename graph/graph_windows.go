@@ -54,8 +54,9 @@ func (graph *Graph) restoreBaseImages() ([]string, error) {
 
 // ParentLayerIds returns a list of all parent image IDs for the given image.
 func (graph *Graph) ParentLayerIds(img *image.Image) (ids []string, err error) {
-	for i := img; i != nil && err == nil; i, err = i.GetParent() {
+	for i := img; i != nil && err == nil; i, err = graph.GetParent(i) {
 		ids = append(ids, i.ID)
 	}
+
 	return
 }

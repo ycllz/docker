@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/docker/docker/daemon/graphdriver"
+	_ "github.com/docker/docker/daemon/graphdriver/vfs"
 	"github.com/docker/docker/daemon/graphdriver/windows"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/hcsshim"

@@ -1,8 +1,6 @@
 package graphdriver
 
 import (
-	_ "github.com/docker/docker/daemon/graphdriver/vfs"
-	_ "github.com/docker/docker/daemon/graphdriver/windows"
 	"github.com/docker/docker/pkg/hcsshim"
 )
 
