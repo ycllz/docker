@@ -79,6 +79,9 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		cu.Definitions = []defConfig{{fmt.Sprintf(`%s\container.def`, c.Rootfs)}}
 	}
 
+	// Temporary hack
+	c.Network.Interface.Bridge = "Virtual Switch"
+
 	if c.Network.Interface != nil {
 		dev := device{
 			DeviceType: "Network",
