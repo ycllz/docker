@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/graphdriver"
 	_ "github.com/docker/docker/daemon/graphdriver/vfs"
 	"github.com/docker/docker/daemon/graphdriver/windows"
@@ -38,7 +39,7 @@ func (daemon *Daemon) createRootfs(container *Container) error {
 
 	if wd, ok := daemon.driver.(*windows.WindowsGraphDriver); ok && container.ImageID != "" {
 		// Get list of paths to parent layers.
-		log.Debugln("createRootfs: Container has parent image:", container.ImageID)
+		logrus.Debugln("createRootfs: Container has parent image:", container.ImageID)
 		img, err := daemon.graph.Get(container.ImageID)
 		if err != nil {
 			return err
@@ -48,7 +49,7 @@ func (daemon *Daemon) createRootfs(container *Container) error {
 		if err != nil {
 			return err
 		}
-		log.Debugf("Got image ids: %d", len(ids))
+		logrus.Debugf("Got image ids: %d", len(ids))
 
 		if err := hcsshim.CreateSandboxLayer(wd.Info(), container.ID, container.ImageID, wd.LayerIdsToPaths(ids)); err != nil {
 			return err

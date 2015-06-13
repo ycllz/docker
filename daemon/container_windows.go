@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/docker/docker/daemon/execdriver"
+	"github.com/docker/docker/daemon/graphdriver/windows"
+	"github.com/docker/docker/pkg/hcsshim"
 )
 
 // TODO Windows. A reasonable default at the moment.

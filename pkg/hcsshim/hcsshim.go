@@ -50,7 +50,7 @@ func use(p unsafe.Pointer) {}
 // handling gracefully without the daemon terminating.
 func loadAndFind(procedure string) (dll *syscall.DLL, proc *syscall.Proc, err error) {
 
-	logrus.Debugf("hcsshim::loadAndFind ", procedure)
+	logrus.Debugf("hcsshim::loadAndFind %s", procedure)
 
 	dll, err = syscall.LoadDLL(shimDLLName)
 	if err != nil {

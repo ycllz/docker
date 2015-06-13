@@ -43,6 +43,7 @@ func GetLayerMountPath(info DriverInfo, id string) (string, error) {
 	mountPathLength = 0
 
 	// Call the procedure itself.
+	logrus.Debugf("Calling proc")
 	r1, _, _ := proc.Call(
 		uintptr(unsafe.Pointer(&infop)),
 		uintptr(unsafe.Pointer(idp)),
