@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -63,13 +62,7 @@ func main() {
 	if len(flHosts) == 0 {
 		defaultHost := os.Getenv("DOCKER_HOST")
 		if defaultHost == "" || *flDaemon {
-			if runtime.GOOS != "windows" {
-				// If we do not have a host, default to unix socket
-				defaultHost = fmt.Sprintf("unix://%s", opts.DefaultUnixSocket)
-			} else {
-				// If we do not have a host, default to TCP socket on Windows
-				defaultHost = fmt.Sprintf("tcp://%s:%d", opts.DefaultHTTPHost, opts.DefaultHTTPPort)
-			}
+			defaultHost = opts.DefaultLocalAddr
 		}
 		defaultHost, err := opts.ValidateHost(defaultHost)
 		if err != nil {

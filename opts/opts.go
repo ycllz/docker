@@ -17,11 +17,6 @@ var (
 	alphaRegexp     = regexp.MustCompile(`[a-zA-Z]`)
 	domainRegexp    = regexp.MustCompile(`^(:?(:?[a-zA-Z0-9]|(:?[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]))(:?\.(:?[a-zA-Z0-9]|(:?[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])))*)\.?\s*$`)
 	DefaultHTTPHost = "127.0.0.1" // Default HTTP Host used if only port is provided to -H flag e.g. docker -d -H tcp://:8080
-	// TODO Windows. DefaultHTTPPort is only used on Windows if a -H parameter
-	// is not supplied. A better longer term solution would be to use a named
-	// pipe as the default on the Windows daemon.
-	DefaultHTTPPort   = 2375                   // Default HTTP Port
-	DefaultUnixSocket = "/var/run/docker.sock" // Docker daemon by default always listens on the default unix socket
 )
 
 func ListVar(values *[]string, names []string, usage string) {
@@ -284,7 +279,7 @@ func ValidateLabel(val string) (string, error) {
 }
 
 func ValidateHost(val string) (string, error) {
-	host, err := parsers.ParseHost(DefaultHTTPHost, DefaultUnixSocket, val)
+	host, err := parsers.ParseHost(DefaultHTTPHost, DefaultLocalAddr, val)
 	if err != nil {
 		return val, err
 	}

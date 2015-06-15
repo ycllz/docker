@@ -1,12 +1,12 @@
 package utils
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"time"
-        "path/filepath"
-	"github.com/Sirupsen/logrus"
-        "github.com/natefinch/npipe"
+    "path/filepath"
+    "github.com/natefinch/npipe"
 )
 
 func ConfigureTCPTransport(tr *http.Transport, proto, addr string) {
@@ -19,10 +19,8 @@ func ConfigureTCPTransport(tr *http.Transport, proto, addr string) {
 			return net.DialTimeout(proto, addr, timeout)
 		}
 	} else if proto == "npipe" {
-                win32Path := filepath.FromSlash(addr)
-		logrus.Debugf("path %s", win32Path)
+                win32Path := fmt.Sprintf(`\\%s`, filepath.FromSlash(addr))
                 tr.Dial = func(_, _ string) (net.Conn, error) {
-		logrus.Debugf("path %s", win32Path)
                         return npipe.DialTimeout(win32Path, 50)
                 }
 	} else {

@@ -4,6 +4,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -11,13 +12,11 @@ import (
 	"github.com/docker/docker/daemon"
 	"github.com/docker/docker/pkg/version"
 	"github.com/docker/docker/runconfig"
-	"github.com/Sirupsen/logrus"
 	"github.com/natefinch/npipe"
 )
 
 func newWindowsNamedPipeSocket(path string) (net.Listener, error) {
-	logrus.Debugf("listening on %s", filepath.FromSlash(path))
-	return npipe.Listen(filepath.FromSlash(path))
+	return npipe.Listen(fmt.Sprintf(`\\%s`, filepath.FromSlash(path)))
 }
 
 // NewServer sets up the required Server and does protocol specific checking.
