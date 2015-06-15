@@ -14,9 +14,8 @@ func configureOSTransport(tr *http.Transport, proto, addr string, timeout time.D
 		tr.DisableCompression = true
 		tr.Dial = func(_, _ string) (net.Conn, error) {
 			return net.DialTimeout(proto, addr, timeout)
-		}	
+		}
 		return true
 	}
 	return false
 }
-
