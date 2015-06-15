@@ -7,12 +7,10 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-        "path/filepath"
 	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
-        "github.com/natefinch/npipe"
 )
 
 const (
@@ -100,23 +98,9 @@ func abort(start time.Time, timeOff time.Duration) bool {
 }
 
 func configureTCPTransport(tr *http.Transport, proto, addr string) {
-	panic(addr)
-		fmt.Printf("path %s %s", proto, addr)
 	// Why 32? See https://github.com/docker/docker/pull/8035.
 	timeout := 32 * time.Second
-	if proto == "unix" {
-		// No need for compression in local communications.
-		tr.DisableCompression = true
-		tr.Dial = func(_, _ string) (net.Conn, error) {
-			return net.DialTimeout(proto, addr, timeout)
-		}
-	} else if proto == "npipe" {
-                win32Path := filepath.FromSlash(addr)
-		logrus.Debugf("path %s", win32Path)
-                tr.Dial = func(_, _ string) (net.Conn, error) {
-                        return npipe.Dial(win32Path)
-                }
-        } else {
+	if !configureOSTransport(tr, proto, addr, timeout) {
 		tr.Proxy = http.ProxyFromEnvironment
 		tr.Dial = (&net.Dialer{Timeout: timeout}).Dial
 	}
