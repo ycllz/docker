@@ -30,9 +30,19 @@ func ParseHost(defaultTCPAddr, defaultUnixAddr, addr string) (string, error) {
 		return ParseUnixAddr(addrParts[1], defaultUnixAddr)
 	case "fd":
 		return addr, nil
+        case "npipe":
+                return ParseWindowsNamedPipeAddr(addrParts[1], "//./pipe/docker-daemon")
 	default:
 		return "", fmt.Errorf("Invalid bind address format: %s", addr)
 	}
+}
+
+func ParseWindowsNamedPipeAddr(addr string, defaultAddr string) (string, error) {
+        if addr == "" {
+                addr = defaultAddr
+        }
+        return fmt.Sprintf("npipe://%s", addr), nil
+
 }
 
 func ParseUnixAddr(addr string, defaultAddr string) (string, error) {

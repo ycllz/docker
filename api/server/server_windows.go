@@ -6,11 +6,19 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"path/filepath"
 
 	"github.com/docker/docker/daemon"
 	"github.com/docker/docker/pkg/version"
 	"github.com/docker/docker/runconfig"
+	"github.com/Sirupsen/logrus"
+	"github.com/natefinch/npipe"
 )
+
+func newWindowsNamedPipeSocket(path string) (net.Listener, error) {
+	logrus.Debugf("listening on %s", filepath.FromSlash(path))
+	return npipe.Listen(filepath.FromSlash(path))
+}
 
 // NewServer sets up the required Server and does protocol specific checking.
 func (s *Server) newServer(proto, addr string) ([]serverCloser, error) {
@@ -25,8 +33,15 @@ func (s *Server) newServer(proto, addr string) ([]serverCloser, error) {
 		}
 		ls = append(ls, l)
 
+	case "npipe":
+		l, err := newWindowsNamedPipeSocket(addr)
+		if err != nil {
+			return nil, err
+		}
+		ls = append(ls, l)
+		
 	default:
-		return nil, errors.New("Invalid protocol format. Windows only supports tcp.")
+		return nil, errors.New("Invalid protocol format. Windows only supports tcp and npipe.")
 	}
 
 	var res []serverCloser
