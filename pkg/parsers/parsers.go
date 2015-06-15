@@ -22,8 +22,8 @@ func ParseHost(defaultTCPAddr, defaultLocalAddr, addr string) (string, error) {
 		return ParseTCPAddr(addrParts[1], defaultTCPAddr)
 	case "unix":
 		return ParseUnixAddr(addrParts[1], defaultLocalAddr)
-    case "npipe":
-        return ParseWindowsNamedPipeAddr(addrParts[1], defaultLocalAddr)
+	case "npipe":
+		return ParseWindowsNamedPipeAddr(addrParts[1], defaultLocalAddr)
 	case "fd":
 		return addr, nil
 	default:
@@ -36,15 +36,15 @@ func ParseWindowsNamedPipeAddr(addr string, defaultAddr string) (string, error) 
 	if strings.Contains(addr, "://") {
 		return "", fmt.Errorf("Invalid proto, expected npipe: %s", addr)
 	}
-        if addr == "" {
-                return defaultAddr, nil
-        }
-		pathParts := strings.Split(addr, "/")
-		if len(pathParts) < 3 || pathParts[0] == "" || pathParts[1] != "pipe" || pathParts[2] == "" {
-			return "", fmt.Errorf("Invalid named pipe address format: %s", addr)
-		}
-		
-        return fmt.Sprintf("npipe://%s", addr), nil
+	if addr == "" {
+		return defaultAddr, nil
+	}
+	pathParts := strings.Split(addr, "/")
+	if len(pathParts) < 3 || pathParts[0] == "" || pathParts[1] != "pipe" || pathParts[2] == "" {
+		return "", fmt.Errorf("Invalid named pipe address format: %s", addr)
+	}
+
+	return fmt.Sprintf("npipe://%s", addr), nil
 }
 
 func ParseUnixAddr(addr string, defaultAddr string) (string, error) {

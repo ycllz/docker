@@ -38,10 +38,17 @@ func NewListenBuffer(proto, addr string, activate <-chan struct{}) (net.Listener
 		return nil, err
 	}
 
+	return NewListenBufferFromListener(wrapped, activate), nil
+}
+
+// NewListenBuffer returns a net.Listener that wraps the listener that was passed.
+// The channel passed is used to activate the listenbuffer when the caller is ready
+// to accept connections.
+func NewListenBufferFromListener(l net.Listener, activate <-chan struct{}) net.Listener {
 	return &defaultListener{
-		wrapped:  wrapped,
+		wrapped:  l,
 		activate: activate,
-	}, nil
+	}
 }
 
 // defaultListener is the buffered wrapper around the net.Listener
