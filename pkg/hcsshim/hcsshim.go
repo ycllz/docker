@@ -5,6 +5,7 @@
 package hcsshim
 
 import (
+	"encoding/json"
 	"syscall"
 	"unsafe"
 
@@ -124,65 +125,30 @@ func CreateProcessInComputeSystem(ID string,
 		return 0, err
 	}
 
-	// Convert ApplicationName to uint16 pointer for calling the procedure
-	ApplicationNamep, err := syscall.UTF16PtrFromString(ApplicationName)
+	type processParameters struct {
+		ApplicationName, CommandLine, WorkingDirectory string
+		StdInPipe, StdOutPipe, StdErrPipe              string
+		EmulateConsole                                 bool
+	}
+
+	params := &processParameters{
+		ApplicationName:  ApplicationName,
+		CommandLine:      CommandLine,
+		WorkingDirectory: WorkingDir,
+		StdInPipe:        StdDevices.StdInPipe,
+		StdOutPipe:       StdDevices.StdOutPipe,
+		StdErrPipe:       StdDevices.StdErrPipe,
+		EmulateConsole:   EmulateTTY != 0,
+	}
+
+	paramsJson, err := json.Marshal(params)
 	if err != nil {
-		log.Debugln("Failed conversion of ApplicationName to pointer ", err)
 		return 0, err
 	}
 
-	// Convert CommandLine to uint16 pointer for calling the procedure
-	CommandLinep, err := syscall.UTF16PtrFromString(CommandLine)
+	paramsJsonp, err := syscall.UTF16PtrFromString(string(paramsJson))
 	if err != nil {
-		log.Debugln("Failed conversion of CommandLine to pointer ", err)
 		return 0, err
-	}
-
-	// Convert WorkingDir to uint16 pointer for calling the procedure
-	WorkingDirp, err := syscall.UTF16PtrFromString(WorkingDir)
-	if err != nil {
-		log.Debugln("Failed conversion of WorkingDir to pointer ", err)
-		return 0, err
-	}
-
-	// Need an instance of the redirection devices for internal use when calling the procedure
-	var (
-		stdinpipe  *uint16
-		stdoutpipe *uint16
-		stderrpipe *uint16
-	)
-
-	// Convert stdin, if supplied to uint16 pointer for calling the procedure
-	if len(StdDevices.StdInPipe) != 0 {
-		stdinpipe, err = syscall.UTF16PtrFromString(StdDevices.StdInPipe)
-		if err != nil {
-			log.Debugln("Failed conversion of StdInPipe to pointer ", err)
-			return 0, err
-		}
-	}
-
-	// Convert stdout, if supplied to uint16 pointer for calling the procedure
-	if len(StdDevices.StdOutPipe) != 0 {
-		stdoutpipe, err = syscall.UTF16PtrFromString(StdDevices.StdOutPipe)
-		if err != nil {
-			log.Debugln("Failed conversion of StdOutPipe to pointer ", err)
-			return 0, err
-		}
-	}
-
-	// Convert stderr, if supplied to uint16 pointer for calling the procedure
-	if len(StdDevices.StdErrPipe) != 0 {
-		stderrpipe, err = syscall.UTF16PtrFromString(StdDevices.StdErrPipe)
-		if err != nil {
-			log.Debugln("Failed conversion of StdErrPipe to pointer ", err)
-			return 0, err
-		}
-	}
-
-	internalDevices := &deviceInt{
-		stdinpipe:  stdinpipe,
-		stdoutpipe: stdoutpipe,
-		stderrpipe: stderrpipe,
 	}
 
 	// To get a POINTER to the PID
@@ -193,19 +159,11 @@ func CreateProcessInComputeSystem(ID string,
 	// Call the procedure itself.
 	r1, _, _ := procCreateProcessInComputeSystem.Call(
 		uintptr(unsafe.Pointer(IDp)),
-		uintptr(unsafe.Pointer(ApplicationNamep)),
-		uintptr(unsafe.Pointer(CommandLinep)),
-		uintptr(unsafe.Pointer(WorkingDirp)),
-		uintptr(0), // Environment to follow later
-		uintptr(unsafe.Pointer(internalDevices)),
-		uintptr(EmulateTTY),
+		uintptr(unsafe.Pointer(paramsJsonp)),
 		uintptr(unsafe.Pointer(pid)))
 
-	use(unsafe.Pointer(internalDevices))
 	use(unsafe.Pointer(IDp))
-	use(unsafe.Pointer(ApplicationNamep))
-	use(unsafe.Pointer(CommandLinep))
-	use(unsafe.Pointer(WorkingDirp))
+	use(unsafe.Pointer(paramsJsonp))
 
 	log.Debugln("Returned from procedure call")
 
