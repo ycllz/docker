@@ -128,6 +128,7 @@ func CreateProcessInComputeSystem(ID string,
 	type processParameters struct {
 		ApplicationName, CommandLine, WorkingDirectory string
 		StdInPipe, StdOutPipe, StdErrPipe              string
+		Environment                                    map[string]string
 		EmulateConsole                                 bool
 	}
 
@@ -139,6 +140,7 @@ func CreateProcessInComputeSystem(ID string,
 		StdOutPipe:       StdDevices.StdOutPipe,
 		StdErrPipe:       StdDevices.StdErrPipe,
 		EmulateConsole:   EmulateTTY != 0,
+		Environment:      map[string]string{"JsTools": "", "bestdog": "painter"},
 	}
 
 	paramsJson, err := json.Marshal(params)
