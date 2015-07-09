@@ -31,20 +31,6 @@ var (
 	ErrConflictNetworkExposePorts = fmt.Errorf("Conflicting options: --expose and the network mode (--expose)")
 )
 
-// validateNM is the set of fields passed to validateNetMode()
-type validateNM struct {
-	netMode        NetworkMode
-	flHostname     *string
-	flLinks        opts.ListOpts
-	flDNS          opts.ListOpts
-	flExtraHosts   opts.ListOpts
-	flMacAddress   *string
-	flPublish      opts.ListOpts
-	flPublishAll   *bool
-	flExpose       opts.ListOpts
-	flVolumeDriver string
-}
-
 // Parse parses the specified args for the specified command and generates a Config,
 // a HostConfig and returns them with the specified command.
 // If the specified args are not valid, it will return an error.
@@ -142,27 +128,6 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		attachStdout = flAttach.Get("stdout")
 		attachStderr = flAttach.Get("stderr")
 	)
-
-	netMode, err := parseNetMode(*flNetMode)
-	if err != nil {
-		return nil, nil, cmd, fmt.Errorf("--net: invalid net mode: %v", err)
-	}
-
-	vals := validateNM{
-		netMode:      netMode,
-		flHostname:   flHostname,
-		flLinks:      flLinks,
-		flDNS:        flDNS,
-		flExtraHosts: flExtraHosts,
-		flMacAddress: flMacAddress,
-		flPublish:    flPublish,
-		flPublishAll: flPublishAll,
-		flExpose:     flExpose,
-	}
-
-	if err := validateNetMode(&vals); err != nil {
-		return nil, nil, cmd, err
-	}
 
 	// Validate the input mac address
 	if *flMacAddress != "" {
@@ -350,41 +315,43 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	}
 
 	hostConfig := &HostConfig{
-		Binds:            binds,
-		ContainerIDFile:  *flContainerIDFile,
-		LxcConf:          lxcConf,
-		Memory:           flMemory,
-		MemorySwap:       memorySwap,
-		CPUShares:        *flCPUShares,
-		CPUPeriod:        *flCPUPeriod,
-		CpusetCpus:       *flCpusetCpus,
-		CpusetMems:       *flCpusetMems,
-		CPUQuota:         *flCPUQuota,
-		BlkioWeight:      *flBlkioWeight,
-		OomKillDisable:   *flOomKillDisable,
-		MemorySwappiness: flSwappiness,
-		Privileged:       *flPrivileged,
-		PortBindings:     portBindings,
-		Links:            flLinks.GetAll(),
-		PublishAllPorts:  *flPublishAll,
-		DNS:              flDNS.GetAll(),
-		DNSSearch:        flDNSSearch.GetAll(),
-		ExtraHosts:       flExtraHosts.GetAll(),
-		VolumesFrom:      flVolumesFrom.GetAll(),
-		NetworkMode:      netMode,
-		IpcMode:          ipcMode,
-		PidMode:          pidMode,
-		UTSMode:          utsMode,
-		Devices:          deviceMappings,
-		CapAdd:           NewCapList(flCapAdd.GetAll()),
-		CapDrop:          NewCapList(flCapDrop.GetAll()),
-		GroupAdd:         flGroupAdd.GetAll(),
-		RestartPolicy:    restartPolicy,
-		SecurityOpt:      flSecurityOpt.GetAll(),
-		ReadonlyRootfs:   *flReadonlyRootfs,
-		Ulimits:          flUlimits.GetList(),
-		LogConfig:        LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
-		CgroupParent:     *flCgroupParent,
+		Binds:                binds,
+		ContainerIDFile:      *flContainerIDFile,
+		LxcConf:              lxcConf,
+		Memory:               flMemory,
+		MemorySwap:           memorySwap,
+		CPUShares:            *flCPUShares,
+		CPUPeriod:            *flCPUPeriod,
+		CpusetCpus:           *flCpusetCpus,
+		CpusetMems:           *flCpusetMems,
+		CPUQuota:             *flCPUQuota,
+		BlkioWeight:          *flBlkioWeight,
+		OomKillDisable:       *flOomKillDisable,
+		MemorySwappiness:     flSwappiness,
+		Privileged:           *flPrivileged,
+		PortBindings:         portBindings,
+		Links:                flLinks.GetAll(),
+		PublishAllPorts:      *flPublishAll,
+		DNS:                  flDNS.GetAll(),
+		DNSSearch:            flDNSSearch.GetAll(),
+		ExtraHosts:           flExtraHosts.GetAll(),
+		VolumesFrom:          flVolumesFrom.GetAll(),
+		NetworkMode:          NetworkMode(*flNetMode),
+		IpcMode:              ipcMode,
+		PidMode:              pidMode,
+		UTSMode:              utsMode,
+		Devices:              deviceMappings,
+		CapAdd:               NewCapList(flCapAdd.GetAll()),
+		CapDrop:              NewCapList(flCapDrop.GetAll()),
+		GroupAdd:             flGroupAdd.GetAll(),
+		RestartPolicy:        restartPolicy,
+		SecurityOpt:          flSecurityOpt.GetAll(),
+		ReadonlyRootfs:       *flReadonlyRootfs,
+		Ulimits:              flUlimits.GetList(),
+		LogConfig:            LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
+		CgroupParent:         *flCgroupParent,
+		ExplicitExposedPorts: flExpose.Len() > 0,
+		ExplicitPublishPorts: flPublish.Len() > 0,
 	}
 
 	applyExperimentalFlags(expFlags, config, hostConfig)
