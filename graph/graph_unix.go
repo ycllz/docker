@@ -79,8 +79,8 @@ func createRootFilesystemInDriver(graph *Graph, img *Image, layerData archive.Ar
 	return nil
 }
 
-func (graph *Graph) restoreBaseImages() ([]string, error) {
-	return nil, nil
+func (graph *Graph) RestoreBaseImages(ts *TagStore) error {
+	return nil
 }
 
 // storeImage stores file system layer data for the given image to the

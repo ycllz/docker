@@ -264,7 +264,8 @@ func (d *WindowsGraphDriver) Export(id string, parentLayerPaths []string) (arch 
 	}
 	defer func() {
 		if err != nil {
-			if err2 := os.RemoveAll(tempFolder); err2 != nil {
+			_, folderName := filepath.Split(tempFolder)
+			if err2 := hcsshim.DestroyLayer(d.info, folderName); err2 != nil {
 				logrus.Warnf("Couldn't clean-up tempFolder: %s %s", tempFolder, err2)
 			}
 		}
@@ -281,7 +282,8 @@ func (d *WindowsGraphDriver) Export(id string, parentLayerPaths []string) (arch 
 	return ioutils.NewReadCloserWrapper(archive, func() error {
 		err := archive.Close()
 		d.Put(id)
-		if err2 := os.RemoveAll(tempFolder); err2 != nil {
+		_, folderName := filepath.Split(tempFolder)
+		if err2 := hcsshim.DestroyLayer(d.info, folderName); err2 != nil {
 			logrus.Warnf("Couldn't clean-up tempFolder: %s %s", tempFolder, err2)
 		}
 		return err

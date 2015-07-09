@@ -688,6 +688,10 @@ func NewDaemon(config *Config, registryService *registry.Service) (daemon *Daemo
 		return nil, fmt.Errorf("Couldn't create Tag store: %s", err)
 	}
 
+	if err := g.RestoreBaseImages(repositories); err != nil {
+		return nil, fmt.Errorf("Couldn't restore base images: %s", err)
+	}
+
 	d.netController, err = initNetworkController(config)
 	if err != nil {
 		return nil, fmt.Errorf("Error initializing network controller: %v", err)

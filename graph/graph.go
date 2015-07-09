@@ -39,6 +39,7 @@ type Graph struct {
 
 type Image struct {
 	ID              string            `json:"id"`
+	LayerID         string            `json:"layerid,omitempty"`
 	Parent          string            `json:"parent,omitempty"`
 	Comment         string            `json:"comment,omitempty"`
 	Created         time.Time         `json:"created"`
@@ -95,12 +96,6 @@ func (graph *Graph) restore() error {
 			ids = append(ids, id)
 		}
 	}
-
-	baseIds, err := graph.restoreBaseImages()
-	if err != nil {
-		return err
-	}
-	ids = append(ids, baseIds...)
 
 	graph.idIndex = truncindex.NewTruncIndex(ids)
 	logrus.Debugf("Restored %d elements", len(ids))

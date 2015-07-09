@@ -51,7 +51,14 @@ func (daemon *Daemon) createRootfs(container *Container) error {
 			}
 			logrus.Debugf("Got image ids: %d", len(ids))
 
-			if err := hcsshim.CreateSandboxLayer(wd.Info(), container.ID, container.ImageID, wd.LayerIdsToPaths(ids)); err != nil {
+			var imageID string
+			if img.LayerID != "" {
+				imageID = img.LayerID
+			} else {
+				imageID = img.ID
+			}
+
+			if err := hcsshim.CreateSandboxLayer(wd.Info(), container.ID, imageID, wd.LayerIdsToPaths(ids)); err != nil {
 				return err
 			}
 		} else {

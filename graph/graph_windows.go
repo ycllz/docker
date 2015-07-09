@@ -3,13 +3,20 @@
 package graph
 
 import (
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/docker/autogen/dockerversion"
 	"github.com/docker/docker/daemon/graphdriver/windows"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/microsoft/hcsshim"
 )
 
 // setupInitLayer populates a directory with mountpoints suitable
@@ -53,15 +60,96 @@ func createRootFilesystemInDriver(graph *Graph, img *Image, layerData archive.Ar
 	return nil
 }
 
-func (graph *Graph) restoreBaseImages() ([]string, error) {
-	// TODO Windows. This needs implementing (@swernli)
-	return nil, nil
+func (graph *Graph) RestoreBaseImages(ts *TagStore) error {
+	strData, err := hcsshim.GetSharedBaseImages()
+	if err != nil {
+		return fmt.Errorf("Failed to restore base images: %s", err)
+	}
+
+	rawData := []byte(strData)
+
+	type imageInfo struct {
+		Name        string
+		Version     string
+		Path        string
+		Size        int64
+		CreatedTime time.Time
+	}
+	type imageInfoList struct {
+		Images []imageInfo
+	}
+	var infoData imageInfoList
+
+	if err = json.Unmarshal(rawData, &infoData); err != nil {
+		err = fmt.Errorf("JSON unmarshal returned error=%s", err)
+		logrus.Error(err)
+		return err
+	}
+
+	for _, imageData := range infoData.Images {
+		_, folderName := filepath.Split(imageData.Path)
+
+		// Use crypto hash of the foldername to generate a docker style id.
+		h := sha512.Sum384([]byte(folderName))
+		id := fmt.Sprintf("%x", h[:32])
+
+		// Add the image to the index.
+		if err := graph.idIndex.Add(id); err != nil {
+			return err
+		}
+
+		// If the image is not already created, create metadata for it.
+		if _, err := os.Lstat(graph.imageRoot(id)); err != nil {
+			img := &Image{
+				ID:            id,
+				LayerID:       folderName,
+				Created:       imageData.CreatedTime,
+				DockerVersion: dockerversion.VERSION,
+				Author:        "Microsoft",
+				Architecture:  runtime.GOARCH,
+				OS:            runtime.GOOS,
+			}
+
+			tmp, err := graph.mktemp("")
+			defer os.RemoveAll(tmp)
+			if err != nil {
+				return fmt.Errorf("mktemp failed: %s", err)
+			}
+
+			f, err := os.OpenFile(jsonPath(tmp), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0600))
+			if err != nil {
+				return err
+			}
+
+			if err := json.NewEncoder(f).Encode(img); err != nil {
+				f.Close()
+				return err
+			}
+			f.Close()
+
+			graph.saveSize(tmp, int(imageData.Size))
+
+			if err := os.Rename(tmp, graph.imageRoot(img.ID)); err != nil {
+				return err
+			}
+
+			// Create tags for the new image.
+			if err := ts.Tag(strings.ToLower(imageData.Name), imageData.Version, img.ID, true); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // ParentLayerIds returns a list of all parent image IDs for the given image.
 func (graph *Graph) ParentLayerIds(img *Image) (ids []string, err error) {
 	for i := img; i != nil && err == nil; i, err = graph.GetParent(i) {
-		ids = append(ids, i.ID)
+		id := i.ID
+		if i.LayerID != "" {
+			id = i.LayerID
+		}
+		ids = append(ids, id)
 	}
 
 	return
@@ -137,8 +225,10 @@ func (graph *Graph) storeImage(img *Image, layerData archive.ArchiveReader, root
 // TarLayer returns a tar archive of the image's filesystem layer.
 func (graph *Graph) TarLayer(img *Image) (arch archive.Archive, err error) {
 	if wd, ok := graph.driver.(*windows.WindowsGraphDriver); ok {
+		var imgId string
 		var ids []string
 		if img.Parent != "" {
+			imgId = img.ID
 			parentImg, err := graph.Get(img.Parent)
 			if err != nil {
 				return nil, err
@@ -148,9 +238,11 @@ func (graph *Graph) TarLayer(img *Image) (arch archive.Archive, err error) {
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			imgId = img.LayerID
 		}
 
-		return wd.Export(img.ID, wd.LayerIdsToPaths(ids))
+		return wd.Export(imgId, wd.LayerIdsToPaths(ids))
 	} else {
 		// We keep this functionality here so that we can still work with the VFS
 		// driver during development. VFS is not supported (and just will not work)
