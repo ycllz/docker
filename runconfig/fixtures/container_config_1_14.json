@@ -26,5 +26,8 @@
      "ExposedPorts":{
              "22/tcp": {}
      },
-     "RestartPolicy": { "Name": "always" }
+     "RestartPolicy": { "Name": "always" },
+	 "HostConfig": {
+       "NetworkMode": "bridge"
+     }
 }

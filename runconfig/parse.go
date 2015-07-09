@@ -24,19 +24,6 @@ var (
 	ErrConflictNetworkExposePorts       = fmt.Errorf("Conflicting options: --expose and the network mode (--expose)")
 )
 
-// validateNM is the set of fields passed to validateNetMode()
-type validateNM struct {
-	netMode      NetworkMode
-	flHostname   *string
-	flLinks      opts.ListOpts
-	flDns        opts.ListOpts
-	flExtraHosts opts.ListOpts
-	flMacAddress *string
-	flPublish    opts.ListOpts
-	flPublishAll *bool
-	flExpose     opts.ListOpts
-}
-
 func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSet, error) {
 	var (
 		// FIXME: use utils.ListOpts for attach and volumes?
@@ -132,27 +119,6 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		attachStderr = flAttach.Get("stderr")
 	)
 
-	netMode, err := parseNetMode(*flNetMode)
-	if err != nil {
-		return nil, nil, cmd, fmt.Errorf("--net: invalid net mode: %v", err)
-	}
-
-	vals := validateNM{
-		netMode:      netMode,
-		flHostname:   flHostname,
-		flLinks:      flLinks,
-		flDns:        flDns,
-		flExtraHosts: flExtraHosts,
-		flMacAddress: flMacAddress,
-		flPublish:    flPublish,
-		flPublishAll: flPublishAll,
-		flExpose:     flExpose,
-	}
-
-	if err := validateNetMode(&vals); err != nil {
-		return nil, nil, cmd, err
-	}
-
 	// Validate the input mac address
 	if *flMacAddress != "" {
 		if _, err := opts.ValidateMACAddress(*flMacAddress); err != nil {
@@ -190,11 +156,9 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		}
 	}
 
-	var parsedSwappiness int64
 	var flSwappiness int64
-
 	if *flSwappinessStr != "" {
-		parsedSwappiness, err = strconv.ParseInt(*flSwappinessStr, 10, 64)
+		parsedSwappiness, err := strconv.ParseInt(*flSwappinessStr, 10, 64)
 		if err != nil || parsedSwappiness < 0 || parsedSwappiness > 100 {
 			return nil, nil, cmd, fmt.Errorf("invalid value:%s. valid memory swappiness range is 0-100", *flSwappinessStr)
 		}
@@ -343,41 +307,43 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	}
 
 	hostConfig := &HostConfig{
-		Binds:            binds,
-		ContainerIDFile:  *flContainerIDFile,
-		LxcConf:          lxcConf,
-		Memory:           flMemory,
-		MemorySwap:       MemorySwap,
-		CpuShares:        *flCpuShares,
-		CpuPeriod:        *flCpuPeriod,
-		CpusetCpus:       *flCpusetCpus,
-		CpusetMems:       *flCpusetMems,
-		CpuQuota:         *flCpuQuota,
-		BlkioWeight:      *flBlkioWeight,
-		OomKillDisable:   *flOomKillDisable,
-		MemorySwappiness: flSwappiness,
-		Privileged:       *flPrivileged,
-		PortBindings:     portBindings,
-		Links:            flLinks.GetAll(),
-		PublishAllPorts:  *flPublishAll,
-		Dns:              flDns.GetAll(),
-		DnsSearch:        flDnsSearch.GetAll(),
-		ExtraHosts:       flExtraHosts.GetAll(),
-		VolumesFrom:      flVolumesFrom.GetAll(),
-		NetworkMode:      netMode,
-		IpcMode:          ipcMode,
-		PidMode:          pidMode,
-		UTSMode:          utsMode,
-		Devices:          deviceMappings,
-		CapAdd:           NewCapList(flCapAdd.GetAll()),
-		CapDrop:          NewCapList(flCapDrop.GetAll()),
-		GroupAdd:         flGroupAdd.GetAll(),
-		RestartPolicy:    restartPolicy,
-		SecurityOpt:      flSecurityOpt.GetAll(),
-		ReadonlyRootfs:   *flReadonlyRootfs,
-		Ulimits:          flUlimits.GetList(),
-		LogConfig:        LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
-		CgroupParent:     *flCgroupParent,
+		Binds:                binds,
+		ContainerIDFile:      *flContainerIDFile,
+		LxcConf:              lxcConf,
+		Memory:               flMemory,
+		MemorySwap:           MemorySwap,
+		CpuShares:            *flCpuShares,
+		CpuPeriod:            *flCpuPeriod,
+		CpusetCpus:           *flCpusetCpus,
+		CpusetMems:           *flCpusetMems,
+		CpuQuota:             *flCpuQuota,
+		BlkioWeight:          *flBlkioWeight,
+		OomKillDisable:       *flOomKillDisable,
+		MemorySwappiness:     flSwappiness,
+		Privileged:           *flPrivileged,
+		PortBindings:         portBindings,
+		Links:                flLinks.GetAll(),
+		PublishAllPorts:      *flPublishAll,
+		Dns:                  flDns.GetAll(),
+		DnsSearch:            flDnsSearch.GetAll(),
+		ExtraHosts:           flExtraHosts.GetAll(),
+		VolumesFrom:          flVolumesFrom.GetAll(),
+		NetworkMode:          NetworkMode(*flNetMode),
+		IpcMode:              ipcMode,
+		PidMode:              pidMode,
+		UTSMode:              utsMode,
+		Devices:              deviceMappings,
+		CapAdd:               NewCapList(flCapAdd.GetAll()),
+		CapDrop:              NewCapList(flCapDrop.GetAll()),
+		GroupAdd:             flGroupAdd.GetAll(),
+		RestartPolicy:        restartPolicy,
+		SecurityOpt:          flSecurityOpt.GetAll(),
+		ReadonlyRootfs:       *flReadonlyRootfs,
+		Ulimits:              flUlimits.GetList(),
+		LogConfig:            LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
+		CgroupParent:         *flCgroupParent,
+		ExplicitExposedPorts: flExpose.Len() > 0,
+		ExplicitPublishPorts: flPublish.Len() > 0,
 	}
 
 	applyExperimentalFlags(expFlags, config, hostConfig)

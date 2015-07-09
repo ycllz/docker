@@ -1009,6 +1009,7 @@ func (s *DockerSuite) TestContainerApiCreateWithCpuSharesCpuset(c *check.C) {
 		"Image":      "busybox",
 		"CpuShares":  512,
 		"CpusetCpus": "0,1",
+		"HostConfig": map[string]interface{}{"NetworkMode": "bridge"},
 	}
 
 	status, body, err := sockRequest("POST", "/containers/create", config)
@@ -1027,7 +1028,6 @@ func (s *DockerSuite) TestContainerApiCreateWithCpuSharesCpuset(c *check.C) {
 	var containerJson types.ContainerJSON
 
 	c.Assert(json.Unmarshal(body, &containerJson), check.IsNil)
-
 	out, err := inspectField(containerJson.Id, "HostConfig.CpuShares")
 	c.Assert(err, check.IsNil)
 	c.Assert(out, check.Equals, "512")
@@ -1074,6 +1074,7 @@ func (s *DockerSuite) TestContainerApiInvalidPortSyntax(c *check.C) {
 	config := `{
 				  "Image": "busybox",
 				  "HostConfig": {
+					"NetworkMode":"bridge",
 					"PortBindings": {
 					  "19039;1230": [
 						{}
@@ -1117,7 +1118,9 @@ func (s *DockerSuite) TestContainerApiPostCreateNull(c *check.C) {
 		"WorkingDir":"",
 		"Entrypoint":null,
 		"NetworkDisabled":false,
-		"OnBuild":null}`
+		"OnBuild":null,
+		"HostConfig": {	"NetworkMode":"bridge" }
+        }`
 
 	res, body, err := sockRequestRaw("POST", "/containers/create", strings.NewReader(config), "application/json")
 	c.Assert(err, check.IsNil)
@@ -1161,7 +1164,8 @@ func (s *DockerSuite) TestCreateWithTooLowMemoryLimit(c *check.C) {
 		"Cmd":       "ls",
 		"OpenStdin": true,
 		"CpuShares": 100,
-		"Memory":    524287
+		"Memory":    524287,
+		"HostConfig": {	"NetworkMode":"bridge" }
 	}`
 
 	res, body, err := sockRequestRaw("POST", "/containers/create", strings.NewReader(config), "application/json")
@@ -1596,21 +1600,40 @@ func (s *DockerSuite) TestPostContainersCreateWithStringOrSliceCmd(c *check.C) {
 
 // regression #14318
 func (s *DockerSuite) TestPostContainersCreateWithStringOrSliceCapAddDrop(c *check.C) {
-	config := struct {
-		Image   string
-		CapAdd  string
-		CapDrop string
-	}{"busybox", "NET_ADMIN", "SYS_ADMIN"}
-	status, _, err := sockRequest("POST", "/containers/create?name=capaddtest0", config)
-	c.Assert(err, check.IsNil)
-	c.Assert(status, check.Equals, http.StatusCreated)
+	config := `
+	{
+    	"Image": "busybox",
+	    "CapAdd": [
+        	"NET_ADMIN"
+    	],
+	    "CapDrop": [
+	        "SYS_ADMIN"
+    	],
+	    "HostConfig": {
+	        "NetworkMode": "bridge"
+    	}
+	}`
 
-	config2 := struct {
-		Image   string
-		CapAdd  []string
-		CapDrop []string
-	}{"busybox", []string{"NET_ADMIN", "SYS_ADMIN"}, []string{"SETGID"}}
-	status, _, err = sockRequest("POST", "/containers/create?name=capaddtest1", config2)
+	res, _, err := sockRequestRaw("POST", "/containers/create?name=capaddtest0", strings.NewReader(config), "application/json")
 	c.Assert(err, check.IsNil)
-	c.Assert(status, check.Equals, http.StatusCreated)
+	c.Assert(res.StatusCode, check.Equals, http.StatusCreated)
+
+	config2 := `
+	{
+    	"Image": "busybox",
+	    "CapAdd": [
+        	"NET_ADMIN",
+			"SYS_ADMIN"
+    	],
+	    "CapDrop": [
+	        "SETGID"
+    	],
+	    "HostConfig": {
+	        "NetworkMode": "bridge"
+    	}
+	}`
+
+	res, _, err = sockRequestRaw("POST", "/containers/create?name=capaddtest1", strings.NewReader(config2), "application/json")
+	c.Assert(err, check.IsNil)
+	c.Assert(res.StatusCode, check.Equals, http.StatusCreated)
 }

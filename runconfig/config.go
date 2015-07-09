@@ -162,6 +162,9 @@ func (w *ContainerConfigWrapper) GetHostConfig() *HostConfig {
 		if hc.CpuShares != 0 && w.InnerHostConfig.CpuShares == 0 {
 			w.InnerHostConfig.CpuShares = hc.CpuShares
 		}
+		if hc.CpusetCpus != "" && w.InnerHostConfig.CpusetCpus == "" {
+			w.InnerHostConfig.CpusetCpus = hc.CpusetCpus
+		}
 
 		hc = w.InnerHostConfig
 	}
@@ -185,5 +188,12 @@ func DecodeContainerConfig(src io.Reader) (*Config, *HostConfig, error) {
 		return nil, nil, err
 	}
 
-	return w.Config, w.GetHostConfig(), nil
+	// Certain parameters need daemon-side validation that cannot be done
+	// on the client, as only the daemon knows what is valid for the platform.
+	hc := w.GetHostConfig()
+	if err := ValidateNetMode(w.Config, hc); err != nil {
+		return nil, nil, err
+	}
+
+	return w.Config, hc, nil
 }

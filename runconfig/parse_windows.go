@@ -5,16 +5,17 @@ import (
 	"strings"
 )
 
-func parseNetMode(netMode string) (NetworkMode, error) {
-	parts := strings.Split(netMode, ":")
+func ValidateNetMode(c *Config, hc *HostConfig) error {
+	// In some circumstances, we may not be passed a host config, such as
+	// in the case of docker commit
+	if hc == nil {
+		return nil
+	}
+	parts := strings.Split(string(hc.NetworkMode), ":")
 	switch mode := parts[0]; mode {
 	case "default", "none":
 	default:
-		return "", fmt.Errorf("invalid --net: %s", netMode)
+		return fmt.Errorf("invalid --net: %s", hc.NetworkMode)
 	}
-	return NetworkMode(netMode), nil
-}
-
-func validateNetMode(vals *validateNM) error {
 	return nil
 }
