@@ -52,16 +52,11 @@ func GetWinsize(fd uintptr) (*Winsize, error) {
 		return nil, err
 	}
 
-	font, err := winterm.GetCurrentConsoleFont(fd)
-	if err != nil {
-		return nil, err
-	}
-
 	winsize := &Winsize{
 		Width:  uint16(info.Window.Right - info.Window.Left + 1),
 		Height: uint16(info.Window.Bottom - info.Window.Top + 1),
-		x:      uint16(font.FontSize.X),
-		y:      uint16(font.FontSize.Y)}
+		x:      0,
+		y:      0}
 
 	// Note: GetWinsize is called frequently -- uncomment only for excessive details
 	// logrus.Debugf("[windows] GetWinsize: Console(%v)", info.String())
