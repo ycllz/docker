@@ -109,10 +109,8 @@ func mainDaemon() {
 	}
 
 	serverConfig := &apiserver.ServerConfig{
-		Logging:     true,
-		EnableCors:  daemonCfg.EnableCors,
-		CorsHeaders: daemonCfg.CorsHeaders,
-		Version:     dockerversion.VERSION,
+		Logging: true,
+		Version: dockerversion.VERSION,
 	}
 	serverConfig = setPlatformServerConfig(serverConfig, daemonCfg)
 

@@ -76,14 +76,6 @@ func (daemon *Daemon) getInspectData(container *Container) (*types.ContainerJSON
 		FinishedAt: container.State.FinishedAt,
 	}
 
-	volumes := make(map[string]string)
-	volumesRW := make(map[string]bool)
-
-	for _, m := range container.MountPoints {
-		volumes[m.Destination] = m.Path()
-		volumesRW[m.Destination] = m.RW
-	}
-
 	contJSONBase := &types.ContainerJSONBase{
 		Id:              container.ID,
 		Created:         container.Created,
@@ -92,9 +84,6 @@ func (daemon *Daemon) getInspectData(container *Container) (*types.ContainerJSON
 		State:           containerState,
 		Image:           container.ImageID,
 		NetworkSettings: container.NetworkSettings,
-		ResolvConfPath:  container.ResolvConfPath,
-		HostnamePath:    container.HostnamePath,
-		HostsPath:       container.HostsPath,
 		LogPath:         container.LogPath,
 		Name:            container.Name,
 		RestartCount:    container.RestartCount,
@@ -102,13 +91,11 @@ func (daemon *Daemon) getInspectData(container *Container) (*types.ContainerJSON
 		ExecDriver:      container.ExecDriver,
 		MountLabel:      container.MountLabel,
 		ProcessLabel:    container.ProcessLabel,
-		Volumes:         volumes,
-		VolumesRW:       volumesRW,
-		AppArmorProfile: container.AppArmorProfile,
 		ExecIDs:         container.GetExecIDs(),
 		HostConfig:      &hostConfig,
 	}
 
+	contJSONBase = setPlatformSpecificContainerFields(container, contJSONBase)
 	contJSONBase.GraphDriver.Name = container.Driver
 	graphDriverData, err := daemon.driver.GetMetadata(container.ID)
 	if err != nil {

@@ -22,6 +22,8 @@ type Config struct {
 
 	// Fields below here are platform specific.
 
+	CorsHeaders          string
+	EnableCors           bool
 	EnableSelinuxSupport bool
 	SocketGroup          string
 	Ulimits              map[string]*ulimit.Ulimit
@@ -71,5 +73,7 @@ func (config *Config) InstallFlags() {
 	flag.BoolVar(&config.Bridge.InterContainerCommunication, []string{"#icc", "-icc"}, true, "Enable inter-container communication")
 	opts.IPVar(&config.Bridge.DefaultIP, []string{"#ip", "-ip"}, "0.0.0.0", "Default IP when binding container ports")
 	flag.BoolVar(&config.Bridge.EnableUserlandProxy, []string{"-userland-proxy"}, true, "Use userland proxy for loopback traffic")
+	flag.BoolVar(&config.EnableCors, []string{"#api-enable-cors", "#-api-enable-cors"}, false, "Enable CORS headers in the remote API, this is deprecated by --api-cors-header")
+	flag.StringVar(&config.CorsHeaders, []string{"-api-cors-header"}, "", "Set CORS headers in the remote API")
 	config.attachExperimentalFlags()
 }

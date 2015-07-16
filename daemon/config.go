@@ -17,11 +17,9 @@ type CommonConfig struct {
 	AutoRestart    bool
 	Bridge         bridgeConfig // Bridge holds bridge network specific configuration.
 	Context        map[string][]string
-	CorsHeaders    string
 	DisableBridge  bool
 	Dns            []string
 	DnsSearch      []string
-	EnableCors     bool
 	ExecDriver     string
 	ExecOptions    []string
 	ExecRoot       string
@@ -51,8 +49,6 @@ func (config *Config) InstallCommonFlags() {
 	flag.StringVar(&config.GraphDriver, []string{"s", "-storage-driver"}, "", "Storage driver to use")
 	flag.StringVar(&config.ExecDriver, []string{"e", "-exec-driver"}, defaultExec, "Exec driver to use")
 	flag.IntVar(&config.Mtu, []string{"#mtu", "-mtu"}, 0, "Set the containers network MTU")
-	flag.BoolVar(&config.EnableCors, []string{"#api-enable-cors", "#-api-enable-cors"}, false, "Enable CORS headers in the remote API, this is deprecated by --api-cors-header")
-	flag.StringVar(&config.CorsHeaders, []string{"-api-cors-header"}, "", "Set CORS headers in the remote API")
 	// FIXME: why the inconsistency between "hosts" and "sockets"?
 	opts.IPListVar(&config.Dns, []string{"#dns", "-dns"}, "DNS server to use")
 	opts.DNSSearchListVar(&config.DnsSearch, []string{"-dns-search"}, "DNS search domains to use")
