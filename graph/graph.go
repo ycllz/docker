@@ -284,6 +284,13 @@ func (graph *Graph) Register(img *image.Image, layerData archive.ArchiveReader) 
 	return nil
 }
 
+func createRootFilesystemInDriver(graph *Graph, img *image.Image, layerData archive.ArchiveReader) error {
+	if err := graph.driver.Create(img.ID, img.Parent); err != nil {
+		return fmt.Errorf("Driver %s failed to create image rootfs %s: %s", graph.driver, img.ID, err)
+	}
+	return nil
+}
+
 // TempLayerArchive creates a temporary archive of the given image's filesystem layer.
 //   The archive is stored on disk and will be automatically deleted as soon as has been read.
 //   If output is not nil, a human-readable progress bar will be written to it.
@@ -441,6 +448,16 @@ func (graph *Graph) Heads() map[string]*image.Image {
 	return heads
 }
 
+// TarLayer returns a tar archive of the image's filesystem layer.
+func (graph *Graph) TarLayer(img *image.Image) (arch archive.Archive, err error) {
+	rdr, err := graph.assembleTarLayer(img)
+	if err != nil {
+		logrus.Debugf("[graph] TarLayer with traditional differ: %s", img.ID)
+		return graph.driver.Diff(img.ID, img.Parent)
+	}
+	return rdr, nil
+}
+
 func (graph *Graph) imageRoot(id string) string {
 	return filepath.Join(graph.root, id)
 }
@@ -534,12 +551,48 @@ func jsonPath(root string) string {
 	return filepath.Join(root, jsonFileName)
 }
 
+// storeImage stores file system layer data for the given image to the
+// graph's storage driver. Image metadata is stored in a file
+// at the specified root directory.
+func (graph *Graph) storeImage(img *image.Image, layerData archive.ArchiveReader, root string) (err error) {
+	// Store the layer. If layerData is not nil, unpack it into the new layer
+	if layerData != nil {
+		if err := graph.disassembleAndApplyTarLayer(img, layerData, root); err != nil {
+			return err
+		}
+	}
+
+	if err := graph.saveSize(root, int(img.Size)); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(jsonPath(root), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0600))
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	return json.NewEncoder(f).Encode(img)
+}
+
 func (graph *Graph) disassembleAndApplyTarLayer(img *image.Image, layerData archive.ArchiveReader, root string) error {
 	// this is saving the tar-split metadata
 	mf, err := os.OpenFile(filepath.Join(root, tarDataFileName), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0600))
 	if err != nil {
 		return err
 	}
+
+	// TODO WINDOWS: The metadata cannot be used on save of a layer,
+	// so remove it in order to fallback to normal Diff behavior.
+	if runtime.GOOS == "windows" {
+		defer func() {
+			if err := os.Remove(filepath.Join(root, tarDataFileName)); err != nil {
+				logrus.Errorf("Unable to remove tar-split metadata: %s", err)
+			}
+		}()
+	}
+
 	mfz := gzip.NewWriter(mf)
 	metaPacker := storage.NewJSONPacker(mfz)
 	defer mf.Close()

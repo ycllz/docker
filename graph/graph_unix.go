@@ -73,48 +73,6 @@ func SetupInitLayer(initLayer string) error {
 	return nil
 }
 
-func createRootFilesystemInDriver(graph *Graph, img *image.Image, layerData archive.ArchiveReader) error {
-	if err := graph.driver.Create(img.ID, img.Parent); err != nil {
-		return fmt.Errorf("Driver %s failed to create image rootfs %s: %s", graph.driver, img.ID, err)
-	}
-	return nil
-}
-
 func (graph *Graph) restoreBaseImages() ([]string, error) {
 	return nil, nil
-}
-
-// storeImage stores file system layer data for the given image to the
-// graph's storage driver. Image metadata is stored in a file
-// at the specified root directory.
-func (graph *Graph) storeImage(img *image.Image, layerData archive.ArchiveReader, root string) (err error) {
-	// Store the layer. If layerData is not nil, unpack it into the new layer
-	if layerData != nil {
-		if err := graph.disassembleAndApplyTarLayer(img, layerData, root); err != nil {
-			return err
-		}
-	}
-
-	if err := graph.saveSize(root, int(img.Size)); err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(jsonPath(root), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0600))
-	if err != nil {
-		return err
-	}
-
-	defer f.Close()
-
-	return json.NewEncoder(f).Encode(img)
-}
-
-// TarLayer returns a tar archive of the image's filesystem layer.
-func (graph *Graph) TarLayer(img *image.Image) (arch archive.Archive, err error) {
-	rdr, err := graph.assembleTarLayer(img)
-	if err != nil {
-		logrus.Debugf("[graph] TarLayer with traditional differ: %s", img.ID)
-		return graph.driver.Diff(img.ID, img.Parent)
-	}
-	return rdr, nil
 }
