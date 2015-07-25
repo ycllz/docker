@@ -229,6 +229,21 @@ func (container *Container) GetRootResourcePath(path string) (string, error) {
 	return symlink.FollowSymlinkInScope(filepath.Join(container.root, cleanPath), container.root)
 }
 
+func (container *Container) ExportRw() (archive.Archive, error) {
+	if container.daemon == nil {
+		return nil, fmt.Errorf("Can't load storage driver for unregistered container %s", container.ID)
+	}
+	archive, err := container.daemon.Diff(container)
+	if err != nil {
+		return nil, err
+	}
+	return ioutils.NewReadCloserWrapper(archive, func() error {
+			err := archive.Close()
+			return err
+		}),
+		nil
+}
+
 func (container *Container) Start() (err error) {
 	container.Lock()
 	defer container.Unlock()
