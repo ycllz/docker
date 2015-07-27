@@ -382,7 +382,8 @@ func (d *Driver) exportLayer(id string, parentLayerPaths []string) (arch archive
 	}
 	defer func() {
 		if err != nil {
-			if err2 := os.RemoveAll(tempFolder); err2 != nil {
+			_, folderName := filepath.Split(tempFolder)
+			if err2 := hcsshim.DestroyLayer(d.info, folderName); err2 != nil {
 				logrus.Warnf("Couldn't clean-up tempFolder: %s %s", tempFolder, err2)
 			}
 		}
@@ -399,7 +400,8 @@ func (d *Driver) exportLayer(id string, parentLayerPaths []string) (arch archive
 	return ioutils.NewReadCloserWrapper(archive, func() error {
 		err := archive.Close()
 		d.Put(id)
-		if err2 := os.RemoveAll(tempFolder); err2 != nil {
+		_, folderName := filepath.Split(tempFolder)
+		if err2 := hcsshim.DestroyLayer(d.info, folderName); err2 != nil {
 			logrus.Warnf("Couldn't clean-up tempFolder: %s %s", tempFolder, err2)
 		}
 		return err
@@ -450,7 +452,9 @@ type ChainList struct {
 func (d *Driver) getLayerChain(id string) ([]string, error) {
 	jPath := filepath.Join(d.dir(id), "layerchain.json")
 	content, err := ioutil.ReadFile(jPath)
-	if err != nil {
+	if os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
 		return nil, fmt.Errorf("Unable to read layerchain file - %s", err)
 	}
 

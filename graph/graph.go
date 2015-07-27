@@ -141,12 +141,6 @@ func (graph *Graph) restore() error {
 		}
 	}
 
-	baseIds, err := graph.restoreBaseImages()
-	if err != nil {
-		return err
-	}
-	ids = append(ids, baseIds...)
-
 	graph.idIndex = truncindex.NewTruncIndex(ids)
 	logrus.Debugf("Restored %d elements", len(ids))
 	return nil
@@ -451,8 +445,17 @@ func (graph *Graph) Heads() map[string]*image.Image {
 func (graph *Graph) TarLayer(img *image.Image) (arch archive.Archive, err error) {
 	rdr, err := graph.assembleTarLayer(img)
 	if err != nil {
+		parentID := img.Parent
+		parentImg, err := graph.Get(parentID)
+		if err != nil {
+			return nil, err
+		}
+		if parentImg.LayerID != "" {
+			parentID = parentImg.LayerID
+		}
+
 		logrus.Debugf("[graph] TarLayer with traditional differ: %s", img.ID)
-		return graph.driver.Diff(img.ID, img.Parent)
+		return graph.driver.Diff(img.ID, parentID)
 	}
 	return rdr, nil
 }
@@ -598,7 +601,16 @@ func (graph *Graph) disassembleAndApplyTarLayer(img *image.Image, layerData arch
 		return err
 	}
 
-	if img.Size, err = graph.driver.ApplyDiff(img.ID, img.Parent, archive.ArchiveReader(rdr)); err != nil {
+	parentID := img.Parent
+	parentImg, err := graph.Get(parentID)
+	if err != nil {
+		return err
+	}
+	if parentImg.LayerID != "" {
+		parentID = parentImg.LayerID
+	}
+
+	if img.Size, err = graph.driver.ApplyDiff(img.ID, parentID, archive.ArchiveReader(rdr)); err != nil {
 		return err
 	}
 

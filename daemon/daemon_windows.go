@@ -16,10 +16,26 @@ import (
 const DefaultVirtualSwitch = "Virtual Switch"
 
 func (daemon *Daemon) Changes(container *Container) ([]archive.Change, error) {
-	return daemon.driver.Changes(container.ID, container.ImageID)
+	parentID := container.ImageID
+	parentImg, err := daemon.graph.Get(parentID)
+	if err != nil {
+		return nil, err
+	}
+	if parentImg.LayerID != "" {
+		parentID = parentImg.LayerID
+	}
+	return daemon.driver.Changes(container.ID, parentID)
 }
 
 func (daemon *Daemon) Diff(container *Container) (archive.Archive, error) {
+	parentID := container.ImageID
+	parentImg, err := daemon.graph.Get(parentID)
+	if err != nil {
+		return nil, err
+	}
+	if parentImg.LayerID != "" {
+		parentID = parentImg.LayerID
+	}
 	return daemon.driver.Diff(container.ID, container.ImageID)
 }
 
@@ -35,12 +51,20 @@ func (daemon *Daemon) createRootfs(container *Container) error {
 	}
 
 	id := container.ID
+	imageID := container.ImageID
 
 	if strings.HasPrefix(daemon.driver.String(), "windows") {
 		id += "-C"
+		img, err := daemon.graph.Get(imageID)
+		if err != nil {
+			return err
+		}
+		if img.LayerID != "" {
+			imageID = img.LayerID
+		}
 	}
 
-	if err := daemon.driver.Create(id, container.ImageID); err != nil {
+	if err := daemon.driver.Create(id, imageID); err != nil {
 		return err
 	}
 

@@ -15,6 +15,8 @@ var validHex = regexp.MustCompile(`^([a-f0-9]{64})$`)
 type Image struct {
 	// ID a unique 64 character identifier of the image
 	ID string `json:"id"`
+	// LayerID a central store identifier for the image (Windows specific)
+	LayerID string `json:"layerid,omitempty"`
 	// Parent id of the image
 	Parent string `json:"parent,omitempty"`
 	// Comment user added comment
