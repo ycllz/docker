@@ -109,12 +109,19 @@ func populateCommand(c *Container, env []string) error {
 		return fmt.Errorf("Failed to graph.Get on ImageID %s - %s", c.ImageID, err)
 	}
 	for i := img; i != nil && err == nil; i, err = c.daemon.graph.GetParent(i) {
-		lp, err := c.daemon.driver.Get(i.ID, "")
+		id := i.ID
+		if i.LayerID != "" {
+			id = i.LayerID
+		}
+		lp, err := c.daemon.driver.Get(id, "")
 		if err != nil {
 			return fmt.Errorf("Failed to get layer path from graphdriver %s for ImageID %s - %s", c.daemon.driver.String(), i.ID, err)
 		}
 		layerPaths = append(layerPaths, lp)
-		c.daemon.driver.Put(i.ID)
+		err = c.daemon.driver.Put(i.ID)
+		if err != nil {
+			return fmt.Errorf("Failed to put layer path from graphdriver %s for ImageID %s - %s", c.daemon.driver.String(), i.ID, err)
+		}
 	}
 	m, err := c.daemon.driver.GetMetadata(c.ID)
 	if err != nil {

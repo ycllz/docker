@@ -106,8 +106,11 @@ func (d *Driver) Create(id, parent string) error {
 	layerChain := []string{parent}
 	layerChain = append(layerChain, parentChain...)
 
+	layerID := id
+
 	if strings.HasSuffix(id, "-C") {
-		if err := hcsshim.CreateSandboxLayer(d.info, strings.Split(id, "-")[0], parent, d.layerIdsToPaths(layerChain)); err != nil {
+		layerID = strings.Split(id, "-")[0]
+		if err := hcsshim.CreateSandboxLayer(d.info, layerID, parent, d.layerIdsToPaths(layerChain)); err != nil {
 			return err
 		}
 	} else {
@@ -116,7 +119,7 @@ func (d *Driver) Create(id, parent string) error {
 		}
 	}
 
-	if err := d.setLayerChain(id, layerChain); err != nil {
+	if err := d.setLayerChain(layerID, layerChain); err != nil {
 		if err2 := hcsshim.DestroyLayer(d.info, id); err2 != nil {
 			logrus.Warnf("Failed to DestroyLayer %s: %s", id, err)
 		}
@@ -159,7 +162,21 @@ func (d *Driver) Remove(id string) error {
 
 // Get returns the rootfs path for the id. This will mount the dir at it's given path
 func (d *Driver) Get(id, mountLabel string) (string, error) {
+	logrus.Debugf("WindowsGraphDriver Get() id %s mountLabel %s", id, mountLabel)
 	var dir string
+	var paths []string
+
+	// Getting the layer paths must be done outside of the lock.
+	if mountLabel != "" {
+		layerChain, err := d.getLayerChain(id)
+		if err != nil {
+			if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
+				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
+			}
+			return "", err
+		}
+		paths = d.layerIdsToPaths(layerChain)
+	}
 
 	d.Lock()
 	defer d.Unlock()
@@ -179,14 +196,7 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 	}
 
 	if mountLabel != "" {
-		layerChain, err := d.getLayerChain(id)
-		if err != nil {
-			if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
-				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
-			}
-			return "", err
-		}
-		if err := hcsshim.PrepareLayer(d.info, id, d.layerIdsToPaths(layerChain)); err != nil {
+		if err := hcsshim.PrepareLayer(d.info, id, paths); err != nil {
 			if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
 				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 			}
@@ -361,11 +371,11 @@ func (d *Driver) layerIdsToPaths(ids []string) []string {
 func (d *Driver) GetMetadata(id string) (map[string]string, error) {
 	m := make(map[string]string)
 	m["dir"] = d.dir(id)
-	return nil, nil
+	return m, nil
 }
 
 func (d *Driver) exportLayer(id string, parentLayerPaths []string) (arch archive.Archive, err error) {
-	layerFs, err := d.Get(id, "")
+	_, err = d.Get(id, "")
 	if err != nil {
 		return
 	}
@@ -375,7 +385,9 @@ func (d *Driver) exportLayer(id string, parentLayerPaths []string) (arch archive
 		}
 	}()
 
-	tempFolder := layerFs + "-temp"
+	layerFolder := d.dir(id)
+
+	tempFolder := layerFolder + "-temp"
 	if err = os.MkdirAll(tempFolder, 0755); err != nil {
 		logrus.Errorf("Could not create %s %s", tempFolder, err)
 		return
@@ -445,10 +457,6 @@ func (d *Driver) importLayer(id string, layerData archive.ArchiveReader, parentL
 	return
 }
 
-type ChainList struct {
-	Chain []string
-}
-
 func (d *Driver) getLayerChain(id string) ([]string, error) {
 	jPath := filepath.Join(d.dir(id), "layerchain.json")
 	content, err := ioutil.ReadFile(jPath)
@@ -458,19 +466,17 @@ func (d *Driver) getLayerChain(id string) ([]string, error) {
 		return nil, fmt.Errorf("Unable to read layerchain file - %s", err)
 	}
 
-	var layerChain ChainList
+	var layerChain []string
 	err = json.Unmarshal(content, &layerChain)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to unmarshall layerchain json - %s", err)
 	}
 
-	return layerChain.Chain, nil
+	return layerChain, nil
 }
 
 func (d *Driver) setLayerChain(id string, chain []string) error {
-	var layerChain ChainList
-	layerChain.Chain = chain
-	content, err := json.Marshal(&layerChain)
+	content, err := json.Marshal(&chain)
 	if err != nil {
 		return fmt.Errorf("Failed to marshall layerchain json - %s", err)
 	}
