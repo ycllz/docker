@@ -84,7 +84,11 @@ func (d *Driver) Status() [][2]string {
 // Exists returns true if the given id is registered with
 // this driver
 func (d *Driver) Exists(id string) bool {
-	result, err := hcsshim.LayerExists(d.info, id)
+	rId, err := d.resolveId(id)
+	if err != nil {
+		return false
+	}
+	result, err := hcsshim.LayerExists(d.info, rId)
 	if err != nil {
 		return false
 	}
@@ -92,26 +96,30 @@ func (d *Driver) Exists(id string) bool {
 }
 
 func (d *Driver) Create(id, parent string) error {
+	rPId, err := d.resolveId(parent)
+	if err != nil {
+		return err
+	}
 
-	parentChain, err := d.getLayerChain(parent)
+	parentChain, err := d.getLayerChain(rPId)
 	if err != nil {
 		if err2 := hcsshim.DestroyLayer(d.info, id); err2 != nil {
 			logrus.Warnf("Failed to DestroyLayer %s: %s", id, err)
 		}
 		return err
 	}
-	layerChain := []string{parent}
+	layerChain := []string{rPId}
 	layerChain = append(layerChain, parentChain...)
 
 	layerID := id
 
 	if strings.HasSuffix(id, "-C") {
 		layerID = strings.Split(id, "-")[0]
-		if err := hcsshim.CreateSandboxLayer(d.info, layerID, parent, d.layerIdsToPaths(layerChain)); err != nil {
+		if err := hcsshim.CreateSandboxLayer(d.info, layerID, rPId, d.layerIdsToPaths(layerChain)); err != nil {
 			return err
 		}
 	} else {
-		if err := hcsshim.CreateLayer(d.info, id, parent); err != nil {
+		if err := hcsshim.CreateLayer(d.info, id, rPId); err != nil {
 			return err
 		}
 	}
@@ -132,7 +140,12 @@ func (d *Driver) dir(id string) string {
 
 // Remove unmounts and removes the dir information
 func (d *Driver) Remove(id string) error {
-	return hcsshim.DestroyLayer(d.info, id)
+	rId, err := d.resolveId(id)
+	if err != nil {
+		return err
+	}
+
+	return hcsshim.DestroyLayer(d.info, rId)
 }
 
 // Get returns the rootfs path for the id. This will mount the dir at it's given path
@@ -141,8 +154,13 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 	var dir string
 	var paths []string
 
+	rId, err := d.resolveId(id)
+	if err != nil {
+		return "", err
+	}
+
 	// Getting the layer paths must be done outside of the lock.
-	layerChain, err := d.getLayerChain(id)
+	layerChain, err := d.getLayerChain(rId)
 	if err != nil {
 		return "", err
 	}
@@ -151,27 +169,27 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 	d.Lock()
 	defer d.Unlock()
 
-	if d.active[id] == 0 {
-		if err := hcsshim.ActivateLayer(d.info, id); err != nil {
+	if d.active[rId] == 0 {
+		if err := hcsshim.ActivateLayer(d.info, rId); err != nil {
 			return "", err
 		}
-		if err := hcsshim.PrepareLayer(d.info, id, paths); err != nil {
-			if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
+		if err := hcsshim.PrepareLayer(d.info, rId, paths); err != nil {
+			if err2 := hcsshim.DeactivateLayer(d.info, rId); err2 != nil {
 				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 			}
 			return "", err
 		}
 	}
 
-	mountPath, err := hcsshim.GetLayerMountPath(d.info, id)
+	mountPath, err := hcsshim.GetLayerMountPath(d.info, rId)
 	if err != nil {
-		if err2 := hcsshim.DeactivateLayer(d.info, id); err2 != nil {
+		if err2 := hcsshim.DeactivateLayer(d.info, rId); err2 != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 		}
 		return "", err
 	}
 
-	d.active[id]++
+	d.active[rId]++
 
 	// If the layer has a mount path, use that. Otherwise, use the
 	// folder path.
@@ -187,19 +205,24 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 func (d *Driver) Put(id string) error {
 	logrus.Debugf("WindowsGraphDriver Put() id %s", id)
 
+	rId, err := d.resolveId(id)
+	if err != nil {
+		return err
+	}
+
 	d.Lock()
 	defer d.Unlock()
 
-	if d.active[id] > 1 {
-		d.active[id]--
-	} else if d.active[id] == 1 {
-		if err := hcsshim.UnprepareLayer(d.info, id); err != nil {
+	if d.active[rId] > 1 {
+		d.active[rId]--
+	} else if d.active[rId] == 1 {
+		if err := hcsshim.UnprepareLayer(d.info, rId); err != nil {
 			return err
 		}
-		if err := hcsshim.DeactivateLayer(d.info, id); err != nil {
+		if err := hcsshim.DeactivateLayer(d.info, rId); err != nil {
 			return err
 		}
-		delete(d.active, id)
+		delete(d.active, rId)
 	}
 
 	return nil
@@ -212,21 +235,26 @@ func (d *Driver) Cleanup() error {
 // Diff produces an archive of the changes between the specified
 // layer and its parent layer which may be "".
 func (d *Driver) Diff(id, parent string) (arch archive.Archive, err error) {
-	layerChain, err := d.getLayerChain(id)
+	rId, err := d.resolveId(id)
 	if err != nil {
 		return
 	}
 
-	if err = hcsshim.UnprepareLayer(d.info, id); err != nil {
+	layerChain, err := d.getLayerChain(rId)
+	if err != nil {
+		return
+	}
+
+	if err = hcsshim.UnprepareLayer(d.info, rId); err != nil {
 		return
 	}
 	defer func() {
-		if err := hcsshim.PrepareLayer(d.info, id, d.layerIdsToPaths(layerChain)); err != nil {
+		if err := hcsshim.PrepareLayer(d.info, rId, d.layerIdsToPaths(layerChain)); err != nil {
 			logrus.Warnf("Failed to re-PrepareLayer %s: %s", id, err)
 		}
 	}()
 
-	return d.exportLayer(id, d.layerIdsToPaths(layerChain))
+	return d.exportLayer(rId, d.layerIdsToPaths(layerChain))
 }
 
 // Changes produces a list of changes between the specified layer
@@ -239,6 +267,10 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // layer with the specified id and parent, returning the size of the
 // new layer in bytes.
 func (d *Driver) ApplyDiff(id, parent string, diff archive.ArchiveReader) (size int64, err error) {
+	rPId, err := d.resolveId(parent)
+	if err != nil {
+		return
+	}
 
 	if d.info.Flavour == diffDriver {
 		start := time.Now().UTC()
@@ -253,11 +285,11 @@ func (d *Driver) ApplyDiff(id, parent string, diff archive.ArchiveReader) (size 
 		return
 	}
 
-	parentChain, err := d.getLayerChain(parent)
+	parentChain, err := d.getLayerChain(rPId)
 	if err != nil {
 		return
 	}
-	layerChain := []string{parent}
+	layerChain := []string{rPId}
 	layerChain = append(layerChain, parentChain...)
 
 	if size, err = d.importLayer(id, diff, d.layerIdsToPaths(layerChain)); err != nil {
@@ -275,7 +307,12 @@ func (d *Driver) ApplyDiff(id, parent string, diff archive.ArchiveReader) (size 
 // and its parent and returns the size in bytes of the changes
 // relative to its base filesystem directory.
 func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
-	changes, err := d.Changes(id, parent)
+	rPId, err := d.resolveId(parent)
+	if err != nil {
+		return
+	}
+
+	changes, err := d.Changes(id, rPId)
 	if err != nil {
 		return
 	}
@@ -413,6 +450,16 @@ func (d *Driver) importLayer(id string, layerData archive.ArchiveReader, parentL
 	}
 
 	return
+}
+
+func (d *Driver) resolveId(id string) (string, error) {
+	content, err := ioutil.ReadFile(filepath.Join(d.dir(id), "layerId"))
+	if os.IsNotExist(err) {
+		return id, nil
+	} else if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
 func (d *Driver) getLayerChain(id string) ([]string, error) {
