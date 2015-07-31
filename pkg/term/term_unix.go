@@ -73,8 +73,7 @@ func (t terminal) DisableEcho(state *State) error {
 	return DisableEcho(t.Fd(), state)
 }
 
-// RestoreTerminal restores the terminal connected to the given file descriptor
-// to a previous state.
+// RestoreTerminal is provided on fd directly until notary is updated to use the Terminal interface
 func RestoreTerminal(fd uintptr, state *State) error {
 	if state == nil {
 		return ErrInvalidState
@@ -85,7 +84,7 @@ func RestoreTerminal(fd uintptr, state *State) error {
 	return nil
 }
 
-// SaveState saves the state of the terminal connected to the given file descriptor.
+// SaveState is provided on fd directly until notary is updated to use the Terminal interface
 func SaveState(fd uintptr) (*State, error) {
 	var oldState State
 	if err := tcget(fd, &oldState.termios); err != 0 {
@@ -95,8 +94,7 @@ func SaveState(fd uintptr) (*State, error) {
 	return &oldState, nil
 }
 
-// DisableEcho applies the specified state to the terminal connected to the file
-// descriptor, with echo disabled.
+// DisableEcho is provided on fd directly until notary is updated to use the Terminal interface
 func DisableEcho(fd uintptr, state *State) error {
 	newState := state.termios
 	newState.Lflag &^= syscall.ECHO

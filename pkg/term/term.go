@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// Terminal provides the ability to set and query properties on a terminal.
 type Terminal interface {
 	IsTerminal() bool
 	GetWinsize() (*Winsize, error)
@@ -16,16 +17,19 @@ type Terminal interface {
 	SetRawTerminal() (*State, error)
 }
 
+// TerminalReader combines Terminal with io.Reader.
 type TerminalReader interface {
 	io.Reader
 	Terminal
 }
 
+// TerminalReadCloser combines Terminal with io.ReadCloser.
 type TerminalReadCloser interface {
 	io.ReadCloser
 	Terminal
 }
 
+// TerminalWriter combines Terimanl with io.Writer.
 type TerminalWriter interface {
 	io.Writer
 	Terminal

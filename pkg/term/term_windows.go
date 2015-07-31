@@ -159,12 +159,12 @@ func (t *windowsTerminal) DisableEcho(state *State) error {
 	return DisableEcho(t.fd, state)
 }
 
-// Provided on fd directly until notary is updated to use the Terminal interface
+// RestoreTerminal is provided on fd directly until notary is updated to use the Terminal interface
 func RestoreTerminal(fd uintptr, state *State) error {
 	return winterm.SetConsoleMode(fd, state.mode)
 }
 
-// Provided on fd directly until notary is updated to use the Terminal interface
+// SaveState is provided on fd directly until notary is updated to use the Terminal interface
 func SaveState(fd uintptr) (*State, error) {
 	mode, e := winterm.GetConsoleMode(fd)
 	if e != nil {
@@ -173,7 +173,7 @@ func SaveState(fd uintptr) (*State, error) {
 	return &State{mode}, nil
 }
 
-// Provided on fd directly until notary is updated to use the Terminal interface
+// DisableEcho is provided on fd directly until notary is updated to use the Terminal interface
 func DisableEcho(fd uintptr, state *State) error {
 	mode := state.mode
 	mode &^= winterm.ENABLE_ECHO_INPUT
