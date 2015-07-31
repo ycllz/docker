@@ -124,7 +124,23 @@ func (d *Driver) Create(id, parent string) error {
 		}
 	}
 
-	if err := d.setLayerChain(layerID, layerChain); err != nil {
+	if _, err := os.Lstat(d.dir(parent)); err == nil {
+		if err := d.setLayerChain(layerID, layerChain); err != nil {
+			if err2 := hcsshim.DestroyLayer(d.info, id); err2 != nil {
+				logrus.Warnf("Failed to DestroyLayer %s: %s", id, err)
+			}
+			return err
+		}
+	} else if os.IsNotExist(err) {
+		// If the parent doesn't exist, this must be a special creation for an image
+		// registered at an alternate location. Use the parent id as the alternate ID.
+		if err := d.setId(id, parent); err != nil {
+			if err2 := hcsshim.DestroyLayer(d.info, id); err2 != nil {
+				logrus.Warnf("Failed to DestroyLayer %s: %s", id, err)
+			}
+			return err
+		}
+	} else {
 		if err2 := hcsshim.DestroyLayer(d.info, id); err2 != nil {
 			logrus.Warnf("Failed to DestroyLayer %s: %s", id, err)
 		}
@@ -460,6 +476,14 @@ func (d *Driver) resolveId(id string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+func (d *Driver) setId(id, altId string) error {
+	err := ioutil.WriteFile(filepath.Join(d.dir(id), "layerId"), []byte(altId), 0600)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *Driver) getLayerChain(id string) ([]string, error) {

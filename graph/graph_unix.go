@@ -73,6 +73,6 @@ func SetupInitLayer(initLayer string) error {
 	return nil
 }
 
-func (graph *Graph) restoreBaseImages() ([]string, error) {
+func (graph *Graph) RestoreBaseImages(ts *TagStore) error {
 	return nil, nil
 }
