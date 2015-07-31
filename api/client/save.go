@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"io"
 	"net/url"
 	"os"
 
@@ -22,7 +23,7 @@ func (cli *DockerCli) CmdSave(args ...string) error {
 	cmd.ParseFlags(args, true)
 
 	var (
-		output = cli.out
+		output io.Writer = cli.out
 		err    error
 	)
 	if *outfile != "" {

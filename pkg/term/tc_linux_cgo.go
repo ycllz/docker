@@ -15,10 +15,10 @@ import "C"
 // other platforms where it is not available or handled differently.
 type Termios syscall.Termios
 
-// MakeRaw put the terminal connected to the given file descriptor into raw
+// makeRaw put the terminal connected to the given file descriptor into raw
 // mode and returns the previous state of the terminal so that it can be
 // restored.
-func MakeRaw(fd uintptr) (*State, error) {
+func makeRaw(fd uintptr) (*State, error) {
 	var oldState State
 	if err := tcget(fd, &oldState.termios); err != 0 {
 		return nil, err

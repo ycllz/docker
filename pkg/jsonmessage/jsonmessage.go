@@ -22,10 +22,10 @@ func (e *JSONError) Error() string {
 }
 
 type JSONProgress struct {
-	terminalFd uintptr
-	Current    int   `json:"current,omitempty"`
-	Total      int   `json:"total,omitempty"`
-	Start      int64 `json:"start,omitempty"`
+	terminal term.Terminal
+	Current  int   `json:"current,omitempty"`
+	Total    int   `json:"total,omitempty"`
+	Start    int64 `json:"start,omitempty"`
 }
 
 func (p *JSONProgress) String() string {
@@ -36,7 +36,7 @@ func (p *JSONProgress) String() string {
 		timeLeftBox string
 	)
 
-	ws, err := term.GetWinsize(p.terminalFd)
+	ws, err := p.terminal.GetWinsize()
 	if err == nil {
 		width = int(ws.Width)
 	}
@@ -124,7 +124,8 @@ func (jm *JSONMessage) Display(out io.Writer, isTerminal bool) error {
 	return nil
 }
 
-func DisplayJSONMessagesStream(in io.Reader, out io.Writer, terminalFd uintptr, isTerminal bool) error {
+func DisplayJSONMessagesStream(in io.Reader, out io.Writer, terminal term.Terminal) error {
+	isTerminal := terminal.IsTerminal()
 	var (
 		dec  = json.NewDecoder(in)
 		ids  = make(map[string]int)
@@ -140,7 +141,7 @@ func DisplayJSONMessagesStream(in io.Reader, out io.Writer, terminalFd uintptr, 
 		}
 
 		if jm.Progress != nil {
-			jm.Progress.terminalFd = terminalFd
+			jm.Progress.terminal = terminal
 		}
 		if jm.ID != "" && (jm.Progress != nil || jm.ProgressMessage != "") {
 			line, ok := ids[jm.ID]

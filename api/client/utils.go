@@ -25,7 +25,6 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/docker/docker/pkg/term"
 	"github.com/docker/docker/registry"
 )
 
@@ -218,7 +217,7 @@ func (cli *DockerCli) streamBody(body io.ReadCloser, contentType string, rawTerm
 	defer body.Close()
 
 	if api.MatchesContentType(contentType, "application/json") {
-		return jsonmessage.DisplayJSONMessagesStream(body, stdout, cli.outFd, cli.isTerminalOut)
+		return jsonmessage.DisplayJSONMessagesStream(body, stdout, cli.out)
 	}
 	if stdout != nil || stderr != nil {
 		// When TTY is ON, use regular copy
@@ -354,7 +353,7 @@ func (cli *DockerCli) getTtySize() (int, int) {
 	if !cli.isTerminalOut {
 		return 0, 0
 	}
-	ws, err := term.GetWinsize(cli.outFd)
+	ws, err := cli.out.GetWinsize()
 	if err != nil {
 		logrus.Debugf("Error getting size: %s", err)
 		if ws == nil {

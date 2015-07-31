@@ -43,10 +43,10 @@ type Termios struct {
 	Ospeed uint32
 }
 
-// MakeRaw put the terminal connected to the given file descriptor into raw
+// makeRaw put the terminal connected to the given file descriptor into raw
 // mode and returns the previous state of the terminal so that it can be
 // restored.
-func MakeRaw(fd uintptr) (*State, error) {
+func makeRaw(fd uintptr) (*State, error) {
 	var oldState State
 	if _, _, err := syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(getTermios), uintptr(unsafe.Pointer(&oldState.termios))); err != 0 {
 		return nil, err

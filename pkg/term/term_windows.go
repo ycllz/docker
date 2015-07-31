@@ -13,42 +13,68 @@ import (
 	"github.com/docker/docker/pkg/term/windows"
 )
 
+type windowsTerminal struct {
+	fd        uintptr
+	isConsole bool
+}
+
+type windowsTerminalReadCloser struct {
+	windowsTerminal
+	io.ReadCloser
+}
+
+type windowsTerminalWriter struct {
+	windowsTerminal
+	io.Writer
+}
+
 // State holds the console mode for the terminal.
 type State struct {
 	mode uint32
 }
 
-// Winsize is used for window size.
-type Winsize struct {
-	Height uint16
-	Width  uint16
-	x      uint16
-	y      uint16
+func makeTerminal(in interface{}) windowsTerminal {
+	fd, isConsole := windows.GetHandleInfo(in)
+	return windowsTerminal{fd, isConsole}
 }
 
-// StdStreams returns the standard streams (stdin, stdout, stedrr).
-func StdStreams() (stdIn io.ReadCloser, stdOut, stdErr io.Writer) {
-	switch {
-	case os.Getenv("ConEmuANSI") == "ON":
-		// The ConEmu shell emulates ANSI well by default.
-		return os.Stdin, os.Stdout, os.Stderr
-	case os.Getenv("MSYSTEM") != "":
-		// MSYS (mingw) does not emulate ANSI well.
-		return windows.ConsoleStreams()
-	default:
-		return windows.ConsoleStreams()
+func makeWriter(w io.Writer) *windowsTerminalWriter {
+	return &windowsTerminalWriter{
+		windowsTerminal: makeTerminal(w),
+		Writer:          w,
 	}
 }
 
-// GetFdInfo returns the file descriptor for an os.File and indicates whether the file represents a terminal.
-func GetFdInfo(in interface{}) (uintptr, bool) {
-	return windows.GetHandleInfo(in)
+func makeReader(r io.ReadCloser) *windowsTerminalReadCloser {
+	return &windowsTerminalReadCloser{
+		windowsTerminal: makeTerminal(r),
+		ReadCloser:      r,
+	}
+}
+
+// StdStreams returns the standard streams (stdin, stdout, stedrr).
+func StdStreams() (stdIn TerminalReadCloser, stdOut, stdErr TerminalWriter) {
+	var (
+		in       io.ReadCloser
+		out, err io.Writer
+	)
+	switch {
+	case os.Getenv("ConEmuANSI") == "ON":
+		// The ConEmu shell emulates ANSI well by default.
+		in, out, err = os.Stdin, os.Stdout, os.Stderr
+	case os.Getenv("MSYSTEM") != "":
+		// MSYS (mingw) does not emulate ANSI well.
+		in, out, err = windows.ConsoleStreams()
+	default:
+		in, out, err = windows.ConsoleStreams()
+	}
+	return makeReader(in), makeWriter(out), makeWriter(err)
 }
 
 // GetWinsize returns the window size based on the specified file descriptor.
-func GetWinsize(fd uintptr) (*Winsize, error) {
+func (t *windowsTerminal) GetWinsize() (*Winsize, error) {
 
-	info, err := winterm.GetConsoleScreenBufferInfo(fd)
+	info, err := winterm.GetConsoleScreenBufferInfo(t.fd)
 	if err != nil {
 		return nil, err
 	}
@@ -66,10 +92,10 @@ func GetWinsize(fd uintptr) (*Winsize, error) {
 }
 
 // SetWinsize tries to set the specified window size for the specified file descriptor.
-func SetWinsize(fd uintptr, ws *Winsize) error {
+func (t *windowsTerminal) SetWinsize(ws *Winsize) error {
 
 	// Ensure the requested dimensions are no larger than the maximum window size
-	info, err := winterm.GetConsoleScreenBufferInfo(fd)
+	info, err := winterm.GetConsoleScreenBufferInfo(t.fd)
 	if err != nil {
 		return err
 	}
@@ -108,21 +134,37 @@ func SetWinsize(fd uintptr, ws *Winsize) error {
 	}
 	logrus.Debugf("[windows] SetWinsize: Requested((%v,%v)) Actual(%v)", ws.Width, ws.Height, rect)
 
-	return winterm.SetConsoleWindowInfo(fd, true, rect)
+	return winterm.SetConsoleWindowInfo(t.fd, true, rect)
 }
 
 // IsTerminal returns true if the given file descriptor is a terminal.
-func IsTerminal(fd uintptr) bool {
-	return windows.IsConsole(fd)
+func (t *windowsTerminal) IsTerminal() bool {
+	return t.isConsole
 }
 
-// RestoreTerminal restores the terminal connected to the given file descriptor
+// RestoreState restores the terminal connected to the given file descriptor
 // to a previous state.
+func (t *windowsTerminal) RestoreTerminal(state *State) error {
+	return RestoreTerminal(t.fd, state)
+}
+
+// SaveState saves the state of the terminal connected to the given file descriptor.
+func (t *windowsTerminal) SaveState() (*State, error) {
+	return SaveState(t.fd)
+}
+
+// DisableEcho disables echo for the terminal connected to the given file descriptor.
+// -- See https://msdn.microsoft.com/en-us/library/windows/desktop/ms683462(v=vs.85).aspx
+func (t *windowsTerminal) DisableEcho(state *State) error {
+	return DisableEcho(t.fd, state)
+}
+
+// Provided on fd directly until notary is updated to use the Terminal interface
 func RestoreTerminal(fd uintptr, state *State) error {
 	return winterm.SetConsoleMode(fd, state.mode)
 }
 
-// SaveState saves the state of the terminal connected to the given file descriptor.
+// Provided on fd directly until notary is updated to use the Terminal interface
 func SaveState(fd uintptr) (*State, error) {
 	mode, e := winterm.GetConsoleMode(fd)
 	if e != nil {
@@ -131,8 +173,7 @@ func SaveState(fd uintptr) (*State, error) {
 	return &State{mode}, nil
 }
 
-// DisableEcho disables echo for the terminal connected to the given file descriptor.
-// -- See https://msdn.microsoft.com/en-us/library/windows/desktop/ms683462(v=vs.85).aspx
+// Provided on fd directly until notary is updated to use the Terminal interface
 func DisableEcho(fd uintptr, state *State) error {
 	mode := state.mode
 	mode &^= winterm.ENABLE_ECHO_INPUT
@@ -150,21 +191,21 @@ func DisableEcho(fd uintptr, state *State) error {
 
 // SetRawTerminal puts the terminal connected to the given file descriptor into raw
 // mode and returns the previous state.
-func SetRawTerminal(fd uintptr) (*State, error) {
-	state, err := MakeRaw(fd)
+func (t *windowsTerminal) SetRawTerminal() (*State, error) {
+	state, err := t.makeRaw()
 	if err != nil {
 		return nil, err
 	}
 
 	// Register an interrupt handler to catch and restore prior state
-	restoreAtInterrupt(fd, state)
+	restoreAtInterrupt(t.fd, state)
 	return state, err
 }
 
 // MakeRaw puts the terminal (Windows Console) connected to the given file descriptor into raw
 // mode and returns the previous state of the terminal so that it can be restored.
-func MakeRaw(fd uintptr) (*State, error) {
-	state, err := SaveState(fd)
+func (t *windowsTerminal) makeRaw() (*State, error) {
+	state, err := t.SaveState()
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +227,7 @@ func MakeRaw(fd uintptr) (*State, error) {
 	mode |= winterm.ENABLE_INSERT_MODE
 	mode |= winterm.ENABLE_QUICK_EDIT_MODE
 
-	err = winterm.SetConsoleMode(fd, mode)
+	err = winterm.SetConsoleMode(t.fd, mode)
 	if err != nil {
 		return nil, err
 	}

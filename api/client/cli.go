@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,11 +33,11 @@ type DockerCli struct {
 	// configFile has the client configuration file
 	configFile *cliconfig.ConfigFile
 	// in holds the input stream and closer (io.ReadCloser) for the client.
-	in io.ReadCloser
+	in term.TerminalReadCloser
 	// out holds the output stream (io.Writer) for the client.
-	out io.Writer
+	out term.TerminalWriter
 	// err holds the error stream (io.Writer) for the client.
-	err io.Writer
+	err term.TerminalWriter
 	// keyFile holds the key file as a string.
 	keyFile string
 	// tlsConfig holds the TLS configuration for the client, and will
@@ -46,10 +45,6 @@ type DockerCli struct {
 	tlsConfig *tls.Config
 	// scheme holds the scheme of the client i.e. https.
 	scheme string
-	// inFd holds the file descriptor of the client's STDIN (if valid).
-	inFd uintptr
-	// outFd holds file descriptor of the client's STDOUT (if valid).
-	outFd uintptr
 	// isTerminalIn indicates whether the client's STDIN is a TTY
 	isTerminalIn bool
 	// isTerminalOut dindicates whether the client's STDOUT is a TTY
@@ -89,7 +84,7 @@ func (cli *DockerCli) PsFormat() string {
 // The key file, protocol (i.e. unix) and address are passed in as strings, along with the tls.Config. If the tls.Config
 // is set the client scheme will be set to https.
 // The client will be given a 32-second timeout (see https://github.com/docker/docker/pull/8035).
-func NewDockerCli(in io.ReadCloser, out, err io.Writer, clientFlags *cli.ClientFlags) *DockerCli {
+func NewDockerCli(in term.TerminalReadCloser, out, err term.TerminalWriter, clientFlags *cli.ClientFlags) *DockerCli {
 	cli := &DockerCli{
 		in:      in,
 		out:     out,
@@ -142,10 +137,10 @@ func NewDockerCli(in io.ReadCloser, out, err io.Writer, clientFlags *cli.ClientF
 		}
 
 		if cli.in != nil {
-			cli.inFd, cli.isTerminalIn = term.GetFdInfo(cli.in)
+			cli.isTerminalIn = cli.in.IsTerminal()
 		}
 		if cli.out != nil {
-			cli.outFd, cli.isTerminalOut = term.GetFdInfo(cli.out)
+			cli.isTerminalOut = cli.out.IsTerminal()
 		}
 
 		// The transport is created here for reuse during the client session.

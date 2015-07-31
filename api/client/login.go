@@ -12,7 +12,6 @@ import (
 	Cli "github.com/docker/docker/cli"
 	"github.com/docker/docker/cliconfig"
 	flag "github.com/docker/docker/pkg/mflag"
-	"github.com/docker/docker/pkg/term"
 	"github.com/docker/docker/registry"
 )
 
@@ -73,17 +72,17 @@ func (cli *DockerCli) CmdLogin(args ...string) error {
 	// the password or email from the config file, so prompt them
 	if username != authconfig.Username {
 		if password == "" {
-			oldState, err := term.SaveState(cli.inFd)
+			oldState, err := cli.in.SaveState()
 			if err != nil {
 				return err
 			}
 			fmt.Fprintf(cli.out, "Password: ")
-			term.DisableEcho(cli.inFd, oldState)
+			cli.in.DisableEcho(oldState)
 
 			password = readInput(cli.in, cli.out)
 			fmt.Fprint(cli.out, "\n")
 
-			term.RestoreTerminal(cli.inFd, oldState)
+			cli.in.RestoreTerminal(oldState)
 			if password == "" {
 				return fmt.Errorf("Error : Password Required")
 			}
