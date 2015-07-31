@@ -261,14 +261,34 @@ func (d *Driver) Diff(id, parent string) (arch archive.Archive, err error) {
 		return
 	}
 
-	if err = hcsshim.UnprepareLayer(d.info, rId); err != nil {
-		return
-	}
-	defer func() {
-		if err := hcsshim.PrepareLayer(d.info, rId, d.layerIdsToPaths(layerChain)); err != nil {
-			logrus.Warnf("Failed to re-PrepareLayer %s: %s", id, err)
+	d.Lock()
+
+	// To support export, a layer must be activated but not prepared.
+	if d.info.Flavour == filterDriver {
+		if d.active[rId] == 0 {
+			if err = hcsshim.ActivateLayer(d.info, rId); err != nil {
+				d.Unlock()
+				return
+			}
+			defer func() {
+				if err := hcsshim.DeactivateLayer(d.info, rId); err != nil {
+					logrus.Warnf("Failed to Deactivate %s: %s", rId, err)
+				}
+			}()
+		} else {
+			if err = hcsshim.UnprepareLayer(d.info, rId); err != nil {
+				d.Unlock()
+				return
+			}
+			defer func() {
+				if err := hcsshim.PrepareLayer(d.info, rId, d.layerIdsToPaths(layerChain)); err != nil {
+					logrus.Warnf("Failed to re-PrepareLayer %s: %s", id, err)
+				}
+			}()
 		}
-	}()
+	}
+
+	d.Unlock()
 
 	return d.exportLayer(rId, d.layerIdsToPaths(layerChain))
 }
@@ -340,25 +360,6 @@ func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
 	defer d.Put(id)
 
 	return archive.ChangesSize(layerFs, changes), nil
-}
-
-func (d *Driver) copyDiff(sourceId, id string, parentLayerPaths []string) error {
-	d.Lock()
-	defer d.Unlock()
-
-	if d.info.Flavour == filterDriver && d.active[sourceId] == 0 {
-		if err := hcsshim.ActivateLayer(d.info, sourceId); err != nil {
-			return err
-		}
-		defer func() {
-			err := hcsshim.DeactivateLayer(d.info, sourceId)
-			if err != nil {
-				logrus.Warnf("Failed to Deactivate %s: %s", sourceId, err)
-			}
-		}()
-	}
-
-	return hcsshim.CopyLayer(d.info, sourceId, id, parentLayerPaths)
 }
 
 func (d *Driver) layerIdsToPaths(ids []string) []string {
