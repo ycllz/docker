@@ -121,6 +121,11 @@ func (p *v2Pusher) pushV2Tag(tag string) error {
 			break
 		}
 
+		if layer.Parent == "" {
+			// Skip base layer.
+			break
+		}
+
 		logrus.Debugf("Pushing layer: %s", layer.ID)
 
 		if layer.Config != nil && metadata.Image != layer.ID {
