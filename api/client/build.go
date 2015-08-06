@@ -317,9 +317,17 @@ func getDockerfileRelPath(givenContextDir, givenDockerfile string) (absContextDi
 
 	// The context dir might be a symbolic link, so follow it to the actual
 	// target directory.
-	absContextDir, err = filepath.EvalSymlinks(absContextDir)
-	if err != nil {
-		return "", "", fmt.Errorf("unable to evaluate symlinks in context path: %v", err)
+	//
+	// FIXME. This is a hack which needs an issue against golang. On Windows,
+	// EvalSymlinks does not work on a UNC file path (ie one starting \\).
+	// All this means is that on Windows and on UNC paths, links will not
+	// be followed.
+	if runtime.GOOS != "windows" ||
+		(runtime.GOOS == "windows" && absContextDir[:2] != `\\`) {
+		absContextDir, err = filepath.EvalSymlinks(absContextDir)
+		if err != nil {
+			return "", "", fmt.Errorf("unable to evaluate symlinks in context path: %v", err)
+		}
 	}
 
 	stat, err := os.Lstat(absContextDir)
@@ -354,9 +362,17 @@ func getDockerfileRelPath(givenContextDir, givenDockerfile string) (absContextDi
 	}
 
 	// Evaluate symlinks in the path to the Dockerfile too.
-	absDockerfile, err = filepath.EvalSymlinks(absDockerfile)
-	if err != nil {
-		return "", "", fmt.Errorf("unable to evaluate symlinks in Dockerfile path: %v", err)
+	//
+	// FIXME. This is a hack which needs an issue against golang. On Windows,
+	// EvalSymlinks does not work on a UNC file path (ie one starting \\).
+	// All this means is that on Windows and on UNC paths, links will not
+	// be followed.
+	if runtime.GOOS != "windows" ||
+		(runtime.GOOS == "windows" && absContextDir[:2] != `\\`) {
+		absDockerfile, err = filepath.EvalSymlinks(absDockerfile)
+		if err != nil {
+			return "", "", fmt.Errorf("unable to evaluate symlinks in Dockerfile path: %v", err)
+		}
 	}
 
 	if _, err := os.Lstat(absDockerfile); err != nil {
