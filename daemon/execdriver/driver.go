@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/docker/docker/pkg/nat"
 	// TODO Windows: Factor out ulimit
 	"github.com/docker/docker/pkg/ulimit"
 	"github.com/opencontainers/runc/libcontainer"
@@ -132,16 +133,28 @@ type UTS struct {
 
 // NetworkInterface contains all network configs for a driver
 type NetworkInterface struct {
+
+	// The following fields are common across all platforms
+
+	MacAddress string `json:"mac"`
+	Bridge     string `json:"bridge"`
+	IPAddress  string `json:"ip"`
+
+	// The following fields are not used on Windows
+
 	Gateway              string `json:"gateway"`
-	IPAddress            string `json:"ip"`
 	IPPrefixLen          int    `json:"ip_prefix_len"`
-	MacAddress           string `json:"mac"`
-	Bridge               string `json:"bridge"`
 	GlobalIPv6Address    string `json:"global_ipv6"`
 	LinkLocalIPv6Address string `json:"link_local_ipv6"`
 	GlobalIPv6PrefixLen  int    `json:"global_ipv6_prefix_len"`
 	IPv6Gateway          string `json:"ipv6_gateway"`
 	HairpinMode          bool   `json:"hairpin_mode"`
+
+	// The following fields are only used on Windows.
+
+	// PortBindings is the port mapping between the exposed port in the
+	// container and the port on the host.
+	PortBindings nat.PortMap `json:"port_bindings"`
 }
 
 // Resources contains all resource configs for a driver.
