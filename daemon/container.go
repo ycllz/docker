@@ -22,9 +22,7 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/broadcastwriter"
-	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/nat"
 	"github.com/docker/docker/pkg/promise"
 	"github.com/docker/docker/pkg/symlink"
@@ -79,6 +77,11 @@ type CommonContainer struct {
 	RestartCount           int
 	HasBeenStartedBefore   bool
 	HasBeenManuallyStopped bool // used for unless-stopped restart policy
+
+	MountPoints     map[string]*mountPoint
+	Volumes   map[string]string // Deprecated since 1.7, kept for backwards compatibility
+	VolumesRW map[string]bool   // Deprecated since 1.7, kept for backwards compatibility
+
 	hostConfig             *runconfig.HostConfig
 	command                *execdriver.Command
 	monitor                *containerMonitor
@@ -1080,40 +1083,6 @@ func (container *Container) shouldRestart() bool {
 	return container.hostConfig.RestartPolicy.Name == "always" ||
 		(container.hostConfig.RestartPolicy.Name == "unless-stopped" && !container.HasBeenManuallyStopped) ||
 		(container.hostConfig.RestartPolicy.Name == "on-failure" && container.ExitCode != 0)
-}
-
-func (container *Container) mountVolumes() error {
-	mounts, err := container.setupMounts()
-	if err != nil {
-		return err
-	}
-
-	for _, m := range mounts {
-		dest, err := container.GetResourcePath(m.Destination)
-		if err != nil {
-			return err
-		}
-
-		var stat os.FileInfo
-		stat, err = os.Stat(m.Source)
-		if err != nil {
-			return err
-		}
-		if err = fileutils.CreateIfNotExists(dest, stat.IsDir()); err != nil {
-			return err
-		}
-
-		opts := "rbind,ro"
-		if m.Writable {
-			opts = "rbind,rw"
-		}
-
-		if err := mount.Mount(m.Source, dest, "bind", opts); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (container *Container) copyImagePathContent(v volume.Volume, destination string) error {

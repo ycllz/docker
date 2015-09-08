@@ -59,6 +59,11 @@ type device struct {
 	Settings   interface{}
 }
 
+type sharedDirectory struct {
+    Name string
+    Path string
+}
+
 type containerInit struct {
 	SystemType              string   // HCS requires this to be hard-coded to "Container"
 	Name                    string   // Name of the container. We use the docker ID.
@@ -69,6 +74,7 @@ type containerInit struct {
 	IgnoreFlushesDuringBoot bool     // Optimisation hint for container startup in Windows
 	LayerFolderPath         string   // Where the layer folders are located
 	Layers                  []layer  // List of storage layers
+    SharedDirectories       []sharedDirectory // Shared directories (similar to bind mounts)
 }
 
 // defaultOwner is a tag passed to HCS to allow it to differentiate between
@@ -100,17 +106,24 @@ func (d *Driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		LayerFolderPath:         c.LayerFolder,
 	}
 
-	for i := 0; i < len(c.LayerPaths); i++ {
-		_, filename := filepath.Split(c.LayerPaths[i])
+	for _, layerPath := range c.LayerPaths {
+		_, filename := filepath.Split(layerPath)
 		g, err := hcsshim.NameToGuid(filename)
 		if err != nil {
 			return execdriver.ExitStatus{ExitCode: -1}, err
 		}
 		cu.Layers = append(cu.Layers, layer{
 			ID:   g.ToString(),
-			Path: c.LayerPaths[i],
+			Path: layerPath,
 		})
 	}
+    
+    for _, mount := range c.Mounts {
+        cu.SharedDirectories = append(cu.SharedDirectories, sharedDirectory{
+            Name: mount.Destination,
+            Path: mount.Source,
+        })
+    }
 
 	// TODO Windows. At some point, when there is CLI on docker run to
 	// enable the IP Address of the container to be passed into docker run,

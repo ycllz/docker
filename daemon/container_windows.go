@@ -150,6 +150,10 @@ func (container *Container) updateNetwork() error {
 func (container *Container) releaseNetwork() {
 }
 
+func (container *Container) mountVolumes() error {
+    return nil
+}
+
 func (container *Container) unmountVolumes(forceSyscall bool) error {
 	return nil
 }

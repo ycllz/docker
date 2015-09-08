@@ -50,11 +50,7 @@ type Container struct {
 	AppArmorProfile string
 	HostnamePath    string
 	HostsPath       string
-	MountPoints     map[string]*mountPoint
 	ResolvConfPath  string
-
-	Volumes   map[string]string // Deprecated since 1.7, kept for backwards compatibility
-	VolumesRW map[string]bool   // Deprecated since 1.7, kept for backwards compatibility
 }
 
 func killProcessDirectly(container *Container) error {
@@ -1072,6 +1068,40 @@ func (container *Container) releaseNetwork() {
 			logrus.Errorf("deleting endpoint failed: %v", err)
 		}
 	}
+}
+
+func (container *Container) mountVolumes() error {
+	mounts, err := container.setupMounts()
+	if err != nil {
+		return err
+	}
+
+	for _, m := range mounts {
+		dest, err := container.GetResourcePath(m.Destination)
+		if err != nil {
+			return err
+		}
+
+		var stat os.FileInfo
+		stat, err = os.Stat(m.Source)
+		if err != nil {
+			return err
+		}
+		if err = fileutils.CreateIfNotExists(dest, stat.IsDir()); err != nil {
+			return err
+		}
+
+		opts := "rbind,ro"
+		if m.Writable {
+			opts = "rbind,rw"
+		}
+
+		if err := mount.Mount(m.Source, dest, "bind", opts); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (container *Container) unmountVolumes(forceSyscall bool) error {
