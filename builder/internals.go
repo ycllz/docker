@@ -231,7 +231,13 @@ func (b *builder) runContextCommand(args []string, allowRemote bool, allowDecomp
 		return nil
 	}
 
-	ccr, err := b.Daemon.ContainerCreate("", b.Config, nil, true)
+	ccr, err := b.Daemon.ContainerCreate(&daemon.ContainerCreate{
+		Name:            "",
+		Config:          b.Config,
+		HostConfig:      nil,
+		AdjustCPUShares: true,
+		FromBuilder:     true,
+	})
 	if err != nil {
 		return err
 	}
@@ -620,7 +626,13 @@ func (b *builder) create() (*daemon.Container, error) {
 	config := *b.Config
 
 	// Create the container
-	ccr, err := b.Daemon.ContainerCreate("", b.Config, hostConfig, true)
+	ccr, err := b.Daemon.ContainerCreate(&daemon.ContainerCreate{
+		Name:            "",
+		Config:          b.Config,
+		HostConfig:      hostConfig,
+		AdjustCPUShares: true,
+		FromBuilder:     true,
+	})
 	if err != nil {
 		return nil, err
 	}

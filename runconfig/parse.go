@@ -40,7 +40,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	var (
 		// FIXME: use utils.ListOpts for attach and volumes?
 		flAttach  = opts.NewListOpts(opts.ValidateAttach)
-		flVolumes = opts.NewListOpts(opts.ValidatePath)
+		flVolumes = opts.NewListOpts(nil)
 		flLinks   = opts.NewListOpts(opts.ValidateLink)
 		flEnv     = opts.NewListOpts(opts.ValidateEnv)
 		flLabels  = opts.NewListOpts(opts.ValidateEnv)
@@ -194,22 +194,6 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		return nil, nil, cmd, fmt.Errorf("Invalid value: %d. Valid memory swappiness range is 0-100", swappiness)
 	}
 
-	var binds []string
-	// add any bind targets to the list of container volumes
-	for bind := range flVolumes.GetMap() {
-		if arr := strings.Split(bind, ":"); len(arr) > 1 {
-			if arr[1] == "/" {
-				return nil, nil, cmd, fmt.Errorf("Invalid bind mount: destination can't be '/'")
-			}
-			// after creating the bind mount we want to delete it from the flVolumes values because
-			// we do not want bind mounts being committed to image configs
-			binds = append(binds, bind)
-			flVolumes.Delete(bind)
-		} else if bind == "/" {
-			return nil, nil, cmd, fmt.Errorf("Invalid volume: path can't be '/'")
-		}
-	}
-
 	var (
 		parsedArgs = cmd.Args()
 		runCmd     *stringutils.StrSlice
@@ -338,7 +322,14 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	}
 
 	hostConfig := &HostConfig{
-		Binds:             binds,
+		// The CLI would have moved any bind mounts (one in which a host directory
+		// is specified from flVolumes (which ends up in config.Volumes) into
+		// HostConfig.Binds. However, with cross-platform support, it it not
+		// possible to uniquely parse the mount spec as it depends on the platform
+		// of the daemon which is not known at this point. Therefore, we defer
+		// this until the Config/HostConfig is extracted by the daemon and always
+		// pass in an empty HostConfig.Binds.
+		Binds:             nil,
 		ContainerIDFile:   *flContainerIDFile,
 		LxcConf:           lxcConf,
 		Memory:            flMemory,
