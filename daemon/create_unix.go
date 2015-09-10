@@ -5,6 +5,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/image"
@@ -15,10 +16,25 @@ import (
 )
 
 // createContainerPlatformSpecificSettings performs platform specific container create functionality
-func createContainerPlatformSpecificSettings(container *Container, config *runconfig.Config, hostConfig *runconfig.HostConfig, img *image.Image) error {
+func createContainerPlatformSpecificSettings(container *Container, config *runconfig.Config, hostConfig *runconfig.HostConfig, img *image.Image, fromBuilder bool) error {
+	var name, destination string
+
 	for spec := range config.Volumes {
-		name := stringid.GenerateNonCryptoID()
-		destination := filepath.Clean(spec)
+		if fromBuilder {
+			// GH16650 and GH16433: Named volumes must be passed in as a bind
+			name = stringid.GenerateNonCryptoID()
+			destination = filepath.Clean(spec)
+		} else {
+			// So through the create API call.
+			var parts = strings.Split(spec, ":")
+			switch len(parts) {
+			case 2:
+				name, destination = parts[0], filepath.Clean(parts[1])
+			default:
+				name = stringid.GenerateNonCryptoID()
+				destination = filepath.Clean(parts[0])
+			}
+		}
 
 		// Skip volumes for which we already have something mounted on that
 		// destination because of a --volume-from.

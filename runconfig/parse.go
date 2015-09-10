@@ -40,7 +40,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	var (
 		// FIXME: use utils.ListOpts for attach and volumes?
 		flAttach  = opts.NewListOpts(opts.ValidateAttach)
-		flVolumes = opts.NewListOpts(opts.ValidatePath)
+		flVolumes = opts.NewListOpts(nil)
 		flLinks   = opts.NewListOpts(opts.ValidateLink)
 		flEnv     = opts.NewListOpts(opts.ValidateEnv)
 		flLabels  = opts.NewListOpts(opts.ValidateEnv)
@@ -194,22 +194,6 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		return nil, nil, cmd, fmt.Errorf("Invalid value: %d. Valid memory swappiness range is 0-100", swappiness)
 	}
 
-	var binds []string
-	// add any bind targets to the list of container volumes
-	for bind := range flVolumes.GetMap() {
-		if arr := strings.Split(bind, ":"); len(arr) > 1 {
-			if arr[1] == "/" {
-				return nil, nil, cmd, fmt.Errorf("Invalid bind mount: destination can't be '/'")
-			}
-			// after creating the bind mount we want to delete it from the flVolumes values because
-			// we do not want bind mounts being committed to image configs
-			binds = append(binds, bind)
-			flVolumes.Delete(bind)
-		} else if bind == "/" {
-			return nil, nil, cmd, fmt.Errorf("Invalid volume: path can't be '/'")
-		}
-	}
-
 	var (
 		parsedArgs = cmd.Args()
 		runCmd     *stringutils.StrSlice
@@ -315,6 +299,26 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		return nil, nil, cmd, err
 	}
 
+	// The CLI (pre Windows support) would have moved any bind mounts
+	// (ie those in which a host directory is specified, or more specifically
+	// at least, anything with a colon) from flVolumes into Binds.
+	//
+	// However, as it is not possible to do parsing on the client side,
+	// as we don't know what the daemon platform is, and hence colons can't
+	// be reliably used to split the spec deterministically, we put
+	// everything from the client into binds and nothing into volumes.
+	//
+	// Unfortunately also, we need to keep REST API compatibility where
+	// volumes which look like a bind CAN be passed in volumes. For example
+	// "Volumes" : {"/foo:/bar" {} } where "/foo:/bar" is actually a
+	// container path.
+	//
+	// So the solution to this is from the CLI, use the backwards-compatible
+	// CLI field (BCCLIVolumes) instead of Volumes. This allows the daemon
+	// side to accurately perform the same processing that would have occurred
+	// on the client (in the case of Linux). For Windows, this is moot as
+	// a container path cannot include a colon in it, so it will be parsed
+	// deterministically as a bind mount (assuming it is valid, that is).
 	config := &Config{
 		Hostname:        hostname,
 		Domainname:      domainname,
@@ -329,7 +333,8 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		Env:             envVariables,
 		Cmd:             runCmd,
 		Image:           image,
-		Volumes:         flVolumes.GetMap(),
+		Volumes:         nil,
+		BCCLIVolumes:    flVolumes.GetMap(),
 		MacAddress:      *flMacAddress,
 		Entrypoint:      entrypoint,
 		WorkingDir:      *flWorkingDir,
@@ -338,7 +343,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	}
 
 	hostConfig := &HostConfig{
-		Binds:             binds,
+		Binds:             nil,
 		ContainerIDFile:   *flContainerIDFile,
 		LxcConf:           lxcConf,
 		Memory:            flMemory,

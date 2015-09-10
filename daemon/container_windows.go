@@ -7,6 +7,7 @@ import (
 
 	"github.com/docker/docker/daemon/execdriver"
 	derr "github.com/docker/docker/errors"
+	"github.com/docker/docker/volume"
 )
 
 // DefaultPathEnv is deliberately empty on Windows as the default path will be set by
@@ -157,18 +158,11 @@ func (container *Container) updateNetwork() error {
 func (container *Container) releaseNetwork() {
 }
 
-func (container *Container) unmountVolumes(forceSyscall bool) error {
-	return nil
-}
-
-// prepareMountPoints is a no-op on Windows
-func (container *Container) prepareMountPoints() error {
-	return nil
-}
-
-// removeMountPoints is a no-op on Windows.
-func (container *Container) removeMountPoints(_ bool) error {
-	return nil
+// appendNetworkMounts appends any network mounts to the array of mount points passed in.
+// Windows does not support network mounts (not to be confused with SMB network mounts), so
+// this is a no-op.
+func appendNetworkMounts(container *Container, volumeMounts []volume.MountPoint) ([]volume.MountPoint, error) {
+	return volumeMounts, nil
 }
 
 func (container *Container) setupIpcDirs() error {

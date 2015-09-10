@@ -1,5 +1,15 @@
 package volume
 
+import (
+	"os"
+	"runtime"
+	"strings"
+
+	"github.com/Sirupsen/logrus"
+	derr "github.com/docker/docker/errors"
+	"github.com/docker/docker/pkg/system"
+)
+
 // DefaultDriverName is the driver name used for the driver
 // implemented in the local package.
 const DefaultDriverName string = "local"
@@ -29,33 +39,78 @@ type Volume interface {
 	Unmount() error
 }
 
-// read-write modes
-var rwModes = map[string]bool{
-	"rw":   true,
-	"rw,Z": true,
-	"rw,z": true,
-	"z,rw": true,
-	"Z,rw": true,
-	"Z":    true,
-	"z":    true,
+// MountPoint is the intersection point between a volume and a container. It
+// specifies which volume is to be used and where inside a container it should
+// be mounted.
+type MountPoint struct {
+	Source      string // Container host directory
+	Destination string // Inside the container
+	RW          bool   // True if writable
+	Name        string // Name set by user
+	Driver      string // Volume driver to use
+	Volume      Volume `json:"-"`
+
+	// Note Mode is not used on Windows
+	Mode string `json:"Relabel"` // Originally field was `Relabel`"
 }
 
-// read-only modes
-var roModes = map[string]bool{
-	"ro":   true,
-	"ro,Z": true,
-	"ro,z": true,
-	"z,ro": true,
-	"Z,ro": true,
+// Setup sets up a mount point by either mounting the volume if it is
+// configured, or creating the source directory if supplied.
+func (m *MountPoint) Setup() (string, error) {
+	if m.Volume != nil {
+		return m.Volume.Mount()
+	}
+	if len(m.Source) > 0 {
+		if _, err := os.Stat(m.Source); err != nil {
+			if !os.IsNotExist(err) {
+				return "", err
+			}
+			if runtime.GOOS != "windows" { // Windows does not have deprecation issues here
+				logrus.Warnf("Auto-creating non-existant volume host path %s, this is deprecated and will be removed soon", m.Source)
+				if err := system.MkdirAll(m.Source, 0755); err != nil {
+					return "", err
+				}
+			}
+		}
+		return m.Source, nil
+	}
+	return "", derr.ErrorCodeMountSetup
+}
+
+// Path returns the path of a volume in a mount point.
+func (m *MountPoint) Path() string {
+	if m.Volume != nil {
+		return m.Volume.Path()
+	}
+	return m.Source
 }
 
 // ValidMountMode will make sure the mount mode is valid.
 // returns if it's a valid mount mode or not.
 func ValidMountMode(mode string) bool {
-	return roModes[mode] || rwModes[mode]
+	return roModes[strings.ToLower(mode)] || rwModes[strings.ToLower(mode)]
 }
 
 // ReadWrite tells you if a mode string is a valid read-write mode or not.
 func ReadWrite(mode string) bool {
-	return rwModes[mode]
+	return rwModes[strings.ToLower(mode)]
+}
+
+// ParseVolumesFrom ensure that the supplied volumes-from is valid.
+func ParseVolumesFrom(spec string) (string, string, error) {
+	if len(spec) == 0 {
+		return "", "", derr.ErrorCodeVolumeFromBlank.WithArgs(spec)
+	}
+
+	specParts := strings.SplitN(spec, ":", 2)
+	id := specParts[0]
+	mode := "rw"
+
+	if len(specParts) == 2 {
+		mode = specParts[1]
+		if !ValidMountMode(mode) {
+			return "", "", derr.ErrorCodeVolumeMode.WithArgs(mode)
+		}
+	}
+	return id, mode, nil
 }
