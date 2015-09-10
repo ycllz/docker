@@ -164,15 +164,6 @@ type ResourceStats struct {
 	SystemUsage uint64    `json:"system_usage"`
 }
 
-// Mount contains information for a mount operation.
-type Mount struct {
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
-	Writable    bool   `json:"writable"`
-	Private     bool   `json:"private"`
-	Slave       bool   `json:"slave"`
-}
-
 // ProcessConfig describes a process that will be run inside a container.
 type ProcessConfig struct {
 	exec.Cmd `json:"-"`
