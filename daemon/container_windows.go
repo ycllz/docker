@@ -127,6 +127,7 @@ func populateCommand(c *Container, env []string) error {
 		FirstStart:     !c.HasBeenStartedBefore,
 		LayerFolder:    layerFolder,
 		LayerPaths:     layerPaths,
+		Xenon:          c.hostConfig.Xenon,
 	}
 
 	return nil

@@ -69,6 +69,8 @@ type containerInit struct {
 	IgnoreFlushesDuringBoot bool     // Optimisation hint for container startup in Windows
 	LayerFolderPath         string   // Where the layer folders are located
 	Layers                  []layer  // List of storage layers
+	SandboxPath             string   // Location of unmounted sandbox
+	HvPartition             bool     // Is it a Hyper-V Container?
 }
 
 // defaultOwner is a tag passed to HCS to allow it to differentiate between
@@ -98,6 +100,14 @@ func (d *Driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, hooks execd
 		VolumePath:              c.Rootfs,
 		IgnoreFlushesDuringBoot: c.FirstStart,
 		LayerFolderPath:         c.LayerFolder,
+		HvPartition:             c.Xenon,
+	}
+
+	if c.Xenon {
+		cu.SandboxPath = filepath.Dir(c.LayerFolder)
+	} else {
+		cu.VolumePath = c.Rootfs
+		cu.LayerFolderPath = c.LayerFolder
 	}
 
 	for i := 0; i < len(c.LayerPaths); i++ {

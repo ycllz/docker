@@ -265,8 +265,10 @@ func (container *Container) Start() (err error) {
 		}
 	}()
 
-	if err := container.Mount(); err != nil {
-		return err
+	if !container.hostConfig.Xenon {
+		if err := container.Mount(); err != nil {
+			return err
+		}
 	}
 
 	// Make sure NetworkMode has an acceptable value. We do this to ensure
@@ -330,8 +332,10 @@ func (container *Container) isNetworkAllocated() bool {
 func (container *Container) cleanup() {
 	container.releaseNetwork()
 
-	if err := container.Unmount(); err != nil {
-		logrus.Errorf("%v: Failed to umount filesystem: %v", container.ID, err)
+	if !container.hostConfig.Xenon {
+		if err := container.Unmount(); err != nil {
+			logrus.Errorf("%v: Failed to umount filesystem: %v", container.ID, err)
+		}
 	}
 
 	for _, eConfig := range container.execCommands.s {

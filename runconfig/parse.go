@@ -96,6 +96,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		flCgroupParent    = cmd.String([]string{"-cgroup-parent"}, "", "Optional parent cgroup for the container")
 		flVolumeDriver    = cmd.String([]string{"-volume-driver"}, "", "Optional volume driver for the container")
 		flStopSignal      = cmd.String([]string{"-stop-signal"}, signal.DefaultStopSignal, fmt.Sprintf("Signal to stop a container, %v by default", signal.DefaultStopSignal))
+		flXenon           = cmd.Bool([]string{"-xenon"}, false, "Launch a Xenon instead of an Argon")
 	)
 
 	cmd.Var(&flAttach, []string{"a", "-attach"}, "Attach to STDIN, STDOUT or STDERR")
@@ -367,6 +368,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		LogConfig:        LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
 		CgroupParent:     *flCgroupParent,
 		VolumeDriver:     *flVolumeDriver,
+		Xenon:            *flXenon,
 	}
 
 	applyExperimentalFlags(expFlags, config, hostConfig)
