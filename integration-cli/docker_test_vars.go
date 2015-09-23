@@ -16,9 +16,7 @@ var (
 	// the private registry to use for tests
 	privateRegistryURL = "127.0.0.1:5000"
 
-	dockerBasePath       = "/var/lib/docker"
-	volumesConfigPath    = dockerBasePath + "/volumes"
-	containerStoragePath = dockerBasePath + "/containers"
+	dockerBasePath, volumesConfigPath, containerStoragePath string
 
 	runtimePath    = "/var/run/docker"
 	execDriverPath = runtimePath + "/execdriver/native"
@@ -34,6 +32,12 @@ var (
 	// of the daemon. This is initialised in docker_utils by sending
 	// a version call to the daemon and examining the response header.
 	daemonPlatform string
+
+	// windowsDaemonKV is used on Windows to distinguish between different
+	// versions. This is necessary to enable certain tests based on whether
+	// the platform supports it. For example, Windows Server 2016 TP3 does
+	// not support volumes, but TP4 does.
+	windowsDaemonKV int
 
 	// daemonDefaultImage is the name of the default image to use when running
 	// tests. This is platform dependent.
