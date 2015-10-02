@@ -7,7 +7,6 @@ import (
 
 	"github.com/docker/docker/pkg/nat"
 	"github.com/docker/docker/pkg/stringutils"
-	"github.com/docker/docker/volume"
 )
 
 // Config contains the configuration data about a container.
@@ -30,6 +29,7 @@ type Config struct {
 	Cmd             *stringutils.StrSlice // Command to run when starting the container
 	Image           string                // Name of the image as it was passed by the operator (eg. could be symbolic)
 	Volumes         map[string]struct{}   // List of volumes (mounts) used for the container
+	BCCLIVolumes    map[string]struct{}   // Back compat CLI-passed list of volumes (mounts) used for the container
 	WorkingDir      string                // Current directory (PWD) in the command will be launched
 	Entrypoint      *stringutils.StrSlice // Entrypoint to run when starting the container
 	NetworkDisabled bool                  // Is network disabled
@@ -53,25 +53,25 @@ func DecodeContainerConfig(src io.Reader) (*Config, *HostConfig, error) {
 
 	hc := w.getHostConfig()
 
-	// As the CLI does not know the daemon platform, and volumes/bind mounts
-	// can only be accurately parsed on the daemon side, we need to
-	// parse them here, and move any volumes which come in in Config.Volumes
-	// into HostConfig.Binds.
+	// Perform platform-specific processing of Volumes and Binds.
 	if w.Config != nil && hc != nil {
-		for bind := range w.Config.Volumes {
-			mp, err := volume.ParseMountSpec(bind, hc.VolumeDriver)
-			if err != nil {
-				return nil, nil, fmt.Errorf("Unrecognised volume spec: %v", err)
-			}
-			if len(mp.Source) > 0 {
-				// After creating the bind mount (one in which a host directory is specified),
-				// we want to delete it from the config.Volumes values because we do not want
-				// bind mounts being committed to image configs.
-				// Note the spec can be one of source:destination:mode, destination,
-				// or source:destination
-				hc.Binds = append(hc.Binds, bind)
-				delete(w.Config.Volumes, bind)
-			}
+
+		// Validate that if called from a REST API caller (where volumes and/or
+		// binds might be set) that the backwards-compatible field that the
+		// client uses is not set.
+		if len(w.Config.BCCLIVolumes) > 0 &&
+			((len(w.Config.Volumes) > 0) || len(hc.Binds) > 0) {
+			return nil, nil, fmt.Errorf("Binds or Volumes cannot be supplied with BCCLIVolumes")
+		}
+
+		// Initialise the volumes map if currently NIL
+		if w.Config.Volumes == nil {
+			w.Config.Volumes = make(map[string]struct{})
+		}
+
+		// Now do the platform-specific processing
+		if err := processVolumesAndBindSettings(w.Config, hc); err != nil {
+			return nil, nil, err
 		}
 	}
 

@@ -299,6 +299,26 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		return nil, nil, cmd, err
 	}
 
+	// The CLI (pre Windows support) would have moved any bind mounts
+	// (ie those in which a host directory is specified, or more specifically
+	// at least, anything with a colon) from flVolumes into Binds.
+	//
+	// However, as it is not possible to do parsing on the client side,
+	// as we don't know what the daemon platform is, and hence colons can't
+	// be reliably used to split the spec deterministically, we put
+	// everything from the client into binds and nothing into volumes.
+	//
+	// Unfortunately also, we need to keep REST API compatibility where
+	// volumes which look like a bind CAN be passed in volumes. For example
+	// "Volumes" : {"/foo:/bar" {} } where "/foo:/bar" is actually a
+	// container path.
+	//
+	// So the solution to this is from the CLI, use the backwards-compatible
+	// CLI field (BCCLIVolumes) instead of Volumes. This allows the daemon
+	// side to accurately perform the same processing that would have occurred
+	// on the client (in the case of Linux). For Windows, this is moot as
+	// a container path cannot include a colon in it, so it will be parsed
+	// deterministically as a bind mount (assuming it is valid, that is).
 	config := &Config{
 		Hostname:        hostname,
 		Domainname:      domainname,
@@ -313,7 +333,8 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		Env:             envVariables,
 		Cmd:             runCmd,
 		Image:           image,
-		Volumes:         flVolumes.GetMap(),
+		Volumes:         nil,
+		BCCLIVolumes:    flVolumes.GetMap(),
 		MacAddress:      *flMacAddress,
 		Entrypoint:      entrypoint,
 		WorkingDir:      *flWorkingDir,
@@ -322,13 +343,6 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	}
 
 	hostConfig := &HostConfig{
-		// The CLI would have moved any bind mounts (one in which a host directory
-		// is specified from flVolumes (which ends up in config.Volumes) into
-		// HostConfig.Binds. However, with cross-platform support, it it not
-		// possible to uniquely parse the mount spec as it depends on the platform
-		// of the daemon which is not known at this point. Therefore, we defer
-		// this until the Config/HostConfig is extracted by the daemon and always
-		// pass in an empty HostConfig.Binds.
 		Binds:             nil,
 		ContainerIDFile:   *flContainerIDFile,
 		LxcConf:           lxcConf,

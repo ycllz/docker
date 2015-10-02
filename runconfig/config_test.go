@@ -85,7 +85,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// A single volume
 	tryit = choosePlatformVolumeArray([]string{`/tmp`}, []string{`c:\tmp`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		t.Fatal(err)
 	}
 	if hostConfig.Binds != nil {
@@ -96,7 +96,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// Two volumes
 	tryit = choosePlatformVolumeArray([]string{`/tmp`, `/var`}, []string{`c:\tmp`, `c:\var`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		t.Fatal(err)
 	}
 	if hostConfig.Binds != nil {
@@ -109,7 +109,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// A single bind-mount
 	tryit = choosePlatformVolumeArray([]string{`/hostTmp:/containerTmp`}, []string{os.Getenv("TEMP") + `:c:\containerTmp`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		t.Fatal(err)
 	}
 	if hostConfig.Binds == nil || hostConfig.Binds[0] != tryit[0] {
@@ -118,7 +118,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// Two bind-mounts.
 	tryit = choosePlatformVolumeArray([]string{`/hostTmp:/containerTmp`, `/hostVar:/containerVar`}, []string{os.Getenv("TEMP") + `:c:\containerTmp`, os.Getenv("ProgramFiles") + `:c:\ContainerPF`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		t.Fatal(err)
 	}
 	if hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], tryit[0], tryit[1]) != nil {
@@ -128,7 +128,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 	// Two bind-mounts, first read-only, second read-write.
 	// TODO Windows: The Windows version uses read-write as that's the only mode it supports. Can change this post TP4
 	tryit = choosePlatformVolumeArray([]string{`/hostTmp:/containerTmp:ro`, `/hostVar:/containerVar:rw`}, []string{os.Getenv("TEMP") + `:c:\containerTmp:rw`, os.Getenv("ProgramFiles") + `:c:\ContainerPF:rw`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		t.Fatal(err)
 	}
 	if hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], tryit[0], tryit[1]) != nil {
@@ -138,7 +138,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 	// Similar to previous test but with alternate modes which are only supported by Linux
 	if runtime.GOOS != "windows" {
 		tryit = choosePlatformVolumeArray([]string{`/hostTmp:/containerTmp:ro,Z`, `/hostVar:/containerVar:rw,Z`}, []string{})
-		if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 			t.Fatal(err)
 		}
 		if hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], tryit[0], tryit[1]) != nil {
@@ -146,7 +146,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 		}
 
 		tryit = choosePlatformVolumeArray([]string{`/hostTmp:/containerTmp:Z`, `/hostVar:/containerVar:z`}, []string{})
-		if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 			t.Fatal(err)
 		}
 		if hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], tryit[0], tryit[1]) != nil {
@@ -156,7 +156,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// One bind mount and one volume
 	tryit = choosePlatformVolumeArray([]string{`/hostTmp:/containerTmp`, `/containerVar`}, []string{os.Getenv("TEMP") + `:c:\containerTmp`, `c:\containerTmp`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		t.Fatal(err)
 	}
 	if hostConfig.Binds == nil || len(hostConfig.Binds) > 1 || hostConfig.Binds[0] != tryit[0] {
@@ -168,11 +168,25 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 	// Root to non-c: drive letter (Windows specific)
 	if runtime.GOOS == "windows" {
 		tryit = choosePlatformVolumeArray([]string{}, []string{os.Getenv("SystemDrive") + `\:d:`})
-		if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 			t.Fatal(err)
 		}
 		if hostConfig.Binds == nil || len(hostConfig.Binds) > 1 || hostConfig.Binds[0] != tryit[0] || len(config.Volumes) != 0 {
 			t.Fatalf("Error parsing %s. Should have a single bind mount and no volumes", tryit[0])
+		}
+	}
+
+	// A single volume that looks like a bind mount passed in Volumes (not BCCLIVolumes), such as a REST API caller.
+	// This should be handled as a bind mount, not a volume. (Linux specific)
+	if runtime.GOOS != "windows" {
+		tryit = choosePlatformVolumeArray([]string{`/foo:/bar`}, []string{})
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, false); err != nil {
+			t.Fatal(err)
+		}
+		if hostConfig.Binds != nil {
+			t.Fatalf("Error parsing volume flags, %q should not mount-bind anything. Received %v", tryit, hostConfig.Binds)
+		} else if _, exists := config.Volumes[tryit[0]]; !exists {
+			t.Fatalf("Error parsing volume flags, %q is missing from volumes. Received %v", tryit, config.Volumes)
 		}
 	}
 
@@ -182,7 +196,7 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// Empty spec
 	tryit = []string{}
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err != nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err != nil {
 		if hostConfig.Binds != nil || len(config.Volumes) != 0 {
 			t.Fatalf("Empty volume spec should have no binds or volumes. Received %s %q", hostConfig.Binds, config.Volumes)
 		}
@@ -190,38 +204,38 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 
 	// Root to root
 	tryit = choosePlatformVolumeArray([]string{`/:/`}, []string{os.Getenv("SystemDrive") + `\:c:\`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 		t.Fatalf("%s should have failed", tryit[0])
 	}
 
 	// No destination path
 	tryit = choosePlatformVolumeArray([]string{`/tmp:`}, []string{os.Getenv("TEMP") + `\:`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 		t.Fatalf("%s should have failed", tryit[0])
 	}
 
 	// No destination path or mode
 	tryit = choosePlatformVolumeArray([]string{`/tmp::`}, []string{os.Getenv("TEMP") + `\::`})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 		t.Fatalf("%s should have failed", tryit[0])
 	}
 
 	// A whole lot of nothing
 	tryit = []string{`:`}
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 		t.Fatalf("%s should have failed", tryit[0])
 	}
 
 	// A whole lot of nothing with no mode
 	tryit = []string{`::`}
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 		t.Fatalf("%s should have failed", tryit[0])
 	}
 
 	// Too much including an invalid mode
 	wTmp := os.Getenv("TEMP")
 	tryit = choosePlatformVolumeArray([]string{`/tmp:/tmp:/tmp:/tmp:`}, []string{wTmp + ":" + wTmp + ":" + wTmp + ":" + wTmp})
-	if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+	if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 		t.Fatalf("%s should have failed", tryit[0])
 	}
 
@@ -229,21 +243,30 @@ func TestDecodeContainerConfigVolumes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// Volume which does not include a drive letter
 		tryit = []string{"\tmp"}
-		if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 			t.Fatalf("%s should have failed", tryit[0])
 		}
 
 		// Root to C-Drive
 		if runtime.GOOS == "windows" {
 			tryit = choosePlatformVolumeArray([]string{}, []string{os.Getenv("SystemDrive") + `\:c:`})
-			if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+			if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 				t.Fatalf("%s should have failed", tryit[0])
 			}
 		}
 
 		// Container path that does not include a drive letter
 		tryit = []string{"c:\tmp:\tmp"}
-		if config, hostConfig, err = callDecodeContainerConfig(tryit); err == nil {
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
+			t.Fatalf("%s should have failed", tryit[0])
+		}
+	}
+
+	// Linux-specific error tests
+	if runtime.GOOS != "windows" {
+		// Just root
+		tryit = []string{`/`}
+		if config, hostConfig, err = callDecodeContainerConfig(tryit, true); err == nil {
 			t.Fatalf("%s should have failed", tryit[0])
 		}
 	}
@@ -266,7 +289,7 @@ func choosePlatformVolumeArray(u []string, w []string) []string {
 // passed into it. It returns a config and a hostconfig which can be
 // validated to ensure DecodeContainerConfig has manipulated the structures
 // correctly.
-func callDecodeContainerConfig(volumes []string) (*Config, *HostConfig, error) {
+func callDecodeContainerConfig(volumes []string, inBCCLIVolumes bool) (*Config, *HostConfig, error) {
 	var (
 		b   []byte
 		err error
@@ -274,11 +297,18 @@ func callDecodeContainerConfig(volumes []string) (*Config, *HostConfig, error) {
 		h   *HostConfig
 	)
 	w := ContainerConfigWrapper{
-		Config:     &Config{Volumes: map[string]struct{}{}},
+		Config: &Config{
+			BCCLIVolumes: map[string]struct{}{},
+			Volumes:      map[string]struct{}{},
+		},
 		HostConfig: &HostConfig{NetworkMode: "none"},
 	}
 	for _, v := range volumes {
-		w.Config.Volumes[v] = struct{}{}
+		if inBCCLIVolumes {
+			w.Config.BCCLIVolumes[v] = struct{}{}
+		} else {
+			w.Config.Volumes[v] = struct{}{}
+		}
 	}
 	if b, err = json.Marshal(w); err != nil {
 		return nil, nil, fmt.Errorf("Error on marshal %s", err.Error())
@@ -290,5 +320,10 @@ func callDecodeContainerConfig(volumes []string) (*Config, *HostConfig, error) {
 	if c == nil || h == nil {
 		return nil, nil, fmt.Errorf("Empty config or hostconfig")
 	}
+	// There should be nothing in the backwards compatible field
+	if c != nil && len(c.BCCLIVolumes) != 0 {
+		return nil, nil, fmt.Errorf("BCCLIVolumes should be empty after calling DecodeContainerConfig")
+	}
+
 	return c, h, err
 }
