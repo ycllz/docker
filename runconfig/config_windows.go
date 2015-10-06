@@ -32,26 +32,24 @@ func (w *ContainerConfigWrapper) getHostConfig() *HostConfig {
 // do as it did before by passing information in through either config.Volumes
 // or HostConfig.Binds.
 func processVolumesAndBindSettings(c *Config, hc *HostConfig) error {
-
 	// Move everything from the backwards compatibility structure into volumes.
 	// We don't need to worry about potentially overwriting anything as previous
 	// to us being called, we are guaranteed that if BCCLIVolumes is populated,
-	// then Volumes not populated.
-	c.Volumes = c.BCCLIVolumes
+	// then Volumes not populated. However, don't overwrite if Volumes is
+	// populated as that could be from a REST API caller.
+	if len(c.Volumes) == 0 {
+		c.Volumes = c.BCCLIVolumes
+	}
 	c.BCCLIVolumes = nil
 
-	// And now we move the bind mounts from config.Volumes into hc.Binds
+	// Move bind mounts from config.Volumes into hc.Binds as we do not want
+	// them committed to image configs.
 	for bind := range c.Volumes {
 		mp, err := volume.ParseMountSpec(bind, hc.VolumeDriver)
 		if err != nil {
 			return fmt.Errorf("Unrecognised volume spec: %v", err)
 		}
 		if len(mp.Source) > 0 {
-			// After creating the bind mount (one in which a host directory is specified),
-			// we want to delete it from the config.Volumes values because we do not want
-			// bind mounts being committed to image configs.
-			// Note the spec can be one of source:destination:mode, destination,
-			// or source:destination
 			hc.Binds = append(hc.Binds, bind)
 			delete(c.Volumes, bind)
 		}

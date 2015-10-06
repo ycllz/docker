@@ -10,17 +10,12 @@ import (
 )
 
 // createContainerPlatformSpecificSettings performs platform specific container create functionality
-func createContainerPlatformSpecificSettings(container *Container, config *runconfig.Config, hostConfig *runconfig.HostConfig, img *image.Image, fromBuilder bool) error {
+func createContainerPlatformSpecificSettings(container *Container, config *runconfig.Config, hostConfig *runconfig.HostConfig, img *image.Image) error {
 	for spec := range config.Volumes {
 
 		mp, err := volume.ParseMountSpec(spec, hostConfig.VolumeDriver)
 		if err != nil {
 			return fmt.Errorf("Unrecognised volume spec: %v", err)
-		}
-
-		// GH16650. When called from builder, this cannot be a name volume
-		if fromBuilder && len(mp.Name) > 0 {
-			return fmt.Errorf("Volume spec %q cannot be a named volume in a Dockerfile", spec)
 		}
 
 		// If the mountpoint doesn't have a name, generate one.

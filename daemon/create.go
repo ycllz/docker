@@ -20,7 +20,6 @@ type ContainerCreateConfig struct {
 	Config          *runconfig.Config
 	HostConfig      *runconfig.HostConfig
 	AdjustCPUShares bool
-	FromBuilder     bool
 }
 
 // ContainerCreate takes configs and creates a container.
@@ -122,7 +121,7 @@ func create(daemon *Daemon, params *ContainerCreateConfig) (retC *Container, ret
 	}
 	defer container.Unmount()
 
-	if err := createContainerPlatformSpecificSettings(container, params.Config, params.HostConfig, img, params.FromBuilder); err != nil {
+	if err := createContainerPlatformSpecificSettings(container, params.Config, params.HostConfig, img); err != nil {
 		return nil, nil, err
 	}
 

@@ -236,7 +236,6 @@ func (b *builder) runContextCommand(args []string, allowRemote bool, allowDecomp
 		Config:          b.Config,
 		HostConfig:      nil,
 		AdjustCPUShares: true,
-		FromBuilder:     true,
 	})
 	if err != nil {
 		return err
@@ -631,7 +630,6 @@ func (b *builder) create() (*daemon.Container, error) {
 		Config:          b.Config,
 		HostConfig:      hostConfig,
 		AdjustCPUShares: true,
-		FromBuilder:     true,
 	})
 	if err != nil {
 		return nil, err

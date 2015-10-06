@@ -379,7 +379,6 @@ func (s *router) postContainersCreate(ctx context.Context, w http.ResponseWriter
 		Config:          config,
 		HostConfig:      hostConfig,
 		AdjustCPUShares: adjustCPUShares,
-		FromBuilder:     false,
 	})
 	if err != nil {
 		return err
