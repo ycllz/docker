@@ -88,7 +88,6 @@ func (d Docker) Create(cfg *runconfig.Config, hostCfg *runconfig.HostConfig) (*d
 		Config:          cfg,
 		HostConfig:      hostCfg,
 		AdjustCPUShares: true,
-		FromBuilder:     true,
 	})
 	if err != nil {
 		return nil, nil, err
