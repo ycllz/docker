@@ -516,6 +516,37 @@ func TestCopyFileWithTarSrcFile(t *testing.T) {
 	}
 }
 
+func TestCopyFileWithInvalidDst(t *testing.T) {
+	folder, err := ioutil.TempDir("", "docker-archive-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(folder)
+	dest := path.Join(folder, "dest")
+	srcFolder := path.Join(folder, "src")
+	src := path.Join(folder, "src", "src")
+	err = os.MkdirAll(srcFolder, 0740)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(dest, 0740)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", "-c", "chattr +i "+dest)
+	_, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ioutil.WriteFile(src, []byte("content"), 0777)
+
+	err = CopyWithTar(src, dest)
+	if err == nil {
+		t.Fatalf("archiver.CopyWithTar should throw an error on invalid dst.")
+	}
+}
+
 func TestTarFiles(t *testing.T) {
 	// try without hardlinks
 	if err := checkNoChanges(1000, false); err != nil {
