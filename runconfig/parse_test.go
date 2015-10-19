@@ -1,8 +1,11 @@
 package runconfig
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -85,6 +88,260 @@ func TestParseRunAttach(t *testing.T) {
 	if _, _, err := parse(t, "-d --rm"); err == nil {
 		t.Fatalf("Error parsing attach flags, `-d --rm` should be an error but is not")
 	}
+}
+
+func TestParseRunVolumes(t *testing.T) {
+
+	// A single volume
+	arr, tryit := setupPlatformVolume([]string{`/tmp`}, []string{`c:\tmp`})
+	if config, hostConfig := mustParse(t, tryit); hostConfig.Binds != nil {
+		t.Fatalf("Error parsing volume flags, %q should not mount-bind anything. Received %v", tryit, hostConfig.Binds)
+	} else if _, exists := config.Volumes[arr[0]]; !exists {
+		t.Fatalf("Error parsing volume flags, %q is missing from volumes. Received %v", tryit, config.Volumes)
+	}
+
+	// Two volumes
+	arr, tryit = setupPlatformVolume([]string{`/tmp`, `/var`}, []string{`c:\tmp`, `c:\var`})
+	if config, hostConfig := mustParse(t, tryit); hostConfig.Binds != nil {
+		t.Fatalf("Error parsing volume flags, %q should not mount-bind anything. Received %v", tryit, hostConfig.Binds)
+	} else if _, exists := config.Volumes[arr[0]]; !exists {
+		t.Fatalf("Error parsing volume flags, %s is missing from volumes. Received %v", arr[0], config.Volumes)
+	} else if _, exists := config.Volumes[arr[1]]; !exists {
+		t.Fatalf("Error parsing volume flags, %s is missing from volumes. Received %v", arr[1], config.Volumes)
+	}
+
+	// A single bind-mount
+	arr, tryit = setupPlatformVolume([]string{`/hostTmp:/containerTmp`}, []string{os.Getenv("TEMP") + `:c:\containerTmp`})
+	if config, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || hostConfig.Binds[0] != arr[0] {
+		t.Fatalf("Error parsing volume flags, %q should mount-bind the path before the colon into the path after the colon. Received %v %v", arr[0], hostConfig.Binds, config.Volumes)
+	}
+
+	// Two bind-mounts.
+	arr, tryit = setupPlatformVolume([]string{`/hostTmp:/containerTmp`, `/hostVar:/containerVar`}, []string{os.Getenv("ProgramData") + `:c:\ContainerPD`, os.Getenv("TEMP") + `:c:\containerTmp`})
+	if _, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], arr[0], arr[1]) != nil {
+		t.Fatalf("Error parsing volume flags, `%s and %s` did not mount-bind correctly. Received %v", arr[0], arr[1], hostConfig.Binds)
+	}
+
+	// Two bind-mounts, first read-only, second read-write.
+	// TODO Windows: The Windows version uses read-write as that's the only mode it supports. Can change this post TP4
+	arr, tryit = setupPlatformVolume([]string{`/hostTmp:/containerTmp:ro`, `/hostVar:/containerVar:rw`}, []string{os.Getenv("TEMP") + `:c:\containerTmp:rw`, os.Getenv("ProgramData") + `:c:\ContainerPD:rw`})
+	if _, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], arr[0], arr[1]) != nil {
+		t.Fatalf("Error parsing volume flags, `%s and %s` did not mount-bind correctly. Received %v", arr[0], arr[1], hostConfig.Binds)
+	}
+
+	// Similar to previous test but with alternate modes which are only supported by Linux
+	if runtime.GOOS != "windows" {
+		arr, tryit = setupPlatformVolume([]string{`/hostTmp:/containerTmp:ro,Z`, `/hostVar:/containerVar:rw,Z`}, []string{})
+		if _, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], arr[0], arr[1]) != nil {
+			t.Fatalf("Error parsing volume flags, `%s and %s` did not mount-bind correctly. Received %v", arr[0], arr[1], hostConfig.Binds)
+		}
+
+		arr, tryit = setupPlatformVolume([]string{`/hostTmp:/containerTmp:Z`, `/hostVar:/containerVar:z`}, []string{})
+		if _, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || compareRandomizedStrings(hostConfig.Binds[0], hostConfig.Binds[1], arr[0], arr[1]) != nil {
+			t.Fatalf("Error parsing volume flags, `%s and %s` did not mount-bind correctly. Received %v", arr[0], arr[1], hostConfig.Binds)
+		}
+	}
+
+	// One bind mount and one volume
+	arr, tryit = setupPlatformVolume([]string{`/hostTmp:/containerTmp`, `/containerVar`}, []string{os.Getenv("TEMP") + `:c:\containerTmp`, `c:\containerTmp`})
+	if config, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || len(hostConfig.Binds) > 1 || hostConfig.Binds[0] != arr[0] {
+		t.Fatalf("Error parsing volume flags, %s and %s should only one and only one bind mount %s. Received %s", arr[0], arr[1], arr[0], hostConfig.Binds)
+	} else if _, exists := config.Volumes[arr[1]]; !exists {
+		t.Fatalf("Error parsing volume flags %s and %s. %s is missing from volumes. Received %v", arr[0], arr[1], arr[1], config.Volumes)
+	}
+
+	// Root to non-c: drive letter (Windows specific)
+	if runtime.GOOS == "windows" {
+		arr, tryit = setupPlatformVolume([]string{}, []string{os.Getenv("SystemDrive") + `\:d:`})
+		if config, hostConfig := mustParse(t, tryit); hostConfig.Binds == nil || len(hostConfig.Binds) > 1 || hostConfig.Binds[0] != arr[0] || len(config.Volumes) != 0 {
+			t.Fatalf("Error parsing %s. Should have a single bind mount and no volumes", arr[0])
+		}
+	}
+
+}
+
+// This tests the cases for binds which are generated through
+// DecodeContainerConfig rather than Parse()
+func TestDecodeContainerConfigVolumes(t *testing.T) {
+
+	// Root to root
+	bindsOrVols, _ := setupPlatformVolume([]string{`/:/`}, []string{os.Getenv("SystemDrive") + `\:c:\`})
+	if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+	if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+		t.Fatalf("volume %v should have failed", bindsOrVols)
+	}
+
+	// No destination path
+	bindsOrVols, _ = setupPlatformVolume([]string{`/tmp:`}, []string{os.Getenv("TEMP") + `\:`})
+	if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+	if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+
+	//	// No destination path or mode
+	bindsOrVols, _ = setupPlatformVolume([]string{`/tmp::`}, []string{os.Getenv("TEMP") + `\::`})
+	if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+	if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+
+	// A whole lot of nothing
+	bindsOrVols = []string{`:`}
+	if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+	if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+
+	// A whole lot of nothing with no mode
+	bindsOrVols = []string{`::`}
+	if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+	if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+
+	// Too much including an invalid mode
+	wTmp := os.Getenv("TEMP")
+	bindsOrVols, _ = setupPlatformVolume([]string{`/tmp:/tmp:/tmp:/tmp`}, []string{wTmp + ":" + wTmp + ":" + wTmp + ":" + wTmp})
+	if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+	if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+		t.Fatalf("binds %v should have failed", bindsOrVols)
+	}
+
+	// Windows specific error tests
+	if runtime.GOOS == "windows" {
+		// Volume which does not include a drive letter
+		bindsOrVols = []string{`\tmp`}
+		if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+		if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+
+		// Root to C-Drive
+		bindsOrVols = []string{os.Getenv("SystemDrive") + `\:c:`}
+		if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+		if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+
+		// Container path that does not include a drive letter
+		bindsOrVols = []string{`c:\windows:\somewhere`}
+		if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+		if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+	}
+
+	// Linux-specific error tests
+	if runtime.GOOS != "windows" {
+		// Just root
+		bindsOrVols = []string{`/`}
+		if _, _, err := callDecodeContainerConfig(nil, bindsOrVols); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+		if _, _, err := callDecodeContainerConfig(bindsOrVols, nil); err == nil {
+			t.Fatalf("binds %v should have failed", bindsOrVols)
+		}
+
+		// A single volume that looks like a bind mount passed in Volumes.
+		// This should be handled as a bind mount, not a volume.
+		vols := []string{`/foo:/bar`}
+		if config, hostConfig, err := callDecodeContainerConfig(vols, nil); err != nil {
+			t.Fatal("Volume /foo:/bar should have succeeded as a volume name")
+		} else if hostConfig.Binds != nil {
+			t.Fatalf("Error parsing volume flags, /foo:/bar should not mount-bind anything. Received %v", hostConfig.Binds)
+		} else if _, exists := config.Volumes[vols[0]]; !exists {
+			t.Fatalf("Error parsing volume flags, /foo:/bar is missing from volumes. Received %v", config.Volumes)
+		}
+
+	}
+}
+
+// callDecodeContainerConfig is a utility function used by TestDecodeContainerConfigVolumes
+// to call DecodeContainerConfig. It effectively does what a client would
+// do when calling the daemon by constructing a JSON stream of a
+// ContainerConfigWrapper which is populated by the set of volume specs
+// passed into it. It returns a config and a hostconfig which can be
+// validated to ensure DecodeContainerConfig has manipulated the structures
+// correctly.
+func callDecodeContainerConfig(volumes []string, binds []string) (*Config, *HostConfig, error) {
+	var (
+		b   []byte
+		err error
+		c   *Config
+		h   *HostConfig
+	)
+	w := ContainerConfigWrapper{
+		Config: &Config{
+			Volumes: map[string]struct{}{},
+		},
+		HostConfig: &HostConfig{
+			NetworkMode: "none",
+			Binds:       binds,
+		},
+	}
+	for _, v := range volumes {
+		w.Config.Volumes[v] = struct{}{}
+	}
+	if b, err = json.Marshal(w); err != nil {
+		return nil, nil, fmt.Errorf("Error on marshal %s", err.Error())
+	}
+	c, h, err = DecodeContainerConfig(bytes.NewReader(b))
+	if err != nil {
+		return nil, nil, fmt.Errorf("Error parsing %s: %v", string(b), err)
+	}
+	if c == nil || h == nil {
+		return nil, nil, fmt.Errorf("Empty config or hostconfig")
+	}
+
+	return c, h, err
+}
+
+// check if (a == c && b == d) || (a == d && b == c)
+// because maps are randomized
+func compareRandomizedStrings(a, b, c, d string) error {
+	if a == c && b == d {
+		return nil
+	}
+	if a == d && b == c {
+		return nil
+	}
+	return fmt.Errorf("strings don't match")
+}
+
+// setupPlatformVolume takes two arrays of volume specs - a Unix style
+// spec and a Windows style spec. Depending on the platform being unit tested,
+// it returns one of them, along with a volume string that would be passed
+// on the docker CLI (eg -v /bar -v /foo).
+func setupPlatformVolume(u []string, w []string) ([]string, string) {
+	var a []string
+	if runtime.GOOS == "windows" {
+		a = w
+	} else {
+		a = u
+	}
+	s := ""
+	for _, v := range a {
+		s = s + "-v " + v + " "
+	}
+	return a, s
 }
 
 func TestParseLxcConfOpt(t *testing.T) {

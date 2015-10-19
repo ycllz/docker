@@ -7,6 +7,7 @@ import (
 
 	"github.com/docker/docker/pkg/nat"
 	"github.com/docker/docker/pkg/stringutils"
+	"github.com/docker/docker/volume"
 )
 
 // Config contains the configuration data about a container.
@@ -31,7 +32,6 @@ type Config struct {
 	Cmd             *stringutils.StrSlice // Command to run when starting the container
 	Image           string                // Name of the image as it was passed by the operator (eg. could be symbolic)
 	Volumes         map[string]struct{}   // List of volumes (mounts) used for the container
-	CLIVolumeSpecs  map[string]struct{}   // CLI-passed list of volumes (mounts) used for the container
 	WorkingDir      string                // Current directory (PWD) in the command will be launched
 	Entrypoint      *stringutils.StrSlice // Entrypoint to run when starting the container
 	NetworkDisabled bool                  `json:",omitempty"` // Is network disabled
@@ -58,21 +58,13 @@ func DecodeContainerConfig(src io.Reader) (*Config, *HostConfig, error) {
 	// Perform platform-specific processing of Volumes and Binds.
 	if w.Config != nil && hc != nil {
 
-		// Validate that if called from a REST API caller (where volumes and/or
-		// binds might be set) that the backwards-compatible field that the
-		// client uses is not set.
-		if len(w.Config.CLIVolumeSpecs) > 0 &&
-			((len(w.Config.Volumes) > 0) || len(hc.Binds) > 0) {
-			return nil, nil, fmt.Errorf("Binds or Volumes cannot be supplied with CLIVolumeSpecs")
-		}
-
 		// Initialise the volumes map if currently nil
 		if w.Config.Volumes == nil {
 			w.Config.Volumes = make(map[string]struct{})
 		}
 
-		// Now do the platform-specific processing
-		if err := processVolumesAndBindSettings(w.Config, hc); err != nil {
+		// Now validate all the volumes and binds
+		if err := validateVolumesAndBindSettings(w.Config, hc); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -84,4 +76,23 @@ func DecodeContainerConfig(src io.Reader) (*Config, *HostConfig, error) {
 	}
 
 	return w.Config, hc, nil
+}
+
+// validateVolumesAndBindSettings validates each of the volumes and bind settings
+// passed by the caller to ensure they are valid.
+func validateVolumesAndBindSettings(c *Config, hc *HostConfig) error {
+
+	// Ensure all volumes and binds are valid.
+	for spec := range c.Volumes {
+		if _, err := volume.ParseMountSpec(spec, hc.VolumeDriver); err != nil {
+			return fmt.Errorf("Invalid volume spec %q: %v", spec, err)
+		}
+	}
+	for _, spec := range hc.Binds {
+		if _, err := volume.ParseMountSpec(spec, hc.VolumeDriver); err != nil {
+			return fmt.Errorf("Invalid bind mount spec %q: %v", spec, err)
+		}
+	}
+
+	return nil
 }

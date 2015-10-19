@@ -2,13 +2,6 @@
 
 package runconfig
 
-import (
-	"fmt"
-	"strings"
-
-	"github.com/docker/docker/volume"
-)
-
 // ContainerConfigWrapper is a Config wrapper that hold the container Config (portable)
 // and the corresponding HostConfig (non-portable).
 type ContainerConfigWrapper struct {
@@ -57,49 +50,4 @@ func (w *ContainerConfigWrapper) getHostConfig() *HostConfig {
 	hc = SetDefaultNetModeIfBlank(hc)
 
 	return hc
-}
-
-// processVolumesAndBindSettings processes the volumes and bind settings
-// which are received from the caller (docker CLI or REST API) in a platform
-// specific manner.
-//
-// This is necessary due to platform specifics, where the spec supplied
-// cannot be parsed accurately by the client as it doesn't know the daemon
-// platform where the spec is relevant.
-//
-// To ensure backwards compatibility of the REST API, the docker CLI passes
-// everything supplied by the user in the config.CLIVolumeSpecs field (used by
-// CLI). However, any pre-existing REST API caller can continue to
-// do as it did before by passing information in through either config.Volumes
-// or HostConfig.Binds.
-func processVolumesAndBindSettings(c *Config, hc *HostConfig) error {
-	for spec := range c.CLIVolumeSpecs {
-		if arr := strings.Split(spec, ":"); len(arr) > 1 {
-			// A bind mount, not a volume.
-			if arr[0] == "" || arr[1] == "" {
-				return fmt.Errorf("Invalid bind mount %q: Source or destination not supplied", spec)
-			}
-			// Move to binds as we do not want bind mounts committed to image configs.
-			hc.Binds = append(hc.Binds, spec)
-			delete(c.CLIVolumeSpecs, spec)
-		} else {
-			// A volume - move to config.Volumes
-			c.Volumes[spec] = c.CLIVolumeSpecs[spec]
-			delete(c.CLIVolumeSpecs, spec)
-		}
-	}
-
-	// Ensure all volumes and binds are valid.
-	for spec := range c.Volumes {
-		if _, err := volume.ParseMountSpec(spec, hc.VolumeDriver); err != nil {
-			return fmt.Errorf("Invalid volume spec %q: %v", spec, err)
-		}
-	}
-	for _, spec := range hc.Binds {
-		if _, err := volume.ParseMountSpec(spec, hc.VolumeDriver); err != nil {
-			return fmt.Errorf("Invalid bind mount spec %q: %v", spec, err)
-		}
-	}
-
-	return nil
 }

@@ -82,7 +82,6 @@ const (
 
 // ParseMountSpec validates the configuration of mount information is valid.
 func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
-
 	var specExp = regexp.MustCompile(`^` + RXSource + RXDestination + RXMode + `$`)
 
 	// Ensure in platform semantics for matching. The CLI will send in Unix semantics.
@@ -124,7 +123,6 @@ func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
 	} else {
 		// So we know the destination is a path, not drive letter. Clean it up.
 		mp.Destination = filepath.Clean(mp.Destination)
-
 		// Ensure the destination path, if a path, is not the c root directory
 		if strings.ToLower(mp.Destination) == `c:\` {
 			return nil, derr.ErrorCodeVolumeDestIsCRoot.WithArgs(spec)
