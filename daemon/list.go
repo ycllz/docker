@@ -234,6 +234,15 @@ func includeContainerInList(container *Container, ctx *listContext) iterationAct
 		return excludeContainer
 	}
 
+	// Do not include container if the isolation mode doesn't match
+	i := strings.ToLower(string(container.hostConfig.Isolation))
+	if i == "" {
+		i = "default"
+	}
+	if !ctx.filters.Match("isolation", i) {
+		return excludeContainer
+	}
+
 	// Do not include container if it's in the list before the filter container.
 	// Set the filter container to nil to include the rest of containers after this one.
 	if ctx.beforeContainer != nil {
