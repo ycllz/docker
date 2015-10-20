@@ -108,6 +108,11 @@ func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
 		mp.RW = false
 	}
 
+	// Volumes cannot include an explicitly supplied mode eg c:\path:rw
+	if mp.Source == "" && mp.Destination != "" && matchgroups["mode"] != "" {
+		return nil, derr.ErrorCodeVolumeInvalid.WithArgs(spec)
+	}
+
 	// Note: No need to check if destination is absolute as it must be by
 	// definition of matching the regex.
 

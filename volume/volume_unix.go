@@ -68,11 +68,9 @@ func ParseMountSpec(spec, volumeDriver string) (*MountPoint, error) {
 		mp.Destination = filepath.Clean(arr[0])
 	case 2:
 		if isValid := ValidMountMode(arr[1]); isValid {
-			// Destination + Mode
-			mp.Destination = arr[0]
-			mp.Mode = arr[1] // Mode field is used by SELinux to decide whether to apply label
-			mp.RW = ReadWrite(mp.Mode)
-
+			// Destination + Mode is not a valid volume - volumes
+			// cannot include a mode. eg /foo:rw
+			return nil, derr.ErrorCodeVolumeInvalid.WithArgs(spec)
 		} else {
 			// Host Source Path or Name + Destination
 			mp.Source = arr[0]
