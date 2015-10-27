@@ -25,7 +25,7 @@ type ansiReader struct {
 	escapeSequence []byte
 }
 
-func newAnsiReader(nFile int) *ansiReader {
+func NewAnsiReader(nFile int) *ansiReader {
 	file, fd := winterm.GetStdFile(nFile)
 	return &ansiReader{
 		file:           file,

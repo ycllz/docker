@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/Azure/go-ansiterm/winterm"
 	"github.com/Sirupsen/logrus"
@@ -30,8 +31,13 @@ type Winsize struct {
 func StdStreams() (stdIn io.ReadCloser, stdOut, stdErr io.Writer) {
 	switch {
 	case os.Getenv("ConEmuANSI") == "ON":
-		// The ConEmu shell emulates ANSI well by default.
-		return os.Stdin, os.Stdout, os.Stderr
+		// The ConEmu shell emulates ANSI on output streams well by default.
+		if windows.IsConsole(os.Stdin.Fd()) {
+			stdIn = windows.NewAnsiReader(syscall.STD_INPUT_HANDLE)
+		} else {
+			stdIn = os.Stdin
+		}
+		return stdIn, os.Stdout, os.Stderr
 	case os.Getenv("MSYSTEM") != "":
 		// MSYS (mingw) does not emulate ANSI well.
 		return windows.ConsoleStreams()

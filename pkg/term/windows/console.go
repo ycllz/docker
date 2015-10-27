@@ -14,7 +14,7 @@ import (
 // that handles ANSI character sequences.
 func ConsoleStreams() (stdIn io.ReadCloser, stdOut, stdErr io.Writer) {
 	if IsConsole(os.Stdin.Fd()) {
-		stdIn = newAnsiReader(syscall.STD_INPUT_HANDLE)
+		stdIn = NewAnsiReader(syscall.STD_INPUT_HANDLE)
 	} else {
 		stdIn = os.Stdin
 	}
