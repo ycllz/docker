@@ -12,3 +12,5 @@ package sqlite3
 #cgo LDFLAGS: -lmingwex -lmingw32
 */
 import "C"
+
+// JJH Was #cgo LDFLAGS: -lmingwex -lmingw32
