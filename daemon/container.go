@@ -26,7 +26,6 @@ import (
 	"github.com/docker/docker/pkg/broadcaster"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/nat"
 	"github.com/docker/docker/pkg/promise"
 	"github.com/docker/docker/pkg/signal"
@@ -1095,14 +1094,6 @@ func (container *Container) mountVolumes() error {
 			return err
 		}
 
-		opts := "rbind,ro"
-		if m.Writable {
-			opts = "rbind,rw"
-		}
-
-		if err := mount.Mount(m.Source, dest, "bind", opts); err != nil {
-			return err
-		}
 	}
 
 	return nil
