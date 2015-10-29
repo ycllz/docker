@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/Sirupsen/logrus"
-	derr "github.com/docker/docker/errors"
 )
 
 // read-write modes
@@ -89,7 +88,7 @@ func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
 
 	// Must have something back
 	if len(match) == 0 {
-		return nil, derr.ErrorCodeVolumeInvalid.WithArgs(spec)
+		return nil, nil
 	}
 
 	// Pull out the sub expressions from the named capture groups
@@ -109,7 +108,7 @@ func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
 
 	// Volumes cannot include an explicitly supplied mode eg c:\path:rw
 	if mp.Source == "" && mp.Destination != "" && matchgroups["mode"] != "" {
-		return nil, derr.ErrorCodeVolumeInvalid.WithArgs(spec)
+		return nil, nil
 	}
 
 	// Note: No need to check if destination is absolute as it must be by
@@ -118,14 +117,14 @@ func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
 	if filepath.VolumeName(mp.Destination) == mp.Destination {
 		// Ensure the destination path, if a drive letter, is not the c drive
 		if strings.ToLower(mp.Destination) == "c:" {
-			return nil, derr.ErrorCodeVolumeDestIsC.WithArgs(spec)
+			return nil, nil
 		}
 	} else {
 		// So we know the destination is a path, not drive letter. Clean it up.
 		mp.Destination = filepath.Clean(mp.Destination)
 		// Ensure the destination path, if a path, is not the c root directory
 		if strings.ToLower(mp.Destination) == `c:\` {
-			return nil, derr.ErrorCodeVolumeDestIsCRoot.WithArgs(spec)
+			return nil, nil
 		}
 	}
 
@@ -156,10 +155,10 @@ func ParseMountSpec(spec string, volumeDriver string) (*MountPoint, error) {
 		var fi os.FileInfo
 		var err error
 		if fi, err = os.Stat(mp.Source); err != nil {
-			return nil, derr.ErrorCodeVolumeSourceNotFound.WithArgs(mp.Source, err)
+			return nil, nil
 		}
 		if !fi.IsDir() {
-			return nil, derr.ErrorCodeVolumeSourceNotDirectory.WithArgs(mp.Source)
+			return nil, nil
 		}
 	}
 
@@ -175,7 +174,7 @@ func IsVolumeNameValid(name string) (bool, error) {
 	}
 	nameExp = regexp.MustCompile(`^` + RXReservedNames + `$`)
 	if nameExp.MatchString(name) {
-		return false, derr.ErrorCodeVolumeNameReservedWord.WithArgs(name)
+		return false, nil
 	}
 	return true, nil
 }

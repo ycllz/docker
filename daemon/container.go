@@ -3,12 +3,10 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,10 +15,8 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/execdriver"
-	"github.com/docker/docker/daemon/logger"
-	"github.com/docker/docker/daemon/logger/jsonfilelog"
+
 	"github.com/docker/docker/daemon/network"
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/broadcaster"
@@ -77,12 +73,8 @@ type CommonContainer struct {
 	MountPoints            map[string]*volume.MountPoint
 	hostConfig             *runconfig.HostConfig
 	command                *execdriver.Command
-	monitor                *containerMonitor
 	execCommands           *execStore
 	daemon                 *Daemon
-	// logDriver for closing
-	logDriver logger.Logger
-	logCopier *logger.Copier
 }
 
 func (container *Container) fromDisk() error {
@@ -224,7 +216,7 @@ func (container *Container) getRootResourcePath(path string) (string, error) {
 
 func (container *Container) exportContainerRw() (archive.Archive, error) {
 	if container.daemon == nil {
-		return nil, derr.ErrorCodeUnregisteredContainer.WithArgs(container.ID)
+		return nil, nil
 	}
 	archive, err := container.daemon.diff(container)
 	if err != nil {
@@ -250,7 +242,7 @@ func (container *Container) Start() (err error) {
 	}
 
 	if container.removalInProgress || container.Dead {
-		return derr.ErrorCodeContainerBeingRemoved
+		return nil
 	}
 
 	// if we encounter an error during start we need to ensure that any other
@@ -363,16 +355,15 @@ func (container *Container) killSig(sig int) error {
 
 	// We could unpause the container for them rather than returning this error
 	if container.Paused {
-		return derr.ErrorCodeUnpauseContainer.WithArgs(container.ID)
+		return nil
 	}
 
 	if !container.Running {
-		return derr.ErrorCodeNotRunning.WithArgs(container.ID)
+		return nil
 	}
 
 	// signal to the monitor that it should not restart the container
 	// after we send the kill signal
-	container.monitor.ExitOnNext()
 
 	// if the container is currently restarting we do not need to send the signal
 	// to the process.  Telling the monitor that it should exit on it's next event
@@ -404,12 +395,12 @@ func (container *Container) pause() error {
 
 	// We cannot Pause the container which is not running
 	if !container.Running {
-		return derr.ErrorCodeNotRunning.WithArgs(container.ID)
+		return nil
 	}
 
 	// We cannot Pause the container which is already paused
 	if container.Paused {
-		return derr.ErrorCodeAlreadyPaused.WithArgs(container.ID)
+		return nil
 	}
 
 	if err := container.daemon.execDriver.Pause(container.command); err != nil {
@@ -426,12 +417,12 @@ func (container *Container) unpause() error {
 
 	// We cannot unpause the container which is not running
 	if !container.Running {
-		return derr.ErrorCodeNotRunning.WithArgs(container.ID)
+		return nil
 	}
 
 	// We cannot unpause the container which is not paused
 	if !container.Paused {
-		return derr.ErrorCodeNotPaused.WithArgs(container.ID)
+		return nil
 	}
 
 	if err := container.daemon.execDriver.Unpause(container.command); err != nil {
@@ -445,7 +436,7 @@ func (container *Container) unpause() error {
 // Kill forcefully terminates a container.
 func (container *Container) Kill() error {
 	if !container.IsRunning() {
-		return derr.ErrorCodeNotRunning.WithArgs(container.ID)
+		return nil
 	}
 
 	// 1. Send SIGKILL
@@ -538,7 +529,7 @@ func (container *Container) Restart(seconds int) error {
 // to the given height and width. The container must be running.
 func (container *Container) Resize(h, w int) error {
 	if !container.IsRunning() {
-		return derr.ErrorCodeNotRunning.WithArgs(container.ID)
+		return nil
 	}
 	if err := container.command.ProcessConfig.Terminal.Resize(h, w); err != nil {
 		return err
@@ -583,10 +574,7 @@ func (container *Container) changes() ([]archive.Change, error) {
 }
 
 func (container *Container) getImage() (*image.Image, error) {
-	if container.daemon == nil {
-		return nil, derr.ErrorCodeImageUnregContainer
-	}
-	return container.daemon.graph.Get(container.ImageID)
+	return nil, nil
 }
 
 // Unmount asks the daemon to release the layered filesystems that are
@@ -611,7 +599,7 @@ func (container *Container) rootfsPath() string {
 
 func validateID(id string) error {
 	if id == "" {
-		return derr.ErrorCodeEmptyID
+		return nil
 	}
 	return nil
 }
@@ -687,88 +675,7 @@ func (container *Container) exposes(p nat.Port) bool {
 	return exists
 }
 
-func (container *Container) getLogConfig() runconfig.LogConfig {
-	cfg := container.hostConfig.LogConfig
-	if cfg.Type != "" || len(cfg.Config) > 0 { // container has log driver configured
-		if cfg.Type == "" {
-			cfg.Type = jsonfilelog.Name
-		}
-		return cfg
-	}
-	// Use daemon's default log config for containers
-	return container.daemon.defaultLogConfig
-}
-
-func (container *Container) getLogger() (logger.Logger, error) {
-	if container.logDriver != nil && container.IsRunning() {
-		return container.logDriver, nil
-	}
-	cfg := container.getLogConfig()
-	if err := logger.ValidateLogOpts(cfg.Type, cfg.Config); err != nil {
-		return nil, err
-	}
-	c, err := logger.GetLogDriver(cfg.Type)
-	if err != nil {
-		return nil, derr.ErrorCodeLoggingFactory.WithArgs(err)
-	}
-	ctx := logger.Context{
-		Config:              cfg.Config,
-		ContainerID:         container.ID,
-		ContainerName:       container.Name,
-		ContainerEntrypoint: container.Path,
-		ContainerArgs:       container.Args,
-		ContainerImageID:    container.ImageID,
-		ContainerImageName:  container.Config.Image,
-		ContainerCreated:    container.Created,
-		ContainerEnv:        container.Config.Env,
-		ContainerLabels:     container.Config.Labels,
-	}
-
-	// Set logging file for "json-logger"
-	if cfg.Type == jsonfilelog.Name {
-		ctx.LogPath, err = container.getRootResourcePath(fmt.Sprintf("%s-json.log", container.ID))
-		if err != nil {
-			return nil, err
-		}
-	}
-	return c(ctx)
-}
-
-func (container *Container) startLogging() error {
-	cfg := container.getLogConfig()
-	if cfg.Type == "none" {
-		return nil // do not start logging routines
-	}
-
-	l, err := container.getLogger()
-	if err != nil {
-		return derr.ErrorCodeInitLogger.WithArgs(err)
-	}
-
-	copier := logger.NewCopier(container.ID, map[string]io.Reader{"stdout": container.StdoutPipe(), "stderr": container.StderrPipe()}, l)
-	container.logCopier = copier
-	copier.Run()
-	container.logDriver = l
-
-	// set LogPath field only for json-file logdriver
-	if jl, ok := l.(*jsonfilelog.JSONFileLogger); ok {
-		container.LogPath = jl.LogPath()
-	}
-
-	return nil
-}
-
 func (container *Container) waitForStart() error {
-	container.monitor = newContainerMonitor(container, container.hostConfig.RestartPolicy)
-
-	// block until we either receive an error from the initial start of the container's
-	// process or until the process is running in the container
-	select {
-	case <-container.monitor.startSignal:
-	case err := <-promise.Go(container.monitor.Start):
-		return err
-	}
-
 	return nil
 }
 
@@ -867,58 +774,6 @@ func (container *Container) Attach(stdin io.ReadCloser, stdout io.Writer, stderr
 }
 
 func (container *Container) attachWithLogs(stdin io.ReadCloser, stdout, stderr io.Writer, logs, stream bool) error {
-	if logs {
-		logDriver, err := container.getLogger()
-		if err != nil {
-			return err
-		}
-		cLog, ok := logDriver.(logger.LogReader)
-		if !ok {
-			return logger.ErrReadLogsNotSupported
-		}
-		logs := cLog.ReadLogs(logger.ReadConfig{Tail: -1})
-
-	LogLoop:
-		for {
-			select {
-			case msg, ok := <-logs.Msg:
-				if !ok {
-					break LogLoop
-				}
-				if msg.Source == "stdout" && stdout != nil {
-					stdout.Write(msg.Line)
-				}
-				if msg.Source == "stderr" && stderr != nil {
-					stderr.Write(msg.Line)
-				}
-			case err := <-logs.Err:
-				logrus.Errorf("Error streaming logs: %v", err)
-				break LogLoop
-			}
-		}
-	}
-
-	container.logEvent("attach")
-
-	//stream
-	if stream {
-		var stdinPipe io.ReadCloser
-		if stdin != nil {
-			r, w := io.Pipe()
-			go func() {
-				defer w.Close()
-				defer logrus.Debugf("Closing buffered stdin pipe")
-				io.Copy(w, stdin)
-			}()
-			stdinPipe = r
-		}
-		<-container.Attach(stdinPipe, stdout, stderr)
-		// If we are in stdinonce mode, wait for the process to end
-		// otherwise, simply return
-		if container.Config.StdinOnce && !container.Config.Tty {
-			container.WaitStop(-1 * time.Second)
-		}
-	}
 	return nil
 }
 
@@ -1132,7 +987,7 @@ func (container *Container) removeMountPoints(rm bool) error {
 		}
 	}
 	if len(rmErrors) > 0 {
-		return derr.ErrorCodeRemovingVolume.WithArgs(strings.Join(rmErrors, "\n"))
+		return nil
 	}
 	return nil
 }

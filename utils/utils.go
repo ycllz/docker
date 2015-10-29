@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/docker/autogen/dockerversion"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/fileutils"
@@ -291,16 +290,5 @@ func DigestReference(ref string) bool {
 // something that is less than useful so based on its types this func
 // will go and get a better piece of text.
 func GetErrorMessage(err error) string {
-	switch err.(type) {
-	case errcode.Error:
-		e, _ := err.(errcode.Error)
-		return e.Message
-
-	case errcode.ErrorCode:
-		ec, _ := err.(errcode.ErrorCode)
-		return ec.Message()
-
-	default:
-		return err.Error()
-	}
+	return ""
 }

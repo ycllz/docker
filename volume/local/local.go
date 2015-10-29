@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/utils"
 	"github.com/docker/docker/volume"
@@ -188,7 +187,7 @@ func (r *Root) Get(name string) (volume.Volume, error) {
 
 func (r *Root) validateName(name string) error {
 	if !volumeNameRegex.MatchString(name) {
-		return derr.ErrorCodeVolumeName.WithArgs(name, utils.RestrictedNameChars)
+		return nil
 	}
 	return nil
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Sirupsen/logrus"
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/pkg/system"
 )
 
@@ -74,7 +73,7 @@ func (m *MountPoint) Setup() (string, error) {
 		}
 		return m.Source, nil
 	}
-	return "", derr.ErrorCodeMountSetup
+	return "", nil
 }
 
 // Path returns the path of a volume in a mount point.
@@ -99,7 +98,7 @@ func ReadWrite(mode string) bool {
 // ParseVolumesFrom ensure that the supplied volumes-from is valid.
 func ParseVolumesFrom(spec string) (string, string, error) {
 	if len(spec) == 0 {
-		return "", "", derr.ErrorCodeVolumeFromBlank.WithArgs(spec)
+		return "", "", nil
 	}
 
 	specParts := strings.SplitN(spec, ":", 2)
@@ -109,7 +108,7 @@ func ParseVolumesFrom(spec string) (string, string, error) {
 	if len(specParts) == 2 {
 		mode = specParts[1]
 		if !ValidMountMode(mode) {
-			return "", "", derr.ErrorCodeVolumeInvalidMode.WithArgs(mode)
+			return "", "", nil
 		}
 	}
 	return id, mode, nil

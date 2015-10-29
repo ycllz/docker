@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/stringutils"
@@ -91,7 +90,7 @@ func (c *containerContext) RunningFor() string {
 
 func (c *containerContext) Ports() string {
 	c.addHeader(portsHeader)
-	return api.DisplayablePorts(c.c.Ports)
+	return ""
 }
 
 func (c *containerContext) Status() string {

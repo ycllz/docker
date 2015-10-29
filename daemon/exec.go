@@ -9,7 +9,6 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/execdriver"
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/pkg/broadcaster"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/pools"
@@ -80,7 +79,7 @@ func (ExecConfig *ExecConfig) resize(h, w int) error {
 	select {
 	case <-ExecConfig.waitStart:
 	case <-time.After(time.Second):
-		return derr.ErrorCodeExecResize.WithArgs(ExecConfig.ID)
+		return nil
 	}
 	return ExecConfig.ProcessConfig.Terminal.Resize(h, w)
 }
@@ -114,15 +113,15 @@ func (d *Daemon) getExecConfig(name string) (*ExecConfig, error) {
 
 	if ec != nil && d.containers.Get(ec.Container.ID) != nil {
 		if !ec.Container.IsRunning() {
-			return nil, derr.ErrorCodeContainerNotRunning.WithArgs(ec.Container.ID, ec.Container.State.String())
+			return nil, nil
 		}
 		if ec.Container.isPaused() {
-			return nil, derr.ErrorCodeExecPaused.WithArgs(ec.Container.ID)
+			return nil, nil
 		}
 		return ec, nil
 	}
 
-	return nil, derr.ErrorCodeNoExecID.WithArgs(name)
+	return nil, nil
 }
 
 func (d *Daemon) unregisterExecCommand(ExecConfig *ExecConfig) {
@@ -137,10 +136,10 @@ func (d *Daemon) getActiveContainer(name string) (*Container, error) {
 	}
 
 	if !container.IsRunning() {
-		return nil, derr.ErrorCodeNotRunning.WithArgs(name)
+		return nil, nil
 	}
 	if container.isPaused() {
-		return nil, derr.ErrorCodeExecPaused.WithArgs(name)
+		return nil, nil
 	}
 	return container, nil
 }
@@ -202,13 +201,13 @@ func (d *Daemon) ContainerExecStart(name string, stdin io.ReadCloser, stdout io.
 
 	ec, err := d.getExecConfig(name)
 	if err != nil {
-		return derr.ErrorCodeNoExecID.WithArgs(name)
+		return nil
 	}
 
 	ec.Lock()
 	if ec.Running {
 		ec.Unlock()
-		return derr.ErrorCodeExecRunning.WithArgs(ec.ID)
+		return nil
 	}
 	ec.Running = true
 	ec.Unlock()
@@ -257,12 +256,12 @@ func (d *Daemon) ContainerExecStart(name string, stdin io.ReadCloser, stdout io.
 	select {
 	case err := <-attachErr:
 		if err != nil {
-			return derr.ErrorCodeExecAttach.WithArgs(err)
+			return nil
 		}
 		return nil
 	case err := <-execErr:
 		if aErr := <-attachErr; aErr != nil && err == nil {
-			return derr.ErrorCodeExecAttach.WithArgs(aErr)
+			return nil
 		}
 		if err == nil {
 			return nil
@@ -270,9 +269,9 @@ func (d *Daemon) ContainerExecStart(name string, stdin io.ReadCloser, stdout io.
 
 		// Maybe the container stopped while we were trying to exec
 		if !container.IsRunning() {
-			return derr.ErrorCodeExecContainerStopped
+			return nil
 		}
-		return derr.ErrorCodeExecCantRun.WithArgs(ec.ID, container.ID, err)
+		return nil
 	}
 }
 

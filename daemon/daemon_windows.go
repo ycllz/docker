@@ -11,7 +11,6 @@ import (
 	_ "github.com/docker/docker/daemon/graphdriver/windows"
 	"github.com/docker/docker/pkg/parsers"
 	"github.com/docker/docker/runconfig"
-	"github.com/docker/libnetwork"
 )
 
 const (
@@ -96,14 +95,6 @@ func configureSysInit(config *Config, rootUID, rootGID int) (string, error) {
 
 func isBridgeNetworkDisabled(config *Config) bool {
 	return false
-}
-
-func (daemon *Daemon) initNetworkController(config *Config) (libnetwork.NetworkController, error) {
-	// Set the name of the virtual switch if not specified by -b on daemon start
-	if config.Bridge.VirtualSwitchName == "" {
-		config.Bridge.VirtualSwitchName = defaultVirtualSwitch
-	}
-	return nil, nil
 }
 
 // registerLinks sets up links between containers and writes the

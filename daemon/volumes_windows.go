@@ -4,7 +4,6 @@ package daemon
 
 import (
 	"github.com/docker/docker/daemon/execdriver"
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/volume"
 	"sort"
 )
@@ -22,7 +21,7 @@ func (container *Container) setupMounts() ([]execdriver.Mount, error) {
 			s = mount.Volume.Path()
 		}
 		if s == "" {
-			return nil, derr.ErrorCodeVolumeNoSourceForMount.WithArgs(mount.Name, mount.Driver, mount.Destination)
+			return nil, nil
 		}
 		mnts = append(mnts, execdriver.Mount{
 			Source:      s,

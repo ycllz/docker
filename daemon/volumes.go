@@ -8,7 +8,6 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/daemon/execdriver"
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/runconfig"
 	"github.com/docker/docker/volume"
 	"github.com/opencontainers/runc/libcontainer/label"
@@ -120,7 +119,7 @@ func (daemon *Daemon) registerMountPoints(container *Container, hostConfig *runc
 		}
 
 		if binds[bind.Destination] {
-			return derr.ErrorCodeVolumeDup.WithArgs(bind.Destination)
+			return nil
 		}
 
 		if len(bind.Name) > 0 && len(bind.Driver) > 0 {

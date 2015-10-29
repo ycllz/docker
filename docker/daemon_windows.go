@@ -4,14 +4,7 @@ package main
 
 import (
 	"os"
-
-	apiserver "github.com/docker/docker/api/server"
-	"github.com/docker/docker/daemon"
 )
-
-func setPlatformServerConfig(serverConfig *apiserver.Config, daemonCfg *daemon.Config) *apiserver.Config {
-	return serverConfig
-}
 
 // currentUserIsOwner checks whether the current user is the owner of the given
 // file.

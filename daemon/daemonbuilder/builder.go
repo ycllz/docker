@@ -13,7 +13,6 @@ import (
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/cliconfig"
 	"github.com/docker/docker/daemon"
-	"github.com/docker/docker/graph"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/httputils"

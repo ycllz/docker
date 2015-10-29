@@ -7,10 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"golang.org/x/net/context"
-
 	"github.com/Sirupsen/logrus"
-	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/docker/api"
 	"github.com/docker/docker/pkg/version"
 	"github.com/docker/docker/utils"

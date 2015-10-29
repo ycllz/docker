@@ -7,7 +7,6 @@ import (
 	"github.com/docker/docker/api/server/httputils"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/cliconfig"
-	"golang.org/x/net/context"
 )
 
 func (s *router) postAuth(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {

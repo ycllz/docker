@@ -5,29 +5,9 @@ import (
 	"strings"
 
 	"github.com/docker/docker/pkg/stringutils"
-	"github.com/syndtr/gocapability/capability"
 )
 
 var capabilityList Capabilities
-
-func init() {
-	last := capability.CAP_LAST_CAP
-	// hack for RHEL6 which has no /proc/sys/kernel/cap_last_cap
-	if last == capability.Cap(63) {
-		last = capability.CAP_BLOCK_SUSPEND
-	}
-	for _, cap := range capability.List() {
-		if cap > last {
-			continue
-		}
-		capabilityList = append(capabilityList,
-			&CapabilityMapping{
-				Key:   strings.ToUpper(cap.String()),
-				Value: cap,
-			},
-		)
-	}
-}
 
 type (
 	// CapabilityMapping maps linux capability name to its value of capability.Cap type
@@ -35,8 +15,8 @@ type (
 	// framework provided by the kernel.
 	// For more details on capabilities, see http://man7.org/linux/man-pages/man7/capabilities.7.html
 	CapabilityMapping struct {
-		Key   string         `json:"key,omitempty"`
-		Value capability.Cap `json:"value,omitempty"`
+		Key   string `json:"key,omitempty"`
+		Value string
 	}
 	// Capabilities contains all CapabilityMapping
 	Capabilities []*CapabilityMapping

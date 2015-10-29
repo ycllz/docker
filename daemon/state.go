@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/daemon/execdriver"
-	derr "github.com/docker/docker/errors"
 	"github.com/docker/docker/pkg/units"
 )
 
@@ -112,7 +111,7 @@ func wait(waitChan <-chan struct{}, timeout time.Duration) error {
 	}
 	select {
 	case <-time.After(timeout):
-		return derr.ErrorCodeTimedOut.WithArgs(timeout)
+		return nil
 	case <-waitChan:
 		return nil
 	}
@@ -246,7 +245,7 @@ func (s *State) setRemovalInProgress() error {
 	s.Lock()
 	defer s.Unlock()
 	if s.removalInProgress {
-		return derr.ErrorCodeAlreadyRemoving
+		return nil
 	}
 	s.removalInProgress = true
 	return nil

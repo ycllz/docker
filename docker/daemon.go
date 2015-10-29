@@ -3,7 +3,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"fmt"
 	"io"
 	"os"
@@ -12,22 +11,11 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/docker/distribution/uuid"
-	apiserver "github.com/docker/docker/api/server"
-	"github.com/docker/docker/autogen/dockerversion"
 	"github.com/docker/docker/cli"
 	"github.com/docker/docker/cliconfig"
 	"github.com/docker/docker/daemon"
-	"github.com/docker/docker/daemon/logger"
-	"github.com/docker/docker/opts"
 	flag "github.com/docker/docker/pkg/mflag"
-	"github.com/docker/docker/pkg/pidfile"
-	"github.com/docker/docker/pkg/signal"
 	"github.com/docker/docker/pkg/system"
-	"github.com/docker/docker/pkg/timeutils"
-	"github.com/docker/docker/pkg/tlsconfig"
-	"github.com/docker/docker/registry"
-	"github.com/docker/docker/utils"
 )
 
 const daemonUsage = "       docker daemon [ --help | ... ]\n"
@@ -74,14 +62,10 @@ func NewDaemonCli() *DaemonCli {
 	daemonConfig.ClusterOpts = make(map[string]string)
 	daemonConfig.InstallFlags(daemonFlags, presentInHelp)
 	daemonConfig.InstallFlags(flag.CommandLine, absentFromHelp)
-	registryOptions := new(registry.Options)
-	registryOptions.InstallFlags(daemonFlags, presentInHelp)
-	registryOptions.InstallFlags(flag.CommandLine, absentFromHelp)
 	daemonFlags.Require(flag.Exact, 0)
 
 	return &DaemonCli{
-		Config:          daemonConfig,
-		registryOptions: registryOptions,
+		Config: daemonConfig,
 	}
 }
 
@@ -129,7 +113,6 @@ func migrateKey() (err error) {
 // DaemonCli represents the daemon CLI.
 type DaemonCli struct {
 	*daemon.Config
-	registryOptions *registry.Options
 }
 
 func getGlobalFlag() (globalFlag *flag.Flag) {
@@ -151,170 +134,6 @@ func getGlobalFlag() (globalFlag *flag.Flag) {
 
 // CmdDaemon is the daemon command, called the raw arguments after `docker daemon`.
 func (cli *DaemonCli) CmdDaemon(args ...string) error {
-	// warn from uuid package when running the daemon
-	uuid.Loggerf = logrus.Warnf
-
-	if *flDaemon {
-		// allow legacy forms `docker -D -d` and `docker -d -D`
-		logrus.Warn("please use 'docker daemon' instead.")
-	} else if !commonFlags.FlagSet.IsEmpty() || !clientFlags.FlagSet.IsEmpty() {
-		// deny `docker -D daemon`
-		illegalFlag := getGlobalFlag()
-		fmt.Fprintf(os.Stderr, "invalid flag '-%s'.\nSee 'docker daemon --help'.\n", illegalFlag.Names[0])
-		os.Exit(1)
-	} else {
-		// allow new form `docker daemon -D`
-		flag.Merge(daemonFlags, commonFlags.FlagSet)
-	}
-
-	daemonFlags.ParseFlags(args, true)
-	commonFlags.PostParse()
-
-	if commonFlags.TrustKey == "" {
-		commonFlags.TrustKey = filepath.Join(getDaemonConfDir(), defaultTrustKeyFile)
-	}
-
-	if utils.ExperimentalBuild() {
-		logrus.Warn("Running experimental build")
-	}
-
-	logrus.SetFormatter(&logrus.TextFormatter{TimestampFormat: timeutils.RFC3339NanoFixed})
-
-	if err := setDefaultUmask(); err != nil {
-		logrus.Fatalf("Failed to set umask: %v", err)
-	}
-
-	if len(cli.LogConfig.Config) > 0 {
-		if err := logger.ValidateLogOpts(cli.LogConfig.Type, cli.LogConfig.Config); err != nil {
-			logrus.Fatalf("Failed to set log opts: %v", err)
-		}
-	}
-
-	var pfile *pidfile.PIDFile
-	if cli.Pidfile != "" {
-		pf, err := pidfile.New(cli.Pidfile)
-		if err != nil {
-			logrus.Fatalf("Error starting daemon: %v", err)
-		}
-		pfile = pf
-		defer func() {
-			if err := pfile.Remove(); err != nil {
-				logrus.Error(err)
-			}
-		}()
-	}
-
-	serverConfig := &apiserver.Config{
-		Logging: true,
-		Version: dockerversion.VERSION,
-	}
-	serverConfig = setPlatformServerConfig(serverConfig, cli.Config)
-
-	defaultHost := opts.DefaultHost
-	if commonFlags.TLSOptions != nil {
-		if !commonFlags.TLSOptions.InsecureSkipVerify {
-			// server requires and verifies client's certificate
-			commonFlags.TLSOptions.ClientAuth = tls.RequireAndVerifyClientCert
-		}
-		tlsConfig, err := tlsconfig.Server(*commonFlags.TLSOptions)
-		if err != nil {
-			logrus.Fatal(err)
-		}
-		serverConfig.TLSConfig = tlsConfig
-		defaultHost = opts.DefaultTLSHost
-	}
-
-	if len(commonFlags.Hosts) == 0 {
-		commonFlags.Hosts = make([]string, 1)
-	}
-	for i := 0; i < len(commonFlags.Hosts); i++ {
-		var err error
-		if commonFlags.Hosts[i], err = opts.ParseHost(defaultHost, commonFlags.Hosts[i]); err != nil {
-			logrus.Fatalf("error parsing -H %s : %v", commonFlags.Hosts[i], err)
-		}
-	}
-	for _, protoAddr := range commonFlags.Hosts {
-		protoAddrParts := strings.SplitN(protoAddr, "://", 2)
-		if len(protoAddrParts) != 2 {
-			logrus.Fatalf("bad format %s, expected PROTO://ADDR", protoAddr)
-		}
-		serverConfig.Addrs = append(serverConfig.Addrs, apiserver.Addr{Proto: protoAddrParts[0], Addr: protoAddrParts[1]})
-	}
-	api, err := apiserver.New(serverConfig)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-
-	// The serve API routine never exits unless an error occurs
-	// We need to start it as a goroutine and wait on it so
-	// daemon doesn't exit
-	// All servers must be protected with some mechanism (systemd socket, listenbuffer)
-	// which prevents real handling of request until routes will be set.
-	serveAPIWait := make(chan error)
-	go func() {
-		if err := api.ServeAPI(); err != nil {
-			logrus.Errorf("ServeAPI error: %v", err)
-			serveAPIWait <- err
-			return
-		}
-		serveAPIWait <- nil
-	}()
-
-	if err := migrateKey(); err != nil {
-		logrus.Fatal(err)
-	}
-	cli.TrustKeyPath = commonFlags.TrustKey
-
-	registryService := registry.NewService(cli.registryOptions)
-	d, err := daemon.NewDaemon(cli.Config, registryService)
-	if err != nil {
-		if pfile != nil {
-			if err := pfile.Remove(); err != nil {
-				logrus.Error(err)
-			}
-		}
-		logrus.Fatalf("Error starting daemon: %v", err)
-	}
-
-	logrus.Info("Daemon has completed initialization")
-
-	logrus.WithFields(logrus.Fields{
-		"version":     dockerversion.VERSION,
-		"commit":      dockerversion.GITCOMMIT,
-		"execdriver":  d.ExecutionDriver().Name(),
-		"graphdriver": d.GraphDriver().String(),
-	}).Info("Docker daemon")
-
-	api.InitRouters(d)
-
-	signal.Trap(func() {
-		api.Close()
-		<-serveAPIWait
-		shutdownDaemon(d, 15)
-		if pfile != nil {
-			if err := pfile.Remove(); err != nil {
-				logrus.Error(err)
-			}
-		}
-	})
-
-	// after the daemon is done setting up we can tell the api to start
-	// accepting connections with specified daemon
-	notifySystem()
-	api.AcceptConnections()
-
-	// Daemon is fully initialized and handling API traffic
-	// Wait for serve API to complete
-	errAPI := <-serveAPIWait
-	shutdownDaemon(d, 15)
-	if errAPI != nil {
-		if pfile != nil {
-			if err := pfile.Remove(); err != nil {
-				logrus.Error(err)
-			}
-		}
-		logrus.Fatalf("Shutting down due to ServeAPI error: %v", errAPI)
-	}
 	return nil
 }
 
