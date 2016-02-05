@@ -55,16 +55,9 @@ ENV GOLANG_VERSION=1.5.3 \
 WORKDIR c:/windows/temp
 
 # Download everything else we need to install
-# We want a 64-bit make.exe, not 16 or 32-bit. This was hard to find, so documenting the links
-#  - http://sourceforge.net/p/mingw-w64/wiki2/Make/ -->
-#  - http://sourceforge.net/projects/mingw-w64/files/External%20binary%20packages%20%28Win64%20hosted%29/ -->
-#  - http://sourceforge.net/projects/mingw-w64/files/External binary packages %28Win64 hosted%29/make/
-RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile make.zip http://downloads.sourceforge.net/project/mingw-w64/External%20binary%20packages%20%28Win64%20hosted%29/make/make-3.82.90-20111115.zip
-RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile gcc.zip http://downloads.sourceforge.net/project/tdm-gcc/TDM-GCC%205%20series/5.1.0-tdm64-1/gcc-5.1.0-tdm64-1-core.zip 
-RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile runtime.zip http://downloads.sourceforge.net/project/tdm-gcc/MinGW-w64%20runtime/GCC%205%20series/mingw64runtime-v4-git20150618-gcc5-tdm64-1.zip
-RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile binutils.zip http://downloads.sourceforge.net/project/tdm-gcc/GNU%20binutils/binutils-2.25-tdm64-1.zip
-RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile 7zsetup.exe http://www.7-zip.org/a/7z1514-x64.exe 
-RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile lzma.7z http://www.7-zip.org/a/lzma1514.7z
+RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile gcc.zip https://raw.githubusercontent.com/jhowardmsft/docker-tdmgcc/master/gcc.zip
+RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile runtime.zip https://raw.githubusercontent.com/jhowardmsft/docker-tdmgcc/master/runtime.zip
+RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile binutils.zip https://raw.githubusercontent.com/jhowardmsft/docker-tdmgcc/master/binutils.zip
 RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile gitsetup.exe https://github.com/git-for-windows/git/releases/download/v%GIT_VERSION%.windows.1/Git-%GIT_VERSION%-64-bit.exe
 RUN powershell -command sleep 5; Invoke-WebRequest -UserAgent 'DockerCI' -outfile go.msi https://storage.googleapis.com/golang/go%GOLANG_VERSION%.windows-amd64.msi
 
@@ -74,14 +67,10 @@ RUN setx /M Path "c:\git\cmd;c:\git\bin;c:\git\usr\bin;%Path%;c:\gcc\bin;c:\7zip
 # Install and expand the bits we downloaded. 
 # Note: The git, 7z and go.msi installers execute asynchronously. 
 RUN powershell -command start-process .\gitsetup.exe -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /DIR=c:\git' -Wait
-RUN powershell -command start-process .\7zsetup -ArgumentList '/S /D=c:/7zip' -Wait
 RUN powershell -command start-process .\go.msi -ArgumentList '/quiet' -Wait
 RUN powershell -command Expand-Archive gcc.zip \gcc -Force 
 RUN powershell -command Expand-Archive runtime.zip \gcc -Force 
 RUN powershell -command Expand-Archive binutils.zip \gcc -Force
-RUN powershell -command 7z e lzma.7z bin/lzma.exe
-RUN powershell -command 7z x make.zip  make-3.82.90-20111115/bin_amd64/make.exe 
-RUN powershell -command mv make-3.82.90-20111115/bin_amd64/make.exe /gcc/bin/ 
 
 # RSRC for manifest and icon	
 RUN powershell -command sleep 5 ; git clone https://github.com/akavel/rsrc.git c:\go\src\github.com\akavel\rsrc 
