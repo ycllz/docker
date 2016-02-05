@@ -3,7 +3,11 @@
 package container
 
 import (
+	"fmt"
+
 	"github.com/docker/docker/daemon/execdriver"
+	"github.com/docker/docker/pkg/system"
+	"github.com/docker/docker/utils"
 	"github.com/docker/docker/volume"
 	"github.com/docker/engine-api/types/container"
 )
@@ -16,10 +20,21 @@ type Container struct {
 	// Fields below here are platform specific.
 }
 
-// CreateDaemonEnvironment creates a new environment variable slice for this container.
+// CreateDaemonEnvironment sets the environment. It is effectively a hack
+// to allow ENV Path=c:\somepath;$Path in builder.
 func (container *Container) CreateDaemonEnvironment(linkedEnv []string) []string {
-	// On Windows, nothing to link. Just return the container environment.
-	return container.Config.Env
+	// Setup environment
+	env := []string{"Path=" + system.DefaultPathEnv}
+
+	// because the env on the container can override certain default values
+	// we need to replace the 'env' keys where they match and append anything
+	// else.
+	fmt.Println("Before: ", env)
+	fmt.Println("CurrentEnv", container.Config.Env)
+	env = utils.ReplaceOrAppendEnvValues(env, container.Config.Env)
+	fmt.Println("After: ", env)
+
+	return env
 }
 
 // SetupWorkingDirectory initializes the container working directory.

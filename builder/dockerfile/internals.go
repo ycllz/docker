@@ -403,16 +403,22 @@ func (b *Builder) processImageFrom(img builder.Image) error {
 		}
 	}
 
-	// Check to see if we have a default PATH, note that windows won't
-	// have one as its set by HCS
 	if system.DefaultPathEnv != "" {
+		// Allow for Windows case difference
+		// TODO Windows: Environment variables are case insensitive. Find
+		// all the places they are injected and strings.ToLower() them.
+		path := "PATH"
+		if runtime.GOOS == "windows" {
+			path = "Path"
+		}
+
 		// Convert the slice of strings that represent the current list
 		// of env vars into a map so we can see if PATH is already set.
 		// If its not set then go ahead and give it our default value
 		configEnv := opts.ConvertKVStringsToMap(b.runConfig.Env)
-		if _, ok := configEnv["PATH"]; !ok {
+		if _, ok := configEnv[path]; !ok {
 			b.runConfig.Env = append(b.runConfig.Env,
-				"PATH="+system.DefaultPathEnv)
+				path+"="+system.DefaultPathEnv)
 		}
 	}
 

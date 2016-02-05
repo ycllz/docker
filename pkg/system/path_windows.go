@@ -2,6 +2,6 @@
 
 package system
 
-// DefaultPathEnv is deliberately empty on Windows as the default path will be set by
-// the container. Docker has no context of what the default path should be.
-const DefaultPathEnv = ""
+// DefaultPathEnv is a hack to be able to ENV Path=c:\someapp;$Path on Windows.
+// But it's really not any worse than the hack done on Linux :)
+const DefaultPathEnv = `C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\`
