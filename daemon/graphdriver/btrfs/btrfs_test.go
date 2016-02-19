@@ -30,7 +30,7 @@ func TestBtrfsCreateSnap(t *testing.T) {
 
 func TestBtrfsSubvolDelete(t *testing.T) {
 	d := graphtest.GetDriver(t, "btrfs")
-	if err := d.Create("test", "", ""); err != nil {
+	if err := d.Create("test", "", "", false); err != nil {
 		t.Fatal(err)
 	}
 	defer graphtest.PutDriver(t)
