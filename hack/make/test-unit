@@ -1,50 +1,27 @@
 #!/bin/bash
 set -e
 
-# Run Docker's test suite, including sub-packages, and store their output as a bundle
-# If $TESTFLAGS is set in the environment, it is passed as extra arguments to 'go test'.
-# You can use this to select certain tests to run, eg.
-#
-#   TESTFLAGS='-test.run ^TestBuild$' ./hack/make.sh test-unit
-#
 bundle_test_unit() {
 	date
-	echo "JJH 1"
-	if [ -z "$TESTDIRS" ]; then
-		echo "JJH 2"
-		TEST_PATH=./...
-		echo "JJH 3"
-#	else
-#		echo "JJH 4"
-#		TEST_PATH=./${TESTDIRS}
-#		echo "JJH 5"
-	fi
+
+#	pkg_list=$(go list -e \
+#		-f '{{if ne .Name "github.com/docker/docker"}}
+#			{{.ImportPath}}
+#		    {{end}}' \
+#		./...)
+
+
+# These lines here are sufficient to make it fail
 	pkg_list=$(go list -e \
 		-f '{{if ne .Name "github.com/docker/docker"}}
 			{{.ImportPath}}
 		    {{end}}' \
-		"${BUILDFLAGS[@]}" $TEST_PATH \
-		| grep github.com/docker/docker \
-		| grep -v github.com/docker/docker/vendor \
-		| grep -v github.com/docker/docker/integration-cli)
-	echo "JJH 6"
-	pwd
-	export
-	
-	#$pkg_list="github.com/docker/docker/api"
+		./...)
 
-	#Original
-	#echo go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
-	#go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
 
-	echo go test github.com/docker/docker/api
+
+
 	go test github.com/docker/docker/api
-
-
-
-	echo "JJH 7"
 }
 
-echo "JJH 10"
 bundle_test_unit 2>&1 | tee -a "$DEST/test.log"
-echo "JJH 11"
