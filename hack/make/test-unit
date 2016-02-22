@@ -14,10 +14,10 @@ bundle_test_unit() {
 		echo "JJH 2"
 		TEST_PATH=./...
 		echo "JJH 3"
-	else
-		echo "JJH 4"
-		TEST_PATH=./${TESTDIRS}
-		echo "JJH 5"
+#	else
+#		echo "JJH 4"
+#		TEST_PATH=./${TESTDIRS}
+#		echo "JJH 5"
 	fi
 	pkg_list=$(go list -e \
 		-f '{{if ne .Name "github.com/docker/docker"}}
@@ -37,9 +37,6 @@ bundle_test_unit() {
 	#echo go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
 	#go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
 
-	#echo go test  $TESTFLAGS github.com/docker/docker/api
-	#go test $TESTFLAGS github.com/docker/docker/api
-
 	echo go test github.com/docker/docker/api
 	go test github.com/docker/docker/api
 
@@ -48,14 +45,6 @@ bundle_test_unit() {
 	echo "JJH 7"
 }
 
-
-#if [[ "$(go version)" == *"gccgo"* ]]; then
-#	echo "JJH 8"
-#	GCCGOFLAGS=-gccgoflags="-lpthread"
-#else
-#	echo "JJH 9"
-#	COVER=-cover
-#fi
 echo "JJH 10"
 bundle_test_unit 2>&1 | tee -a "$DEST/test.log"
 echo "JJH 11"
