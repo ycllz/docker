@@ -4,11 +4,11 @@ set -e
 bundle_test_unit() {
 	date
 
-#	pkg_list=$(go list -e \
-#		-f '{{if ne .Name "github.com/docker/docker"}}
-#			{{.ImportPath}}
-#		    {{end}}' \
-#		./...)
+	pkg_list=$(go list -e \
+		-f '{{if ne .Name "github.com/docker/docker"}}
+			{{.ImportPath}}
+		    {{end}}' \
+		./...)
 
 	go test github.com/docker/docker/api
 }
