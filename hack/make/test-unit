@@ -31,9 +31,17 @@ bundle_test_unit() {
 	pwd
 	export
 	
-	$pkg_list="github.com/docker/docker/api"
-	echo go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
-	go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
+	#$pkg_list="github.com/docker/docker/api"
+
+	#Original
+	#echo go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
+	#go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
+
+	echo go test  $TESTFLAGS $pkg_list
+	go test $TESTFLAGS $pkg_list
+
+
+
 	echo "JJH 7"
 }
 
