@@ -7,4 +7,5 @@ pkg_list=$(go list -e \
 	    {{end}}' \
 	./...)
 
+echo "Calling go test"
 go test github.com/docker/docker/api
