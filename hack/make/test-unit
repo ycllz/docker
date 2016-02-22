@@ -49,13 +49,13 @@ bundle_test_unit() {
 }
 
 
-if [[ "$(go version)" == *"gccgo"* ]]; then
-	echo "JJH 8"
-	GCCGOFLAGS=-gccgoflags="-lpthread"
-else
-	echo "JJH 9"
-	COVER=-cover
-fi
+#if [[ "$(go version)" == *"gccgo"* ]]; then
+#	echo "JJH 8"
+#	GCCGOFLAGS=-gccgoflags="-lpthread"
+#else
+#	echo "JJH 9"
+#	COVER=-cover
+#fi
 echo "JJH 10"
 bundle_test_unit 2>&1 | tee -a "$DEST/test.log"
 echo "JJH 11"
