@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-bundle_test_unit() {
+#bundle_test_unit() {
 	date
 
 	pkg_list=$(go list -e \
@@ -11,6 +11,6 @@ bundle_test_unit() {
 		./...)
 
 	go test github.com/docker/docker/api
-}
+#}
 
-bundle_test_unit 2>&1 | tee -a "$DEST/test.log"
+#bundle_test_unit 2>&1 | tee -a "$DEST/test.log"
