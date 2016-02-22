@@ -28,6 +28,9 @@ bundle_test_unit() {
 		| grep -v github.com/docker/docker/vendor \
 		| grep -v github.com/docker/docker/integration-cli)
 	echo "JJH 6"
+	pwd
+	export
+	
 	echo go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
 	go test $COVER $GCCGOFLAGS -ldflags "$LDFLAGS" "${BUILDFLAGS[@]}" $TESTFLAGS $pkg_list
 	echo "JJH 7"
