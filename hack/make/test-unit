@@ -40,6 +40,9 @@ bundle_test_unit() {
 	echo go test  $TESTFLAGS github.com/docker/docker/api
 	go test $TESTFLAGS github.com/docker/docker/api
 
+	echo go test github.com/docker/docker/api
+	go test github.com/docker/docker/api
+
 
 
 	echo "JJH 7"
