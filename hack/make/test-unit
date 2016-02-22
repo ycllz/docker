@@ -10,17 +10,6 @@ bundle_test_unit() {
 #		    {{end}}' \
 #		./...)
 
-
-# These lines here are sufficient to make it fail
-	pkg_list=$(go list -e \
-		-f '{{if ne .Name "github.com/docker/docker"}}
-			{{.ImportPath}}
-		    {{end}}' \
-		./...)
-
-
-
-
 	go test github.com/docker/docker/api
 }
 
