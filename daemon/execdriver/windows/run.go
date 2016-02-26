@@ -74,21 +74,26 @@ type mappedDir struct {
 	ReadOnly      bool
 }
 
+type utilityVmSettings struct {
+	ImagePath string
+}
+
 type containerInit struct {
-	SystemType              string      // HCS requires this to be hard-coded to "Container"
-	Name                    string      // Name of the container. We use the docker ID.
-	Owner                   string      // The management platform that created this container
-	IsDummy                 bool        // Used for development purposes.
-	VolumePath              string      // Windows volume path for scratch space
-	Devices                 []device    // Devices used by the container
-	IgnoreFlushesDuringBoot bool        // Optimization hint for container startup in Windows
-	LayerFolderPath         string      // Where the layer folders are located
-	Layers                  []layer     // List of storage layers
-	ProcessorWeight         int64       `json:",omitempty"` // CPU Shares 0..10000 on Windows; where 0 will be omitted and HCS will default.
-	HostName                string      // Hostname
-	MappedDirectories       []mappedDir // List of mapped directories (volumes/mounts)
-	SandboxPath             string      // Location of unmounted sandbox (used for Hyper-V containers, not Windows Server containers)
-	HvPartition             bool        // True if it a Hyper-V Container
+	SystemType              string            // HCS requires this to be hard-coded to "Container"
+	Name                    string            // Name of the container. We use the docker ID.
+	Owner                   string            // The management platform that created this container
+	IsDummy                 bool              // Used for development purposes.
+	VolumePath              string            // Windows volume path for scratch space
+	Devices                 []device          // Devices used by the container
+	IgnoreFlushesDuringBoot bool              // Optimization hint for container startup in Windows
+	LayerFolderPath         string            // Where the layer folders are located
+	Layers                  []layer           // List of storage layers
+	ProcessorWeight         int64             `json:",omitempty"` // CPU Shares 0..10000 on Windows; where 0 will be omitted and HCS will default.
+	HostName                string            // Hostname
+	MappedDirectories       []mappedDir       // List of mapped directories (volumes/mounts)
+	SandboxPath             string            // Location of unmounted sandbox (used for Hyper-V containers, not Windows Server containers)
+	HvPartition             bool              // True if it a Hyper-V Container
+	HvRuntime               utilityVmSettings // Used to define utility settings for a Hyper-V Container
 }
 
 // defaultOwner is a tag passed to HCS to allow it to differentiate between
@@ -120,6 +125,7 @@ func (d *Driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, hooks execd
 
 	if cu.HvPartition {
 		cu.SandboxPath = filepath.Dir(c.LayerFolder)
+		cu.HvRuntime.ImagePath = os.Getenv("DOCKER_UVM_IMAGE_PATH")
 	} else {
 		cu.VolumePath = c.Rootfs
 		cu.LayerFolderPath = c.LayerFolder
