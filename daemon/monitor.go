@@ -79,7 +79,8 @@ func (daemon *Daemon) StateChanged(id string, e libcontainerd.StateInfo) error {
 // AttachStreams is called by libcontainerd to connect the stdio.
 func (daemon *Daemon) AttachStreams(id string, iop libcontainerd.IOPipe) error {
 	var s *runconfig.StreamConfig
-	if c := daemon.containers.Get(id); c == nil {
+	c := daemon.containers.Get(id)
+	if c == nil {
 		ec, err := daemon.getExecConfig(id)
 		if err != nil {
 			return fmt.Errorf("no such exec/container: %s", id)
@@ -99,7 +100,11 @@ func (daemon *Daemon) AttachStreams(id string, iop libcontainerd.IOPipe) error {
 			iop.Stdin.Close()
 		}()
 	} else {
-		iop.Stdin.Close()
+		if c != nil && !c.Config.Tty {
+			// tty is enabled, so dont close containerd's iopipe stdin.
+			iop.Stdin.Close()
+
+		}
 	}
 	go func() {
 		// FIXME: remove log
