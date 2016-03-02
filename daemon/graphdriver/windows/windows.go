@@ -748,7 +748,7 @@ func (fg *fileGetCloserWithBackupPrivileges) Get(filename string) (io.ReadCloser
 		}
 		h, err := syscall.CreateFile(&p[0], syscall.GENERIC_READ, syscall.FILE_SHARE_READ, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
 		if err != nil {
-			return &os.PathError{"open", path, err}
+			return &os.PathError{Oper: "open", Path: path, Err: err}
 		}
 		f = os.NewFile(uintptr(h), path)
 		return nil
