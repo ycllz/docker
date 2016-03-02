@@ -274,7 +274,6 @@ func (container *Container) ExitOnNext() {
 	if container.restartManager != nil {
 		container.restartManager.Cancel()
 	}
-	logrus.Debugf("exitonnext")
 	container.HasBeenManuallyStopped = true
 }
 
