@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/caps"
+	"github.com/docker/docker/libcontainerd"
 	"github.com/docker/docker/oci"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/mount"
@@ -546,12 +547,12 @@ func (daemon *Daemon) populateCommonSpec(s *specs.Spec, c *container.Container) 
 		Env:      c.CreateDaemonEnvironment(linkedEnv),
 		Terminal: c.Config.Tty,
 	}
-	s.Hostname = c.Config.Hostname
+	s.Hostname = c.FullHostname()
 
 	return nil
 }
 
-func (daemon *Daemon) createSpec(c *container.Container) (*specs.LinuxSpec, error) {
+func (daemon *Daemon) createSpec(c *container.Container) (*libcontainerd.Spec, error) {
 	s := oci.DefaultSpec()
 	if err := daemon.populateCommonSpec(&s.Spec, c); err != nil {
 		return nil, err
@@ -633,7 +634,7 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.LinuxSpec, erro
 	}
 	s.Linux.SelinuxProcessLabel = c.GetProcessLabel()
 
-	return &s, nil
+	return (*libcontainerd.Spec)(&s), nil
 }
 
 func clearReadOnly(m *specs.Mount) {
