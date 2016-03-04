@@ -13,6 +13,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/graphdriver"
+	"github.com/docker/docker/daemon/graphdriver/windows"
 	"github.com/docker/docker/dockerversion"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
@@ -23,6 +24,9 @@ import (
 	"github.com/docker/docker/daemon/graphdriver/windows"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/system"
+	"github.com/docker/docker/reference"
+	"github.com/docker/engine-api/types"
+	containertypes "github.com/docker/engine-api/types/container"
 	"github.com/docker/libnetwork"
 	nwconfig "github.com/docker/libnetwork/config"
 	winlibnetwork "github.com/docker/libnetwork/drivers/windows"
@@ -403,4 +407,8 @@ func restoreCustomImage(is image.Store, ls layer.Store, rs reference.Store) erro
 
 func driverOptions(config *Config) []nwconfig.Option {
 	return []nwconfig.Option{}
+}
+
+func (daemon *Daemon) stats(c *container.Container) (*types.StatsJSON, error) {
+	return nil, nil
 }
