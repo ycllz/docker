@@ -6,6 +6,11 @@ import (
 	"github.com/docker/docker/restartmanager"
 )
 
+const (
+	initProcessID  = "init"
+	configFilename = "config.json"
+)
+
 // WithRestartManager sets the restartmanager to be used with the container.
 func WithRestartManager(rm restartmanager.RestartManager) CreateOption {
 	return restartManager{rm}
