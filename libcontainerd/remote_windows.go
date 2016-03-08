@@ -1,17 +1,23 @@
 package libcontainerd
 
-import "sync"
+import (
+	"github.com/Sirupsen/logrus"
+	"sync"
+)
 
-// Not used on Windows. Only present for compilation.
 type remote struct {
 	sync.RWMutex
-	clients []*client
+	stateDir string
+	clients  []*client
 }
 
 // New creates a fresh instance of libcontainerd remote.
 // TODO Windows containerd. To implement.
 func New(stateDir string, options ...RemoteOption) (Remote, error) {
-	r := &remote{}
+	logrus.Debugln("libcontainerd remote new() in stateDir", stateDir)
+	r := &remote{
+		stateDir: stateDir,
+	}
 	return r, nil
 }
 

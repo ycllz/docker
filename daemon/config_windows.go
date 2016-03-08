@@ -7,9 +7,9 @@ import (
 )
 
 var (
-	defaultPidFile = os.Getenv("programdata") + string(os.PathSeparator) + "docker.pid"
-	defaultGraph   = os.Getenv("programdata") + string(os.PathSeparator) + "docker"
-	defaultExec    = "windows"
+	defaultPidFile  = os.Getenv("programdata") + `\docker\docker.pid`
+	defaultGraph    = os.Getenv("programdata") + `\docker`
+	defaultExecRoot = defaultGraph
 )
 
 // bridgeConfig stores all the bridge driver specific

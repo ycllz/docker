@@ -18,6 +18,15 @@ var fdNames = map[int]string{
 	syscall.Stderr: "stderr",
 }
 
+// process keeps the state for both main container process and exec process.
+type process struct {
+	client    *client
+	id        string
+	processID string
+	systemPid uint32
+	dir       string
+}
+
 func (p *process) openFifos(terminal bool) (*IOPipe, error) {
 	bundleDir := p.dir
 	if err := os.MkdirAll(bundleDir, 0700); err != nil {
