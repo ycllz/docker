@@ -14,6 +14,11 @@ import (
 // of the configured mounts on the container to the oci mount structure
 // which will ultimately be passed into the exec driver during container creation.
 // It also ensures each of the mounts are lexographically sorted.
+
+// BUGBUG TODO Windows containerd. This would be much better if it returned
+// an array of windowsoci mounts, not container mounts. Then no need to
+// do multiple transitions.
+
 func (daemon *Daemon) setupMounts(c *container.Container) ([]container.Mount, error) {
 	var mnts []container.Mount
 	for _, mount := range c.MountPoints { // type is volume.MountPoint

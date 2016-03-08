@@ -11,11 +11,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-const (
-	configFilename = "config.json"
-	initProcessID  = "init"
-)
-
 type container struct {
 	process
 	pauseMonitor

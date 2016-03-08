@@ -9,8 +9,8 @@ type Spec windowsoci.WindowsSpec
 type Process struct {
 	// Terminal creates an interactive terminal for the container.
 	Terminal bool `json:"terminal"`
-	//	// User specifies user information for the process.
-	//	User User `json:"user"`
+	// User specifies user information for the process.
+	User User `json:"user"`
 	// Args specifies the binary and arguments for the application to execute.
 	Args []string `json:"args"`
 	// Env populates the process environment for the process.
@@ -20,8 +20,11 @@ type Process struct {
 	Cwd string `json:"cwd"`
 }
 
+// User specifies user information for the containers main process.
+type User windowsoci.User
+
 // Stats contains a stats properties from containerd.
-type Stats struct{} // TODO Windows - what to do with this? containerd.StatsResponse
+type Stats struct{}
 
 // Resources defines updatable container resource values.
 type Resources struct{}
