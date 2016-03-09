@@ -1077,8 +1077,12 @@ func (daemon *Daemon) stats(c *container.Container) (*types.StatsJSON, error) {
 			Stats:    cgs.MemoryStats.Stats,
 			Failcnt:  mem.Failcnt,
 		}
+		if cgs.PidsStats != nil {
+			s.PidsStats = types.PidsStats{
+				Current: cgs.PidsStats.Current,
+			}
+		}
 	}
 	s.Read = time.Unix(int64(stats.Timestamp), 0)
-
 	return s, nil
 }
