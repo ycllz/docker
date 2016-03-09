@@ -98,11 +98,22 @@ func createLayer(ls Store, parent ChainID, layerFunc layerInit) (Layer, error) {
 		return nil, err
 	}
 
+	if runtime.GOOS == "windows" {
+		if err := mount.Unmount(); err != nil {
+			return nil, err
+		}
+	}
 	ts, err := mount.TarStream()
 	if err != nil {
 		return nil, err
 	}
 	defer ts.Close()
+
+	if runtime.GOOS == "windows" {
+		if _, err := mount.Mount(""); err != nil {
+			return nil, err
+		}
+	}
 
 	layer, err := ls.Register(ts, parent)
 	if err != nil {
