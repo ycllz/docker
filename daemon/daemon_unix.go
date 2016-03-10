@@ -993,6 +993,12 @@ func (daemon *Daemon) conditionalUnmountOnCleanup(container *container.Container
 	daemon.Unmount(container)
 }
 
+// PostRun performs any processing on container after it has stopped
+// to finish operations on it's storage.
+func (daemon *Daemon) postRunProcessing(container *container.Container) error {
+	return nil
+}
+
 func restoreCustomImage(is image.Store, ls layer.Store, rs reference.Store) error {
 	// Unix has no custom images to register
 	return nil

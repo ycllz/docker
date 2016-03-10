@@ -940,6 +940,12 @@ func (daemon *Daemon) Run(c *container.Container, pipes *execdriver.Pipes, start
 	return daemon.execDriver.Run(c.Command, pipes, hooks)
 }
 
+// PostRun performs any processing to finilize container operations after the
+// container has stopped running and it's storage has been dismounted.
+func (daemon *Daemon) PostRun(container *container.Container) error {
+	return daemon.postRunProcessing(container)
+}
+
 func (daemon *Daemon) kill(c *container.Container, sig int) error {
 	return daemon.execDriver.Kill(c.Command, sig)
 }

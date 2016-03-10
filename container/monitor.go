@@ -31,6 +31,8 @@ type supervisor interface {
 	StartLogging(*Container) error
 	// Run starts a container
 	Run(c *Container, pipes *execdriver.Pipes, startCallback execdriver.DriverCallback) (execdriver.ExitStatus, error)
+	// PostRun performs any operations needed on the container after it has finished running
+	PostRun(c *Container) error
 	// IsShuttingDown tells whether the supervisor is shutting down or not
 	IsShuttingDown() bool
 }
@@ -127,6 +129,12 @@ func (m *containerMonitor) Close() error {
 
 	if err := m.container.ToDisk(); err != nil {
 		logrus.Errorf("Error dumping container %s state to disk: %s", m.container.ID, err)
+
+		return err
+	}
+
+	if err := m.supervisor.PostRun(m.container); err != nil {
+		logrus.Errorf("Error during post-run processing of container %s: %s", m.container.ID, err)
 
 		return err
 	}

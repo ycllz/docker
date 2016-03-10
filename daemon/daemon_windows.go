@@ -181,6 +181,13 @@ func (daemon *Daemon) conditionalUnmountOnCleanup(container *container.Container
 	}
 }
 
+// postRunProcessing performs any processing on container after it has stopped
+// to finish operations on it's storage, e.g. offline operations to complete an
+// operating system upgrade.
+func (daemon *Daemon) postRunProcessing(container *container.Container) error {
+	return nil
+}
+
 func restoreCustomImage(is image.Store, ls layer.Store, rs reference.Store) error {
 	type graphDriverStore interface {
 		GraphDriver() graphdriver.Driver
