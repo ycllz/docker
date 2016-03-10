@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	initProcessID  = "init"
-	configFilename = "config.json"
+	initFriendlyName = "init"
+	configFilename   = "config.json"
 )
 
 // WithRestartManager sets the restartmanager to be used with the container.

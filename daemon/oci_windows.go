@@ -46,11 +46,8 @@ func (daemon *Daemon) createSpec(c *container.Container) (*libcontainerd.Spec, e
 	}
 
 	// In s.Process
-	// @darrenstahlmsft args/argsescaped/entrypoint
-	s.Process.Args = c.Args
-	s.Process.ArgsEscaped = c.Config.ArgsEscaped
+	s.Process.Args = append([]string{c.Path}, c.Args...)
 	s.Process.Cwd = c.Config.WorkingDir
-	s.Process.Entrypoint = c.Path
 	s.Process.Env = c.CreateDaemonEnvironment(linkedEnv)
 	s.Process.InitialConsoleSize = c.HostConfig.ConsoleSize
 	s.Process.Terminal = c.Config.Tty
@@ -102,12 +99,14 @@ func (daemon *Daemon) createSpec(c *container.Container) (*libcontainerd.Spec, e
 		return nil, fmt.Errorf("invalid network mode: %s", c.HostConfig.NetworkMode)
 	}
 
-	// In s.Windows.Networking TP5 (Sandeep todo.....)
+	// In s.Windows.Networking
+	// @darrenstahlmsft Fix this when this PR is rebased on master 3/11
 	//	s.Windows.Network = &windowsoci.Networking{
 	//		EndpointList: ???? something????,
 	//	}
 
 	// In s.Windows.Resources
+	// @darrenstahlmsft implement these resources
 	cpuShares := uint64(c.HostConfig.CPUShares)
 	s.Windows.Resources = &windowsoci.Resources{
 		CPU: &windowsoci.CPU{
@@ -122,10 +121,10 @@ func (daemon *Daemon) createSpec(c *container.Container) (*libcontainerd.Spec, e
 		Network: &windowsoci.Network{
 		//TODO Bandwidth: ...,
 		},
-		//TODO SandboxSize: ...,
 		Storage: &windowsoci.Storage{
 		//TODO Bps: ...,
 		//TODO Iops: ...,
+		//TODO SandboxSize: ...,
 		},
 	}
 

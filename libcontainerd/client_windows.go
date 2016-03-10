@@ -7,12 +7,24 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/docker/libcontainerd/windowsoci"
 )
+
+// TODO Windows containerd (@jhowardmsft) Make common/platform specific
+type client struct {
+	sync.Mutex                              // lock for containerMutexes map access
+	mapMutex         sync.RWMutex           // protects read/write oprations from containers map
+	containerMutexes map[string]*sync.Mutex // lock by container ID
+	backend          Backend
+	remote           *remote
+	containers       map[string]*container
+}
 
 // defaultContainerNAT is the default name of the container NAT device that is
 // preconfigured on the server.
@@ -269,7 +281,8 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 		}
 	}
 
-	container := c.newContainer(id, options...)
+	container := c.newContainer(id, spec.Process, options...)
+
 	defer func() {
 		if err != nil {
 			c.deleteContainer(id)
@@ -277,7 +290,7 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 	}()
 
 	logrus.Debugf("Finished Create() id=%s, calling container.start()", id)
-	return container.start(&spec)
+	return container.start()
 }
 
 // TODO Implement
@@ -325,12 +338,13 @@ func (c *client) UpdateResources(id string, resources Resources) error {
 	return nil
 }
 
-func (c *client) newContainer(id string, options ...CreateOption) *container {
+func (c *client) newContainer(id string, p windowsoci.Process, options ...CreateOption) *container {
 	container := &container{
 		process: process{
-			id:        id,
-			client:    c,
-			processID: initProcessID,
+			id:           id,
+			client:       c,
+			friendlyName: initFriendlyName,
+			ociProcess:   p,
 		},
 		processes: make(map[string]*process),
 	}
