@@ -1,5 +1,7 @@
 package libcontainerd
 
+import "io"
+
 // process keeps the state for both main container process and exec process.
 type process struct {
 	client *client
@@ -14,4 +16,16 @@ type process struct {
 	// a container, not the 'system' PID in the Linux context. In other words,
 	// it's the PID returned by vmcompute.dll CreateProcessInComputeSystem()
 	systemPid uint32
+}
+
+func openReaderFromPipe(p io.ReadCloser) io.Reader {
+	r, w := io.Pipe()
+	go func() {
+		if _, err := io.Copy(w, p); err != nil {
+			r.CloseWithError(err)
+		}
+		w.Close()
+		p.Close()
+	}()
+	return r
 }

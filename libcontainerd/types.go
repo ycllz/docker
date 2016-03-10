@@ -34,7 +34,6 @@ type IOPipe struct {
 }
 
 // Backend defines callbacks that the client of the library needs to implement.
-// TODO Windows containerd. This is currently not used on Windows
 type Backend interface {
 	StateChanged(id string, state StateInfo) error
 	AttachStreams(id string, io IOPipe) error
