@@ -60,16 +60,11 @@ type Process struct {
 	User User `json:"user"`
 	// Args specifies the binary and arguments for the application to execute.
 	Args []string `json:"args"`
-	// ArgsEscaped specifies if the arguments are already escaped or still need to be escaped
-	ArgsEscaped bool `json:"args_escaped"`
 	// Env populates the process environment for the process.
 	Env []string `json:"env,omitempty"`
 	// Cwd is the current working directory for the process and must be
 	// relative to the container's root.
 	Cwd string `json:"cwd"`
-
-	// BUGBUG HACKHACK
-	Entrypoint string `json:"entrypoint"`
 }
 
 // User contains the user information for Windows
@@ -133,6 +128,8 @@ type Storage struct {
 	Iops *uint64 `json:"iops,omitempty"`
 	// Specifies maximum bytes per second for the system drive
 	Bps *uint64 `json:"bps,omitempty"`
+	// Sandbox size indicates the size to expand the system drive to if it is currently smaller
+	SandboxSize *uint64 `json:"sandbox_size,omitempty"`
 }
 
 // Memory contains memory settings for the container
@@ -171,8 +168,6 @@ type Resources struct {
 	Storage *Storage `json:"storage,omitempty"`
 	// Network restriction configuration
 	Network *Network `json:"network,omitempty"`
-	// Sandbox size indicates the size to expand the system drive to if it is currently smaller
-	SandboxSize *uint64 `json:"sandbox_size,omitempty"`
 }
 
 const (

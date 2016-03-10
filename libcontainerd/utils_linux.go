@@ -33,7 +33,7 @@ func hostIDFromMap(id uint32, mp []specs.IDMapping) int {
 func systemPid(c *containerd.Container) uint32 {
 	var pid uint32
 	for _, p := range c.Processes {
-		if p.Pid == initProcessID {
+		if p.Pid == initFriendlyName {
 			pid = p.SystemPid
 		}
 	}

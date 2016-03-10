@@ -20,11 +20,11 @@ var fdNames = map[int]string{
 
 // process keeps the state for both main container process and exec process.
 type process struct {
-	client    *client
-	id        string
-	processID string
-	systemPid uint32
-	dir       string
+	client       *client
+	id           string
+	friendlyName string
+	systemPid    uint32
+	dir          string
 }
 
 func (p *process) openFifos(terminal bool) (*IOPipe, error) {
@@ -58,7 +58,7 @@ func (p *process) openFifos(terminal bool) (*IOPipe, error) {
 		stdinf.Close()
 		_, err := p.client.remote.apiClient.UpdateProcess(context.Background(), &containerd.UpdateProcessRequest{
 			Id:         p.id,
-			Pid:        p.processID,
+			Pid:        p.friendlyName,
 			CloseStdin: true,
 		})
 		return err
@@ -105,5 +105,5 @@ func closeReaderFifo(fn string) {
 }
 
 func (p *process) fifo(index int) string {
-	return filepath.Join(p.dir, p.processID+"-"+fdNames[index])
+	return filepath.Join(p.dir, p.friendlyName+"-"+fdNames[index])
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
@@ -14,6 +15,16 @@ import (
 	"github.com/opencontainers/specs"
 	"golang.org/x/net/context"
 )
+
+type client struct {
+	sync.Mutex                              // lock for containerMutexes map access
+	mapMutex         sync.RWMutex           // protects read/write oprations from containers map
+	containerMutexes map[string]*sync.Mutex // lock by container ID
+	backend          Backend
+	remote           *remote
+	containers       map[string]*container
+	q                queue
+}
 
 func (c *client) AddProcess(id, processID string, specp Process) error {
 	c.lock(id)
@@ -180,7 +191,7 @@ func (c *client) Signal(id string, sig int) error {
 	}
 	_, err := c.remote.apiClient.Signal(context.Background(), &containerd.SignalRequest{
 		Id:     id,
-		Pid:    initProcessID,
+		Pid:    initFriendlyName,
 		Signal: uint32(sig),
 	})
 	return err
@@ -208,7 +219,7 @@ func (c *client) restore(cont *containerd.Container, options ...CreateOption) (e
 
 	var terminal bool
 	for _, p := range cont.Processes {
-		if p.Pid == initProcessID {
+		if p.Pid == initFriendlyName {
 			terminal = p.Terminal
 		}
 	}
@@ -285,7 +296,7 @@ func (c *client) setState(id, state string) error {
 	chstate := make(chan struct{})
 	_, err = c.remote.apiClient.UpdateContainer(context.Background(), &containerd.UpdateContainerRequest{
 		Id:     id,
-		Pid:    initProcessID,
+		Pid:    initFriendlyName,
 		Status: st,
 	})
 	if err != nil {
@@ -361,10 +372,10 @@ func (c *client) getContainerdContainer(id string) (*containerd.Container, error
 func (c *client) newContainer(dir string, options ...CreateOption) *container {
 	container := &container{
 		process: process{
-			id:        filepath.Base(dir),
-			dir:       dir,
-			client:    c,
-			processID: initProcessID,
+			id:           filepath.Base(dir),
+			dir:          dir,
+			client:       c,
+			friendlyName: initFriendlyName,
 		},
 		processes: make(map[string]*process),
 	}
@@ -398,7 +409,7 @@ func (c *client) UpdateResources(id string, resources Resources) error {
 	}
 	_, err = c.remote.apiClient.UpdateContainer(context.Background(), &containerd.UpdateContainerRequest{
 		Id:        id,
-		Pid:       initProcessID,
+		Pid:       initFriendlyName,
 		Resources: (*containerd.UpdateResource)(&resources),
 	})
 	if err != nil {

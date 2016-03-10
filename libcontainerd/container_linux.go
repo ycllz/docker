@@ -87,12 +87,12 @@ func (c *container) start() error {
 	})
 }
 
-func (c *container) newProcess(id string) *process {
+func (c *container) newProcess(friendlyName string) *process {
 	return &process{
-		id:        c.id,
-		processID: id,
-		dir:       c.dir,
-		client:    c.client,
+		id:           c.id,
+		friendlyName: friendlyName,
+		dir:          c.dir,
+		client:       c.client,
 	}
 }
 
@@ -109,7 +109,7 @@ func (c *container) handleEvent(e *containerd.Event) error {
 		if e.Type == StateOOM {
 			c.oom = true
 		}
-		if e.Type == StateExit && e.Pid != initProcessID {
+		if e.Type == StateExit && e.Pid != initFriendlyName {
 			st.ProcessID = e.Pid
 			st.State = StateExitProcess
 		}
