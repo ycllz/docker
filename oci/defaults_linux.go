@@ -39,7 +39,7 @@ func DefaultSpec() specs.LinuxSpec {
 			Destination: "/dev/pts",
 			Type:        "devpts",
 			Source:      "devpts",
-			Options:     []string{"newinstance", "ptmxmode=0666", "mode=0620", "gid=5"},
+			Options:     []string{"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620", "gid=5"},
 		},
 		{
 			Destination: "/sys",
