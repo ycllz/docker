@@ -2,12 +2,12 @@ package libcontainerd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
+
 	"syscall"
 	"time"
 
@@ -16,18 +16,14 @@ import (
 	"github.com/docker/docker/libcontainerd/windowsoci"
 )
 
-// TODO Windows containerd (@jhowardmsft) Make common/platform specific
 type client struct {
-	sync.Mutex                              // lock for containerMutexes map access
-	mapMutex         sync.RWMutex           // protects read/write oprations from containers map
-	containerMutexes map[string]*sync.Mutex // lock by container ID
-	backend          Backend
-	remote           *remote
-	containers       map[string]*container
+	clientCommon
+
+	// Platform specific properties below here (none presently on Windows)
 }
 
 // defaultContainerNAT is the default name of the container NAT device that is
-// preconfigured on the server.
+// preconfigured on the server. TODO Windows - Remove for TP5 support as not needed.
 const defaultContainerNAT = "ContainerNAT"
 
 // Win32 error codes that are used for various workarounds
@@ -109,13 +105,6 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 
 	logrus.Debugln("LCD Create() with spec", spec)
 
-	// TODO Windows TP5 timeframe. Remove this once TP4 is no longer supported.
-	// Hack for TP4.
-	// This overcomes an issue on TP4 which causes CreateComputeSystem to
-	// intermittently fail. It's predominantly here to make Windows to Windows
-	// CI more reliable.
-	tp4RetryHack := hcsshim.IsTP4()
-
 	cu := &containerInit{
 		SystemType: "Container",
 		Name:       id,
@@ -164,19 +153,11 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 	}
 	cu.MappedDirectories = mds
 
-	// TODO Windows. At some point, when there is CLI on docker run to
-	// enable the IP Address of the container to be passed into docker run,
-	// the IP Address needs to be wired through to HCS in the JSON. It
-	// would be present in c.Network.Interface.IPAddress. See matching
-	// TODO in daemon\container_windows.go, function populateCommand.
-
 	if spec.Windows.Networking != nil {
-
-		var pbs []portBinding
-
 		// Enumerate through the port bindings specified by the user and convert
 		// them into the internal structure matching the JSON blob that can be
 		// understood by the HCS.
+		var pbs []portBinding
 		for i, v := range spec.Windows.Networking.PortBindings {
 			proto := strings.ToUpper(i.Proto())
 			if proto != "TCP" && proto != "UDP" {
@@ -211,23 +192,12 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 			}
 		}
 
-		// TODO Windows: TP3 workaround. Allow the user to override the name of
-		// the Container NAT device through an environment variable. This will
-		// ultimately be a global daemon parameter on Windows, similar to -b
-		// for the name of the virtual switch (aka bridge).
-		cn := os.Getenv("DOCKER_CONTAINER_NAT")
-		if len(cn) == 0 {
-			cn = defaultContainerNAT
-		}
-
 		dev := device{
 			DeviceType: "Network",
 			Connection: &networkConnection{
 				NetworkName: spec.Windows.Networking.Bridge,
-				// TODO Windows: Fixme, next line. Needs HCS fix.
-				EnableNat: false,
 				Nat: natSettings{
-					Name:         cn,
+					Name:         defaultContainerNAT,
 					PortBindings: pbs,
 				},
 			},
@@ -255,29 +225,31 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 	// TODO Windows TP5 timeframe. Remove when TP4 is no longer supported.
 	// The following a workaround for Windows TP4 which has a networking
 	// bug which fairly frequently returns an error. Back off and retry.
-	maxAttempts := 5
-	for i := 0; i < maxAttempts; i++ {
-		err = hcsshim.CreateComputeSystem(id, configuration)
-		if err == nil {
-			break
-		}
-
-		if !tp4RetryHack {
+	if !hcsshim.IsTP4() {
+		if err := hcsshim.CreateComputeSystem(id, configuration); err != nil {
 			return err
 		}
-
-		if herr, ok := err.(*hcsshim.HcsError); ok {
-			if herr.Err != syscall.ERROR_NOT_FOUND && // Element not found
-				herr.Err != syscall.ERROR_FILE_NOT_FOUND && // The system cannot find the file specified
-				herr.Err != ErrorNoNetwork && // The network is not present or not started
-				herr.Err != ErrorBadPathname && // The specified path is invalid
-				herr.Err != CoEClassstring && // Invalid class string
-				herr.Err != ErrorInvalidObject { // The object identifier does not represent a valid object
-				logrus.Debugln("Failed to create temporary container ", err)
-				return err
+	} else {
+		maxAttempts := 5
+		for i := 0; i < maxAttempts; i++ {
+			err = hcsshim.CreateComputeSystem(id, configuration)
+			if err == nil {
+				break
 			}
-			logrus.Warnf("Invoking Windows TP4 retry hack (%d of %d)", i, maxAttempts-1)
-			time.Sleep(50 * time.Millisecond)
+
+			if herr, ok := err.(*hcsshim.HcsError); ok {
+				if herr.Err != syscall.ERROR_NOT_FOUND && // Element not found
+					herr.Err != syscall.ERROR_FILE_NOT_FOUND && // The system cannot find the file specified
+					herr.Err != ErrorNoNetwork && // The network is not present or not started
+					herr.Err != ErrorBadPathname && // The specified path is invalid
+					herr.Err != CoEClassstring && // Invalid class string
+					herr.Err != ErrorInvalidObject { // The object identifier does not represent a valid object
+					logrus.Debugln("Failed to create temporary container ", err)
+					return err
+				}
+				logrus.Warnf("Invoking Windows TP4 retry hack (%d of %d)", i, maxAttempts-1)
+				time.Sleep(50 * time.Millisecond)
+			}
 		}
 	}
 
@@ -295,58 +267,97 @@ func (c *client) Create(id string, spec Spec, options ...CreateOption) error {
 
 // TODO Implement
 func (c *client) AddProcess(id, processID string, specp Process) error {
-	return nil
+	return errors.New("Not yet implemented on Windows")
 }
 
-// TODO Implment
 func (c *client) Signal(id string, sig int) error {
+	var (
+		cont *container
+		err  error
+	)
+
+	// Get the container as we need it to find the pid of the process.
+	c.lock(id)
+	defer c.unlock(id)
+	if cont, err = c.getContainer(id); err != nil {
+		return err
+	}
+
+	logrus.Debugf("lcd: Signal() id=%s sig=%d pid=%d", id, sig, cont.systemPid)
+
+	context := fmt.Sprintf("kill: sig=%d pid=%d", sig, cont.systemPid)
+
+	if syscall.Signal(sig) == syscall.SIGKILL {
+		// Terminate the compute system
+		if err := hcsshim.TerminateComputeSystem(id, hcsshim.TimeoutInfinite, context); err != nil {
+			logrus.Errorf("Failed to terminate %s - %q", id, err)
+		}
+
+	} else {
+		// Terminate Process
+		if err = hcsshim.TerminateProcessInComputeSystem(id, cont.systemPid); err != nil {
+			logrus.Warnf("Failed to terminate pid %d in %s: %q", cont.systemPid, id, err)
+			// Ignore errors
+			err = nil
+		}
+
+		// Shutdown the compute system
+		if err := hcsshim.ShutdownComputeSystem(id, hcsshim.TimeoutInfinite, context); err != nil {
+			logrus.Errorf("Failed to shutdown %s - %q", id, err)
+		}
+	}
+
 	return nil
 }
 
 // TODO Implement
 func (c *client) Resize(id, processID string, width, height int) error {
-	return nil
+	return errors.New("Not yet implemented on Windows")
 }
 
 // TODO Implement (error on Windows)
 func (c *client) Pause(id string) error {
-	return nil
+	return errors.New("Not yet implemented on Windows")
 }
 
 // TODO Implement
 func (c *client) Resume(id string) error {
-	return nil
+	return errors.New("Not yet implemented on Windows")
 }
 
 // TODO Implement (error on Windows for now)
 func (c *client) Stats(id string) (*Stats, error) {
-	return nil, nil
+	return nil, errors.New("Not yet implemented on Windows")
 }
 
 // TODO Implement
 func (c *client) Restore(id string, options ...CreateOption) error {
-	return nil
+	return errors.New("Not yet implemented on Windows")
 }
 
 // TODO Implement
 func (c *client) GetPidsForContainer(id string) ([]int, error) {
-	return nil, nil
+	return nil, errors.New("Not yet implemented on Windows")
 }
 
 // TODO Implement
 func (c *client) UpdateResources(id string, resources Resources) error {
-	return nil
+	return errors.New("Not yet implemented on Windows")
 }
 
 func (c *client) newContainer(id string, p windowsoci.Process, options ...CreateOption) *container {
 	container := &container{
-		process: process{
-			id:           id,
-			client:       c,
-			friendlyName: initFriendlyName,
-			ociProcess:   p,
+		containerCommon: containerCommon{
+			process: process{
+				processCommon: processCommon{
+					id:           id,
+					client:       c,
+					friendlyName: initFriendlyName,
+				},
+				ociProcess: p,
+			},
+			processes: make(map[string]*process),
 		},
-		processes: make(map[string]*process),
 	}
 
 	// BUGBUG TODO Windows containerd. What options?

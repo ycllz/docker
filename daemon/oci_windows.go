@@ -91,7 +91,7 @@ func (daemon *Daemon) createSpec(c *container.Container) (*libcontainerd.Spec, e
 		if !c.Config.NetworkDisabled {
 			s.Windows.Networking = &windowsoci.Networking{
 				MacAddress:   c.Config.MacAddress,
-				Bridge:       daemon.configStore.bridgeConfig.VirtualSwitchName,
+				Bridge:       daemon.configStore.bridgeConfig.Iface,
 				PortBindings: c.HostConfig.PortBindings,
 			}
 		}

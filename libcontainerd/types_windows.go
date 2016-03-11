@@ -7,6 +7,7 @@ import (
 // Spec is the base configuration for the container.
 type Spec windowsoci.WindowsSpec
 
+// Process contains information to start a specific application inside the container.
 type Process windowsoci.Process
 
 // User specifies user information for the containers main process.

@@ -11,6 +11,13 @@ const (
 	configFilename   = "config.json"
 )
 
+type containerCommon struct {
+	process
+	restartManager restartmanager.RestartManager
+	restarting     bool
+	processes      map[string]*process
+}
+
 // WithRestartManager sets the restartmanager to be used with the container.
 func WithRestartManager(rm restartmanager.RestartManager) CreateOption {
 	return restartManager{rm}

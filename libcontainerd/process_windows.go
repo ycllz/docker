@@ -7,22 +7,12 @@ import (
 )
 
 // process keeps the state for both main container process and exec process.
+
+// process keeps the state for both main container process and exec process.
 type process struct {
-	client *client
+	processCommon
 
-	// id is the Container ID
-	id string
-
-	// friendlyName is an identifier for the process (or `initFriendlyName`
-	// for the first process)
-	friendlyName string
-
-	// On Windows, systemPid is the PID of the first process created in
-	// a container, not the 'system' PID in the Linux context. In other words,
-	// it's the PID returned by vmcompute.dll CreateProcessInComputeSystem()
-	systemPid uint32
-
-	// The following is stored, as container.Start() in Windows
+	// The ociProcess is required, as container.Start() in Windows
 	// needs information that was originally passed in with the spec. This
 	// avoids the start() function requiring a spec to be passed in
 	// (and remembering the spec isn't available in the context of a restart

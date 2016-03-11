@@ -9,18 +9,16 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	containerd "github.com/docker/containerd/api/grpc/types"
-	"github.com/docker/docker/restartmanager"
 	"github.com/opencontainers/specs"
 	"golang.org/x/net/context"
 )
 
 type container struct {
-	process
+	containerCommon
+
+	// Platform specific fields are below here.
 	pauseMonitor
-	restartManager restartmanager.RestartManager
-	restarting     bool
-	oom            bool
-	processes      map[string]*process
+	oom bool
 }
 
 func (c *container) clean() error {
@@ -89,10 +87,12 @@ func (c *container) start() error {
 
 func (c *container) newProcess(friendlyName string) *process {
 	return &process{
-		id:           c.id,
-		friendlyName: friendlyName,
-		dir:          c.dir,
-		client:       c.client,
+		dir: c.dir,
+		processCommon: processCommon{
+			id:           c.id,
+			friendlyName: friendlyName,
+			client:       c.client,
+		},
 	}
 }
 

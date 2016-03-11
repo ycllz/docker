@@ -1,8 +1,10 @@
 package libcontainerd
 
 import (
-	"github.com/Sirupsen/logrus"
+	//	"github.com/Sirupsen/logrus"
 	"sync"
+
+	"github.com/Sirupsen/logrus"
 )
 
 type remote struct {
@@ -11,10 +13,12 @@ type remote struct {
 	clients  []*client
 }
 
+// TODO JJH - Still sure this can be entirely factored out on Windows.
+// Need to play some more with the code.
+
 // New creates a fresh instance of libcontainerd remote.
-// TODO Windows containerd. To implement.
 func New(stateDir string, options ...RemoteOption) (Remote, error) {
-	logrus.Debugln("libcontainerd remote new() in stateDir", stateDir)
+	logrus.Debugf("libcontainerd remote new() in stateDir %v", stateDir)
 	r := &remote{
 		stateDir: stateDir,
 	}
@@ -25,18 +29,7 @@ func New(stateDir string, options ...RemoteOption) (Remote, error) {
 func (r *remote) Cleanup() {
 }
 
-// TODO Windows containerd. Implement me
-// BUGBUG If neither Windows/Linux return nil, no need for error...
-func (r *remote) Client(b Backend) (Client, error) {
-	c := &client{
-		backend:          b,
-		remote:           r,
-		containers:       make(map[string]*container),
-		containerMutexes: make(map[string]*sync.Mutex),
-	}
-
-	r.Lock()
-	r.clients = append(r.clients, c)
-	r.Unlock()
-	return c, nil
+// setClientPlatformFields sets up platform specific fields in a client
+// structure. This is a no-op on Windows
+func (r *remote) setClientPlatformFields(client *client) {
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
@@ -17,13 +16,11 @@ import (
 )
 
 type client struct {
-	sync.Mutex                              // lock for containerMutexes map access
-	mapMutex         sync.RWMutex           // protects read/write oprations from containers map
-	containerMutexes map[string]*sync.Mutex // lock by container ID
-	backend          Backend
-	remote           *remote
-	containers       map[string]*container
-	q                queue
+	clientCommon
+
+	// Platform specific properties below here.
+	remote *remote
+	q      queue
 }
 
 func (c *client) AddProcess(id, processID string, specp Process) error {
@@ -371,13 +368,17 @@ func (c *client) getContainerdContainer(id string) (*containerd.Container, error
 
 func (c *client) newContainer(dir string, options ...CreateOption) *container {
 	container := &container{
-		process: process{
-			id:           filepath.Base(dir),
-			dir:          dir,
-			client:       c,
-			friendlyName: initFriendlyName,
+		containerCommon: containerCommon{
+			process: process{
+				dir: dir,
+				processCommon: processCommon{
+					id:           filepath.Base(dir),
+					client:       c,
+					friendlyName: initFriendlyName,
+				},
+			},
+			processes: make(map[string]*process),
 		},
-		processes: make(map[string]*process),
 	}
 	for _, option := range options {
 		if err := option.Apply(container); err != nil {
@@ -385,16 +386,6 @@ func (c *client) newContainer(dir string, options ...CreateOption) *container {
 		}
 	}
 	return container
-}
-
-func (c *client) getContainer(id string) (*container, error) {
-	c.mapMutex.RLock()
-	container, ok := c.containers[id]
-	defer c.mapMutex.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("invalid container: %s", id) // fixme: typed error
-	}
-	return container, nil
 }
 
 func (c *client) UpdateResources(id string, resources Resources) error {

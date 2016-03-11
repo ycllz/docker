@@ -20,11 +20,10 @@ var fdNames = map[int]string{
 
 // process keeps the state for both main container process and exec process.
 type process struct {
-	client       *client
-	id           string
-	friendlyName string
-	systemPid    uint32
-	dir          string
+	processCommon
+
+	// Platform specific fields are below here.
+	dir string
 }
 
 func (p *process) openFifos(terminal bool) (*IOPipe, error) {
