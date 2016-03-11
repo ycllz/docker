@@ -6,15 +6,7 @@ import (
 	"github.com/Sirupsen/logrus"
 )
 
-type client struct {
-	sync.Mutex                              // lock for containerMutexes map access
-	mapMutex         sync.RWMutex           // protects read/write oprations from containers map
-	containerMutexes map[string]*sync.Mutex // lock by container ID
-	backend          Backend
-	remote           *remote
-	containers       map[string]*container
-	q                queue
-}
+// TODO Windows containerd: JJH Split this. For example q is not used on Windows.
 
 func (c *client) lock(id string) {
 	c.Lock()

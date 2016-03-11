@@ -1,6 +1,9 @@
 package libcontainerd
 
-import "io"
+import (
+	"github.com/docker/docker/libcontainerd/windowsoci"
+	"io"
+)
 
 // process keeps the state for both main container process and exec process.
 type process struct {
@@ -16,6 +19,14 @@ type process struct {
 	// a container, not the 'system' PID in the Linux context. In other words,
 	// it's the PID returned by vmcompute.dll CreateProcessInComputeSystem()
 	systemPid uint32
+
+	// The following is stored as container.Start() in Windows
+	// needs information that was originally passed in with the spec. This
+	// avoids the start() function requiring a spec to be passed in
+	// (and remembering the spec isn't available in the context of a restart
+	// manager initiated start)
+
+	ociProcess windowsoci.Process
 }
 
 func openReaderFromPipe(p io.ReadCloser) io.Reader {

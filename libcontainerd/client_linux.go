@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
@@ -15,6 +16,16 @@ import (
 	"github.com/opencontainers/specs"
 	"golang.org/x/net/context"
 )
+
+type client struct {
+	sync.Mutex                              // lock for containerMutexes map access
+	mapMutex         sync.RWMutex           // protects read/write oprations from containers map
+	containerMutexes map[string]*sync.Mutex // lock by container ID
+	backend          Backend
+	remote           *remote
+	containers       map[string]*container
+	q                queue
+}
 
 func (c *client) AddProcess(id, processID string, specp Process) error {
 	c.lock(id)
