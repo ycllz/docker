@@ -2346,10 +2346,19 @@ func (s *DockerSuite) TestRunUnknownCommand(c *check.C) {
 	out, _, _ := dockerCmdWithStdoutStderr(c, "create", "busybox", "/bin/nada")
 
 	cID := strings.TrimSpace(out)
-	// this behavior changed in v1.11, previously this would have errored in start
 	_, _, err := dockerCmdWithError("start", cID)
-	c.Assert(err, check.IsNil)
-	waitExited(cID, 30*time.Second)
+
+	// Windows and Linux are different here by architectural design. Linux will
+	// fail to start the container, so an error is expected. Windows will
+	// successfully start the container, and once started attempt to execute
+	// the command which will fail.
+	if daemonPlatform == "windows" {
+		// Wait for it to exit.
+		waitExited(cID, 30*time.Second)
+		c.Assert(err, check.IsNil)
+	} else {
+		c.Assert(err, check.NotNil)
+	}
 
 	rc := inspectField(c, cID, "State.ExitCode")
 	if rc == "0" {

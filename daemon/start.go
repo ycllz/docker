@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
+	"syscall"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/container"
@@ -130,6 +132,22 @@ func (daemon *Daemon) containerStart(container *container.Container) (err error)
 	}
 
 	if err := daemon.containerd.Create(container.ID, *spec, libcontainerd.WithRestartManager(container.RestartManager(true))); err != nil {
+
+		// if we receive an internal error from the initial start of a container then lets
+		// return it instead of entering the restart loop
+		// set to 127 for container cmd not found/does not exist)
+		if strings.Contains(err.Error(), "executable file not found") ||
+			strings.Contains(err.Error(), "no such file or directory") ||
+			strings.Contains(err.Error(), "system cannot find the file specified") {
+			container.ExitCode = 127
+			err = fmt.Errorf("Container command not found or does not exist.")
+		}
+		// set to 126 for container cmd can't be invoked errors
+		if strings.Contains(err.Error(), syscall.EACCES.Error()) {
+			container.ExitCode = 126
+			err = fmt.Errorf("Container command could not be invoked.")
+		}
+
 		container.Reset(false)
 		return err
 	}
