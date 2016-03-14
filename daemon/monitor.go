@@ -95,6 +95,7 @@ func (daemon *Daemon) AttachStreams(id string, iop libcontainerd.IOPipe) error {
 	if c == nil {
 		ec, err = daemon.getExecConfig(id)
 		if err != nil {
+			panic("failed to close stdin because container missing")
 			return fmt.Errorf("no such exec/container: %s", id)
 		}
 		s = ec.StreamConfig
@@ -102,6 +103,7 @@ func (daemon *Daemon) AttachStreams(id string, iop libcontainerd.IOPipe) error {
 		s = c.StreamConfig
 		if err := daemon.StartLogging(c); err != nil {
 			c.Reset(false)
+			panic("failed to close stdin because logging failed")
 			return err
 		}
 	}
@@ -115,7 +117,8 @@ func (daemon *Daemon) AttachStreams(id string, iop libcontainerd.IOPipe) error {
 		if c != nil && !c.Config.Tty {
 			// tty is enabled, so dont close containerd's iopipe stdin.
 			iop.Stdin.Close()
-
+		} else {
+			panic("failed to close stdin")
 		}
 	}
 
