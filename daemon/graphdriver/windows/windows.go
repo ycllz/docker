@@ -244,7 +244,7 @@ func (d *Driver) Cleanup() error {
 
 // Diff produces an archive of the changes between the specified
 // layer and its parent layer which may be "".
-// The layer should not be mounted when calling this function
+// The layer be mounted when calling this function
 func (d *Driver) Diff(id, parent string) (_ archive.Archive, err error) {
 	rID, err := d.resolveID(id)
 	if err != nil {
@@ -256,12 +256,12 @@ func (d *Driver) Diff(id, parent string) (_ archive.Archive, err error) {
 		return
 	}
 
-	// this is assuming that the layer is unmounted
-	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
+	// this is assuming that the layer is mounted
+	if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err := hcsshim.DeactivateLayer(d.info, rID); err != nil {
+		if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", rID, err)
 		}
 	}()
@@ -277,7 +277,7 @@ func (d *Driver) Diff(id, parent string) (_ archive.Archive, err error) {
 
 // Changes produces a list of changes between the specified layer
 // and its parent layer. If parent is "", then all changes will be ADD changes.
-// The layer should not be mounted when calling this function
+// The layer be mounted when calling this function
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 	rID, err := d.resolveID(id)
 	if err != nil {
@@ -288,12 +288,12 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 		return nil, err
 	}
 
-	// this is assuming that the layer is unmounted
-	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
+	// this is assuming that the layer is mounted
+	if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err := hcsshim.DeactivateLayer(d.info, rID); err != nil {
+		if err := hcsshim.PrepareLayer(d.info, rID, parentChain); err != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", rID, err)
 		}
 	}()

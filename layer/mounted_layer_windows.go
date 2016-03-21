@@ -10,7 +10,7 @@ func (rl *referencedRWLayer) TarStream() (io.ReadCloser, error) {
 	rl.activityL.Lock()
 	defer rl.activityL.Unlock()
 
-	if rl.activityCount > 0 {
+	if rl.activityCount <= 0 {
 		return nil, ErrNotSupported
 	}
 
@@ -21,7 +21,7 @@ func (rl *referencedRWLayer) Changes() ([]archive.Change, error) {
 	rl.activityL.Lock()
 	defer rl.activityL.Unlock()
 
-	if rl.activityCount > 0 {
+	if rl.activityCount <= 0 {
 		return nil, ErrNotSupported
 	}
 
