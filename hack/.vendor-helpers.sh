@@ -78,6 +78,7 @@ clean() {
 		"${PROJECT}/docker" # daemon package main
 		"${PROJECT}/client" # client package main
 		"${PROJECT}/integration-cli" # external tests
+		"${PROJECT}/contrib/wim2img" # Windows base image construction
 	)
 	local dockerPlatforms=( ${DOCKER_ENGINE_OSARCH:="linux/amd64"} $(_dockerfile_env DOCKER_CROSSPLATFORMS) )
 	local dockerBuildTags="$(_dockerfile_env DOCKER_BUILDTAGS)"
