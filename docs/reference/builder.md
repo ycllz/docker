@@ -106,27 +106,175 @@ repository to its registry*](../userguide/containers/dockerrepos.md#contributing
 
 Here is the format of the `Dockerfile`:
 
-    # Comment
-    INSTRUCTION arguments
+```Dockerfile
+# Comment
+INSTRUCTION arguments
+```
 
-The instruction is not case-sensitive, however convention is for them to
-be UPPERCASE in order to distinguish them from arguments more easily.
+The instruction is not case-sensitive. However, convention is for them to
+be UPPERCASE to distinguish them from arguments more easily.
 
-Docker runs the instructions in a `Dockerfile` in order. **The
-first instruction must be \`FROM\`** in order to specify the [*Base
-Image*](glossary.md#base-image) from which you are building.
 
-Docker will treat lines that *begin* with `#` as a
-comment. A `#` marker anywhere else in the line will
-be treated as an argument. This allows statements like:
+Docker runs instructions in a `Dockerfile` in order. **The first 
+instruction must be \`FROM\`** in order to specify the [*Base
+Image*](glossary.md#base-image) from which you are building. 
 
-    # Comment
-    RUN echo 'we are running some # of cool things'
+Docker treats lines that *begin* with `#` as a comment, unless the line is 
+a valid [parser directive](builder.md#parser directives). A `#` marker anywhere
+else in a line is treated as an argument. This allows statements like:
 
-Here is the set of instructions you can use in a `Dockerfile` for building
-images.
+```Dockerfile
+# Comment
+RUN echo 'we are running some # of cool things'
+```
 
-### Environment replacement
+Line continuation characters are not supported in comments or parser directives.
+
+## Parser directives
+
+Parser directives are optional, and affect the way in which subsequent lines 
+in a `Dockerfile` are handled. Parser directives do not add layers to the build,
+and will not be shown as a build step. Parser directives must appear 
+before any instruction in a Dockerfile, and may be included once, and once only,
+in a Dockerfile. Parser directives are written as a special type of comment in
+the form `# DIRECTIVE=value`.  Due to these rules, the following examples are all 
+invalid:
+
+Invalid due to line continuation:
+
+```Dockerfile
+# DIREC \
+TIVE=value
+```
+
+Invalid due to appearing twice:
+
+```Dockerfile
+# DIRECTIVE=value1
+FROM ImageName
+# DIRECTIVE=value2
+```
+    
+Invalid due to appearing after a builder instruction:
+
+```Dockerfile
+FROM ImageName
+# DIRECTIVE=value
+```
+
+The following would be treated as a comment due to the directive not being
+recognized:
+
+```Dockerfile
+# UNRECOGNIZEDDIRECTIVE=value
+```    
+    
+Directives are not case-sensitive.  However, convention is for them to
+be UPPERCASE to distinguish them from other comments more easily. Non 
+line-breaking whitespace is permitted, as is a subsequent comment. Hence 
+these examples are all syntactically valid, and are treated identically:
+
+```Dockerfile
+#DIRECTIVE=value
+# DIRECTIVE =value
+#	DIRECTIVE= value
+# DIRECTIVE = value
+#	  dIrEcTiVe=value
+```
+
+The following parser directive is supported:
+
+* `ESCAPE`
+
+## ESCAPE
+
+    # ESCAPE=\
+
+Or
+
+    # ESCAPE=`
+
+The `ESCAPE` directive sets the character used to escape characters in a 
+`Dockerfile`. If not specified, the default escape character is `\`. 
+
+The escape character is used both to escape characters in a line, and to
+escape a newline. This allows a `Dockerfile` instruction to
+span multiple lines. Note that regardless of whether the `ESCAPE` parser
+directive is included in a `Dockerfile`, *escaping is not performed in 
+a `RUN` command, except at the end of a line.* 
+
+Setting the escape character to `` ` `` is especially useful on 
+`Windows`, where `\` is the directory path separator. `` ` `` is consistent 
+with [Windows PowerShell](https://technet.microsoft.com/en-us/library/hh847755.aspx).
+
+Consider the following example which would fail in a non-obvious way on 
+`Windows`. The second `\` at the end of the second line would be interpreted as an
+escape for the newline, instead of a target of the escape from the first `\`. 
+Similarly, the `\` at the end of the third line would, assuming it was actually
+handled as an instruction, cause it be treated as a line continuation. The result
+of this dockerfile is that second and third lines are considered a single
+instruction: 
+
+```Dockerfile
+FROM windowsservercore
+COPY testfile.txt c:\\
+RUN dir c:\
+```
+
+Results in:
+
+    PS C:\John> docker build -t cmd .
+    Sending build context to Docker daemon 3.072 kB
+    Step 1 : FROM windowsservercore
+     ---> dbfee88ee9fd
+    Step 2 : COPY testfile.txt c:RUN dir c:
+    GetFileAttributesEx c:RUN: The system cannot find the file specified.
+    PS C:\John> 
+
+One solution to the above would be to use `/` as the target of both the `COPY`
+instruction, and `dir`. However, this syntax is, at best, confusing as it is not
+natural for paths on `Windows`, and at worst, error prone as not all commands on
+`Windows` support `/` as the path separator.
+
+By adding the `ESCAPE` parser directive, the following `Dockerfile` succeeds as 
+expected with the use of natural platform semantics for file paths on `Windows`:
+
+    # ESCAPE=`
+    FROM windowsservercore
+    COPY testfile.txt c:\
+    RUN dir c:\
+
+Results in:
+
+    PS C:\John> docker build -t succeeds --no-cache=true .
+    Sending build context to Docker daemon 3.072 kB
+    Step 1 : FROM windowsservercore
+     ---> dbfee88ee9fd
+    Step 2 : COPY testfile.txt c:\
+     ---> 99ceb62e90df
+    Removing intermediate container 62afbe726221
+    Step 3 : RUN dir c:\
+     ---> Running in a5ff53ad6323
+     Volume in drive C has no label.
+     Volume Serial Number is 1440-27FA
+    
+     Directory of c:\
+    
+    03/25/2016  05:28 AM    <DIR>          inetpub
+    03/25/2016  04:22 AM    <DIR>          PerfLogs
+    04/22/2016  10:59 PM    <DIR>          Program Files
+    03/25/2016  04:22 AM    <DIR>          Program Files (x86)
+    04/18/2016  09:26 AM                 4 testfile.txt
+    04/22/2016  10:59 PM    <DIR>          Users
+    04/22/2016  10:59 PM    <DIR>          Windows
+                   1 File(s)              4 bytes
+                   6 Dir(s)  21,252,689,920 bytes free
+     ---> 2569aa19abef
+    Removing intermediate container a5ff53ad6323
+    Successfully built 2569aa19abef
+    PS C:\John>
+
+## Environment replacement
 
 Environment variables (declared with [the `ENV` statement](#env)) can also be
 used in certain instructions as variables to be interpreted by the
@@ -192,7 +340,7 @@ will result in `def` having a value of `hello`, not `bye`. However,
 `ghi` will have a value of `bye` because it is not part of the same command
 that set `abc` to `bye`.
 
-### .dockerignore file
+## .dockerignore file
 
 Before the docker CLI sends the context to the docker daemon, it looks
 for a file named `.dockerignore` in the root directory of the context.
