@@ -37,8 +37,12 @@ clone() {
 	echo -n 'clone, '
 	case "$vcs" in
 		git)
-			git clone --quiet --no-checkout "$url" "$target"
-			( cd "$target" && git checkout --quiet "$rev" && git reset --quiet --hard "$rev" )
+			if (echo $target | grep -q '^https://github.com/'); then
+				mkdir "$target" && curl "$url/archive/$rev.tar.gz" | tar -C "$target" -x
+			else
+				git clone --quiet --no-checkout "$url" "$target"
+				( cd "$target" && git checkout --quiet "$rev" && git reset --quiet --hard "$rev" )
+			fi
 			;;
 		hg)
 			hg clone --quiet --updaterev "$rev" "$url" "$target"
