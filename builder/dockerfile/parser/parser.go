@@ -36,14 +36,14 @@ type Node struct {
 }
 
 var (
-	dispatch                    map[string]func(string) (*Node, map[string]bool, error)
-	tokenWhitespace             = regexp.MustCompile(`[\t\v\f\r ]+`)
-	tokenLineContinuation       *regexp.Regexp
-	tokenEscape                 rune
-	tokenEscapeCommand          = regexp.MustCompile(`^#[ \t]*escape[ \t]*=[ \t]*(?P<escapechar>.).*$`)
-	tokenComment                = regexp.MustCompile(`^#.*$`)
-	builderInstructionProcessed bool
-	directiveEscapeSeen         bool
+	dispatch              map[string]func(string) (*Node, map[string]bool, error)
+	tokenWhitespace       = regexp.MustCompile(`[\t\v\f\r ]+`)
+	tokenLineContinuation *regexp.Regexp
+	tokenEscape           rune
+	tokenEscapeCommand    = regexp.MustCompile(`^#[ \t]*escape[ \t]*=[ \t]*(?P<escapechar>.).*$`)
+	tokenComment          = regexp.MustCompile(`^#.*$`)
+	lookingForDirectives  bool
+	directiveEscapeSeen   bool
 )
 
 const defaultTokenEscape = "\\"
@@ -88,26 +88,27 @@ func init() {
 // ParseLine parse a line and return the remainder.
 func ParseLine(line string) (string, *Node, error) {
 
-	// Handle the parser directive '# ESCAPE=<char>. Parser directives must preceed
-	// any builder instruction, and cannot be repeated.
-	tecMatch := tokenEscapeCommand.FindStringSubmatch(strings.ToLower(line))
-	if len(tecMatch) > 0 {
-		if builderInstructionProcessed == true {
-			return "", nil, fmt.Errorf("the ESCAPE directive must come before any builder instruction")
-		}
-		if directiveEscapeSeen == true {
-			return "", nil, fmt.Errorf("only one ESCAPE parser directive can be used")
-		}
-		for i, n := range tokenEscapeCommand.SubexpNames() {
-			if n == "escapechar" {
-				if err := setTokenEscape(tecMatch[i]); err != nil {
-					return "", nil, err
+	// Handle the parser directive '# escape=<char>. Parser directives must preceed
+	// any builder instruction or other comments, and cannot be repeated.
+	if lookingForDirectives {
+		tecMatch := tokenEscapeCommand.FindStringSubmatch(strings.ToLower(line))
+		if len(tecMatch) > 0 {
+			if directiveEscapeSeen == true {
+				return "", nil, fmt.Errorf("only one escape parser directive can be used")
+			}
+			for i, n := range tokenEscapeCommand.SubexpNames() {
+				if n == "escapechar" {
+					if err := setTokenEscape(tecMatch[i]); err != nil {
+						return "", nil, err
+					}
+					directiveEscapeSeen = true
+					return "", nil, nil
 				}
-				directiveEscapeSeen = true
-				return "", nil, nil
 			}
 		}
 	}
+
+	lookingForDirectives = false
 
 	if line = stripComments(line); line == "" {
 		return "", nil, nil
@@ -135,7 +136,6 @@ func ParseLine(line string) (string, *Node, error) {
 	node.Attributes = attrs
 	node.Original = line
 	node.Flags = flags
-	builderInstructionProcessed = true
 
 	return "", node, nil
 }
@@ -143,8 +143,8 @@ func ParseLine(line string) (string, *Node, error) {
 // Parse is the main parse routine.
 // It handles an io.ReadWriteCloser and returns the root of the AST.
 func Parse(rwc io.Reader) (*Node, error) {
-	builderInstructionProcessed = false
 	directiveEscapeSeen = false
+	lookingForDirectives = true
 	setTokenEscape(defaultTokenEscape) // Assume the default token for escape
 	currentLine := 0
 	root := &Node{}
