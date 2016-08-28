@@ -14,6 +14,7 @@ import (
 	enginecontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
+	enginemount "github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	volumetypes "github.com/docker/docker/api/types/volume"
 	clustertypes "github.com/docker/docker/daemon/cluster/provider"
@@ -186,11 +187,10 @@ func (c *containerConfig) config() *enginecontainer.Config {
 		Labels:       c.labels(),
 		Tty:          c.spec().TTY,
 		User:         c.spec().User,
-		Env:          c.spec().Env,
 		Hostname:     c.spec().Hostname,
+		Env:          c.spec().Env,
 		WorkingDir:   c.spec().Dir,
 		Image:        c.image(),
-		Volumes:      c.volumes(),
 		ExposedPorts: c.exposedPorts(),
 		Healthcheck:  c.healthcheck(),
 	}
@@ -242,22 +242,6 @@ func (c *containerConfig) labels() map[string]string {
 	return labels
 }
 
-// volumes gets placed into the Volumes field on the containerConfig.
-func (c *containerConfig) volumes() map[string]struct{} {
-	r := make(map[string]struct{})
-	// Volumes *only* creates anonymous volumes. The rest is mixed in with
-	// binds, which aren't actually binds. Basically, any volume that
-	// results in a single component must be added here.
-	//
-	// This is reversed engineered from the behavior of the engine API.
-	for _, mount := range c.spec().Mounts {
-		if mount.Type == api.MountTypeVolume && mount.Source == "" {
-			r[mount.Target] = struct{}{}
-		}
-	}
-	return r
-}
-
 func (c *containerConfig) tmpfs() map[string]string {
 	r := make(map[string]string)
 
@@ -272,19 +256,85 @@ func (c *containerConfig) tmpfs() map[string]string {
 	return r
 }
 
-func (c *containerConfig) binds() []string {
-	var r []string
+func (c *containerConfig) mounts() []enginemount.Mount {
+	var r []enginemount.Mount
 	for _, mount := range c.spec().Mounts {
-		if mount.Type == api.MountTypeBind || (mount.Type == api.MountTypeVolume && mount.Source != "") {
-			spec := fmt.Sprintf("%s:%s", mount.Source, mount.Target)
-			mask := getMountMask(&mount)
-			if mask != "" {
-				spec = fmt.Sprintf("%s:%s", spec, mask)
-			}
-			r = append(r, spec)
-		}
+		r = append(r, convertMount(mount))
 	}
 	return r
+}
+
+// convertMount is from PR docker/swarmkit#1563;
+// need rebase after corresponding PR is merged to the engine
+func convertMount(m api.Mount) enginemount.Mount {
+	mount := enginemount.Mount{
+		Source:   m.Source,
+		Target:   m.Target,
+		ReadOnly: m.ReadOnly,
+	}
+
+	switch m.Type {
+	case api.MountTypeBind:
+		mount.Type = enginemount.TypeBind
+	case api.MountTypeVolume:
+		mount.Type = enginemount.TypeVolume
+	case api.MountTypeTmpfs:
+		mount.Type = enginemount.TypeTmpfs
+	case api.MountTypeIntrospection:
+		mount.Type = enginemount.TypeIntrospection
+	default:
+		panic("cannot convert type %s")
+	}
+
+	if m.BindOptions != nil {
+		mount.BindOptions = &enginemount.BindOptions{}
+		switch m.BindOptions.Propagation {
+		case api.MountPropagationRPrivate:
+			mount.BindOptions.Propagation = enginemount.PropagationRPrivate
+		case api.MountPropagationPrivate:
+			mount.BindOptions.Propagation = enginemount.PropagationPrivate
+		case api.MountPropagationRSlave:
+			mount.BindOptions.Propagation = enginemount.PropagationRSlave
+		case api.MountPropagationSlave:
+			mount.BindOptions.Propagation = enginemount.PropagationSlave
+		case api.MountPropagationRShared:
+			mount.BindOptions.Propagation = enginemount.PropagationRShared
+		case api.MountPropagationShared:
+			mount.BindOptions.Propagation = enginemount.PropagationShared
+		}
+	}
+
+	if m.VolumeOptions != nil {
+		mount.VolumeOptions = &enginemount.VolumeOptions{
+			NoCopy: m.VolumeOptions.NoCopy,
+		}
+		if m.VolumeOptions.Labels != nil {
+			mount.VolumeOptions.Labels = make(map[string]string, len(m.VolumeOptions.Labels))
+			for k, v := range m.VolumeOptions.Labels {
+				mount.VolumeOptions.Labels[k] = v
+			}
+		}
+		if m.VolumeOptions.DriverConfig != nil {
+			mount.VolumeOptions.DriverConfig = &enginemount.Driver{
+				Name: m.VolumeOptions.DriverConfig.Name,
+			}
+			if m.VolumeOptions.DriverConfig.Options != nil {
+				mount.VolumeOptions.DriverConfig.Options = make(map[string]string, len(m.VolumeOptions.DriverConfig.Options))
+				for k, v := range m.VolumeOptions.DriverConfig.Options {
+					mount.VolumeOptions.DriverConfig.Options[k] = v
+				}
+			}
+		}
+	}
+
+	if m.TmpfsOptions != nil {
+		mount.TmpfsOptions = &enginemount.TmpfsOptions{
+			SizeBytes: m.TmpfsOptions.SizeBytes,
+			Mode:      m.TmpfsOptions.Mode,
+		}
+	}
+
+	return mount
 }
 
 func (c *containerConfig) healthcheck() *enginecontainer.HealthConfig {
@@ -380,7 +430,7 @@ func getMountMask(m *api.Mount) string {
 func (c *containerConfig) hostConfig() *enginecontainer.HostConfig {
 	hc := &enginecontainer.HostConfig{
 		Resources:    c.resources(),
-		Binds:        c.binds(),
+		Mounts:       c.mounts(),
 		Tmpfs:        c.tmpfs(),
 		GroupAdd:     c.spec().Groups,
 		PortBindings: c.portBindings(),
