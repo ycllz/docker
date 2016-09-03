@@ -62,6 +62,7 @@ func NewImageStore(fs StoreBackend, ls LayerGetReleaser) (Store, error) {
 
 func (is *store) restore() error {
 	err := is.fs.Walk(func(id ID) error {
+		fmt.Println("Walk sub function with ID", id)
 		img, err := is.Get(id)
 		if err != nil {
 			logrus.Errorf("invalid image %v, %v", id, err)
@@ -69,12 +70,16 @@ func (is *store) restore() error {
 		}
 		var l layer.Layer
 		if chainID := img.RootFS.ChainID(); chainID != "" {
+			fmt.Println("chainID=", chainID.String())
 			l, err = is.ls.Get(chainID)
 			if err != nil {
+				fmt.Println("Failed to get chain ID", err.Error())
 				return err
 			}
 		}
+		fmt.Println("digest.Digest(id)=", digest.Digest(id))
 		if err := is.digestSet.Add(digest.Digest(id)); err != nil {
+			fmt.Println("Failed to call digestSet.Add")
 			return err
 		}
 
@@ -88,9 +93,11 @@ func (is *store) restore() error {
 		return nil
 	})
 	if err != nil {
+		fmt.Println("After func returning error", err.Error())
 		return err
 	}
 
+	fmt.Println("Second pass")
 	// Second pass to fill in children maps
 	for id := range is.images {
 		if parent, err := is.GetParent(id); err == nil {
@@ -100,6 +107,7 @@ func (is *store) restore() error {
 		}
 	}
 
+	fmt.Println("End of restore()")
 	return nil
 }
 
