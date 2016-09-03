@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 
 	"github.com/Sirupsen/logrus"
@@ -68,6 +69,10 @@ func (s *fs) metadataDir(id ID) string {
 // Walk calls the supplied callback for each image ID in the storage backend.
 func (s *fs) Walk(f IDWalkFunc) error {
 	// Only Canonical digest (sha256) is currently supported
+	fmt.Println("Entered fs.go Walk()")
+	fmt.Println(" - root=", s.root)
+	fmt.Println(" - contentDirName", contentDirName)
+	fmt.Println(" - digest.Canonical", string(digest.Canonical))
 	s.RLock()
 	dir, err := ioutil.ReadDir(filepath.Join(s.root, contentDirName, string(digest.Canonical)))
 	s.RUnlock()
@@ -76,14 +81,19 @@ func (s *fs) Walk(f IDWalkFunc) error {
 	}
 	for _, v := range dir {
 		dgst := digest.NewDigestFromHex(string(digest.Canonical), v.Name())
+		fmt.Println("In loop: dgst", dgst.String())
 		if err := dgst.Validate(); err != nil {
 			logrus.Debugf("Skipping invalid digest %s: %s", dgst, err)
 			continue
 		}
+		fmt.Println("Calling f(ID(dgst))...")
 		if err := f(ID(dgst)); err != nil {
+			debug.PrintStack()
+			fmt.Println("Which failed")
 			return err
 		}
 	}
+	fmt.Println("Walk out of loop")
 	return nil
 }
 
