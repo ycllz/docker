@@ -48,15 +48,11 @@ func (clnt *client) AddProcess(ctx context.Context, containerID, processFriendly
 	if specp.Env != nil {
 		sp.Env = specp.Env
 	}
-	if specp.Cwd != nil {
-		sp.Cwd = *specp.Cwd
-	}
-	if specp.User != nil {
-		sp.User = specs.User{
-			UID:            specp.User.UID,
-			GID:            specp.User.GID,
-			AdditionalGids: specp.User.AdditionalGids,
-		}
+	sp.Cwd = specp.Cwd
+	sp.User = specs.User{
+		UID:            specp.User.UID,
+		GID:            specp.User.GID,
+		AdditionalGids: specp.User.AdditionalGids,
 	}
 	if specp.Capabilities != nil {
 		sp.Capabilities = specp.Capabilities
