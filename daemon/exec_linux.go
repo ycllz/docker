@@ -13,7 +13,7 @@ func execSetPlatformOpt(c *container.Container, ec *exec.Config, p *libcontainer
 		if err != nil {
 			return err
 		}
-		p.User = &libcontainerd.User{
+		p.User = libcontainerd.User{
 			UID:            uid,
 			GID:            gid,
 			AdditionalGids: additionalGids,
