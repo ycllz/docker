@@ -37,8 +37,6 @@ type Spec struct {
 type Windows struct {
 	// Resources contains information for handling resource constraints for the container
 	Resources *Resources `json:"resources,omitempty"`
-	// Networking contains the platform specific network settings for the container.
-	Networking *Networking `json:"networking,omitempty"`
 }
 
 // Process contains information to start a specific application inside the container.
@@ -114,12 +112,6 @@ type Mount struct {
 	Source string `json:"source"`
 	// Options are fstab style mount options.
 	Options []string `json:"options,omitempty"`
-}
-
-// Networking contains the platform specific network settings for the container
-type Networking struct {
-	// List of endpoints to be attached to the container
-	EndpointList []string `json:"endpoints,omitempty"`
 }
 
 // Storage contains storage resource management settings

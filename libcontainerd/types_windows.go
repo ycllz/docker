@@ -61,6 +61,12 @@ type LayerOption struct {
 	LayerPaths []string
 }
 
+// NetworkEndpointsOption is an empty CreateOption that provides the runtime list
+// of network endpoints to which a container should be attached during its creation.
+type NetworkEndpointsOption struct {
+	Endpoints []string
+}
+
 // Checkpoint holds the details of a checkpoint (not supported in windows)
 type Checkpoint struct {
 	Name string
