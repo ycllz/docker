@@ -39,12 +39,6 @@ type Windows struct {
 	Resources *Resources `json:"resources,omitempty"`
 	// Networking contains the platform specific network settings for the container.
 	Networking *Networking `json:"networking,omitempty"`
-	// LayerFolder is the path to the current layer folder
-	LayerFolder string `json:"layer_folder,omitempty"`
-	// Layer paths of the parent layers
-	LayerPaths []string `json:"layer_paths,omitempty"`
-	// HvRuntime contains settings specific to Hyper-V containers, omitted if not using Hyper-V isolation
-	HvRuntime *HvRuntime `json:"hv_runtime,omitempty"`
 }
 
 // Process contains information to start a specific application inside the container.
@@ -120,12 +114,6 @@ type Mount struct {
 	Source string `json:"source"`
 	// Options are fstab style mount options.
 	Options []string `json:"options,omitempty"`
-}
-
-// HvRuntime contains settings specific to Hyper-V containers
-type HvRuntime struct {
-	// ImagePath is the path to the Utility VM image for this container
-	ImagePath string `json:"image_path,omitempty"`
 }
 
 // Networking contains the platform specific network settings for the container
