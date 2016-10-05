@@ -91,7 +91,6 @@ func (ctr *container) start() error {
 		}
 		return err
 	}
-	ctr.startedAt = time.Now()
 
 	pid := newProcess.Pid()
 
@@ -234,17 +233,17 @@ func (ctr *container) waitExit(process *process, isFirstProcessToStart bool) err
 			logrus.Error(err)
 		}
 
-		if !ctr.manualStopRequested && ctr.restartManager != nil {
-			restart, wait, err := ctr.restartManager.ShouldRestart(uint32(exitCode), false, time.Since(ctr.startedAt))
-			if err != nil {
-				logrus.Error(err)
-			} else if restart {
-				si.State = StateRestart
-				ctr.restarting = true
-				ctr.client.deleteContainer(ctr.containerID)
-				waitRestart = wait
-			}
-		}
+		// if !ctr.manualStopRequested && ctr.restartManager != nil {
+		// 	restart, wait, err := ctr.restartManager.ShouldRestart(uint32(exitCode), false, time.Since(ctr.startedAt))
+		// 	if err != nil {
+		// 		logrus.Error(err)
+		// 	} else if restart {
+		// 		// si.State = StateRestart
+		// 		ctr.restarting = true
+		// 		ctr.client.deleteContainer(ctr.containerID)
+		// 		waitRestart = wait
+		// 	}
+		// }
 
 		// Remove process from list if we have exited
 		// We need to do so here in case the Message Handler decides to restart it.
@@ -268,23 +267,23 @@ func (ctr *container) waitExit(process *process, isFirstProcessToStart bool) err
 
 	logrus.Debugf("libcontainerd: waitExit() completed OK, %+v", si)
 
-	if si.State == StateRestart {
-		go func() {
-			err := <-waitRestart
-			ctr.restarting = false
-			if err == nil {
-				if err = ctr.client.Create(ctr.containerID, "", "", ctr.ociSpec, ctr.options...); err != nil {
-					logrus.Errorf("libcontainerd: error restarting %v", err)
-				}
-			}
-			if err != nil {
-				si.State = StateExit
-				if err := ctr.client.backend.StateChanged(ctr.containerID, si); err != nil {
-					logrus.Error(err)
-				}
-			}
-		}()
-	}
+	// if si.State == StateRestart {
+	// 	go func() {
+	// 		err := <-waitRestart
+	// 		ctr.restarting = false
+	// 		if err == nil {
+	// 			if err = ctr.client.Create(ctr.containerID, "", "", ctr.ociSpec, ctr.options...); err != nil {
+	// 				logrus.Errorf("libcontainerd: error restarting %v", err)
+	// 			}
+	// 		}
+	// 		if err != nil {
+	// 			si.State = StateExit
+	// 			if err := ctr.client.backend.StateChanged(ctr.containerID, si); err != nil {
+	// 				logrus.Error(err)
+	// 			}
+	// 		}
+	// 	}()
+	// }
 
 	return nil
 }

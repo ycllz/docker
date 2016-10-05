@@ -9,7 +9,7 @@ import (
 	"github.com/docker/docker/libcontainerd"
 )
 
-func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Container) (*[]libcontainerd.CreateOption, error) {
+func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Container) ([]libcontainerd.CreateOption, error) {
 	createOptions := []libcontainerd.CreateOption{}
 
 	// Are we going to run as a Hyper-V container?
@@ -88,5 +88,5 @@ func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Contain
 		createOptions = append(createOptions, &libcontainerd.NetworkEndpointsOption{Endpoints: epList, AllowUnqualifiedDNSQuery: AllowUnqualifiedDNSQuery})
 	}
 
-	return &createOptions, nil
+	return createOptions, nil
 }
