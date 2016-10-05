@@ -117,7 +117,6 @@ func (ps *Store) Remove(p *v2.Plugin) {
 	delete(ps.plugins, p.GetID())
 	delete(ps.nameToID, p.Name())
 	ps.updatePluginDB()
-	p.RemoveFromDisk()
 	ps.Unlock()
 }
 
