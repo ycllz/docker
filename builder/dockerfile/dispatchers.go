@@ -154,6 +154,7 @@ func label(b *Builder, args []string, attributes map[string]bool, original strin
 // exist here. If you do not wish to have this automatic handling, use COPY.
 //
 func add(b *Builder, args []string, attributes map[string]bool, original string) error {
+	fmt.Println("add()")
 	if len(args) < 2 {
 		return errAtLeastTwoArguments("ADD")
 	}

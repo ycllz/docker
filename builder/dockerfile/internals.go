@@ -92,6 +92,7 @@ type copyInfo struct {
 }
 
 func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalDecompression bool, cmdName string) error {
+	fmt.Println("RUNCONTEXTCOMMAND")
 	if b.context == nil {
 		return fmt.Errorf("No context given. Impossible to use %s", cmdName)
 	}
@@ -102,6 +103,7 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalD
 
 	// Work in daemon-specific filepath semantics
 	dest := filepath.FromSlash(args[len(args)-1]) // last one is always the dest
+	fmt.Println("dest", dest)
 
 	b.runConfig.Image = b.image
 
@@ -133,8 +135,11 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalD
 			return err
 		}
 
+		fmt.Printf("Appending subInfos %+v\n", subInfos)
 		infos = append(infos, subInfos...)
 	}
+
+	fmt.Printf("infos %+v\n", infos)
 
 	if len(infos) == 0 {
 		return fmt.Errorf("No source files were specified")
@@ -149,8 +154,21 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalD
 	var origPaths string
 
 	if len(infos) == 1 {
+		fmt.Println("one info")
 		fi := infos[0].FileInfo
+		fmt.Printf("fi %+v\n", fi)
 		origPaths = fi.Name()
+		fmt.Println("origPaths=", origPaths)
+
+		fmt.Println("Path()", fi.Path())
+		f, _ := ioutil.ReadFile(fi.Path())
+
+		//type FileInfo interface {
+		//	os.FileInfo
+		//	Path() string
+		//}
+
+		fmt.Println("content:", string(f))
 		if hfi, ok := fi.(builder.Hashed); ok {
 			srcHash = hfi.Hash()
 		}
@@ -174,11 +192,15 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalD
 	b.runConfig.Cmd = strslice.StrSlice(append(getShell(b.runConfig), fmt.Sprintf("#(nop) %s %s in %s ", cmdName, srcHash, dest)))
 	defer func(cmd strslice.StrSlice) { b.runConfig.Cmd = cmd }(cmd)
 
+	fmt.Printf("b before probeCache() %+v", b)
 	if hit, err := b.probeCache(); err != nil {
 		return err
 	} else if hit {
+		fmt.Println("Got a hit from probeCache")
 		return nil
 	}
+
+	fmt.Println("Didn't get a hit from probeCache")
 
 	container, err := b.docker.ContainerCreate(types.ContainerCreateConfig{Config: b.runConfig}, true)
 	if err != nil {
@@ -446,16 +468,22 @@ func (b *Builder) probeCache() (bool, error) {
 	if c == nil || b.options.NoCache || b.cacheBusted {
 		return false, nil
 	}
+	fmt.Printf("probeCache() b.image %+v", b.image)
+	fmt.Printf("probeCache() b.runConfig %+v", b.runConfig)
 	cache, err := c.GetCache(b.image, b.runConfig)
 	if err != nil {
+		fmt.Println("error in getCache()")
 		return false, err
 	}
+	fmt.Println("cache=", cache)
 	if len(cache) == 0 {
+		fmt.Println("Cache miss")
 		logrus.Debugf("[BUILDER] Cache miss: %s", b.runConfig.Cmd)
 		b.cacheBusted = true
 		return false, nil
 	}
 
+	fmt.Println("Using cache")
 	fmt.Fprintf(b.Stdout, " ---> Using cache\n")
 	logrus.Debugf("[BUILDER] Use cached version: %s", b.runConfig.Cmd)
 	b.image = string(cache)

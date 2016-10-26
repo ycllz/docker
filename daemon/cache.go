@@ -30,9 +30,12 @@ func (daemon *Daemon) getLocalCachedImage(imgID image.ID, config *containertypes
 				return nil, fmt.Errorf("unable to find image %q", id)
 			}
 
+			fmt.Printf("getLocalCachedImage comparing:%+v to\n%+v\n", img.ContainerConfig, config)
 			if runconfig.Compare(&img.ContainerConfig, config) {
+				fmt.Println("They runconfig.Compare successfully")
 				// check for the most up to date match
 				if match == nil || match.Created.Before(img.Created) {
+					fmt.Println("glci match=img")
 					match = img
 				}
 			}
@@ -42,6 +45,7 @@ func (daemon *Daemon) getLocalCachedImage(imgID image.ID, config *containertypes
 
 	// In this case, this is `FROM scratch`, which isn't an actual image.
 	if imgID == "" {
+		fmt.Println("imgID==empty")
 		images := daemon.imageStore.Map()
 		var siblings []image.ID
 		for id, img := range images {
@@ -54,6 +58,7 @@ func (daemon *Daemon) getLocalCachedImage(imgID image.ID, config *containertypes
 
 	// find match from child images
 	siblings := daemon.imageStore.Children(imgID)
+	fmt.Println("glci calling getMatch(siblings)")
 	return getMatch(siblings)
 }
 
@@ -83,6 +88,7 @@ type localImageCache struct {
 }
 
 func (lic *localImageCache) GetCache(imgID string, config *containertypes.Config) (string, error) {
+	fmt.Println("Enter GetCache()")
 	return getImageIDAndError(lic.daemon.getLocalCachedImage(image.ID(imgID), config))
 }
 
@@ -202,6 +208,7 @@ func getImageIDAndError(img *image.Image, err error) (string, error) {
 	if img == nil || err != nil {
 		return "", err
 	}
+	fmt.Println("Enter getImageIDAndError returning ", img.ID().String())
 	return img.ID().String(), nil
 }
 
