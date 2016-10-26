@@ -44,6 +44,7 @@ func (c *tarSumContext) Open(path string) (io.ReadCloser, error) {
 
 func (c *tarSumContext) Stat(path string) (string, FileInfo, error) {
 	cleanpath, fullpath, err := c.normalize(path)
+	fmt.Println("tsc: cleanpath=%s fullpath=%s", cleanpath, fullpath)
 	if err != nil {
 		return "", nil, err
 	}
@@ -63,8 +64,12 @@ func (c *tarSumContext) Stat(path string) (string, FileInfo, error) {
 	sum := path
 	// Use the checksum of the followed path(not the possible symlink) because
 	// this is the file that is actually copied.
+	fmt.Println("tsc stat: about to call GetFile on", rel)
 	if tsInfo := c.sums.GetFile(rel); tsInfo != nil {
+		fmt.Println("tsc stat: Got a sum!!!!!!!")
 		sum = tsInfo.Sum()
+	} else {
+		fmt.Println("\n\n\n\n******* DID NOT GET A SUM :( ********\n\n\n")
 	}
 	fi := &HashedFileInfo{PathFileInfo{st, fullpath, filepath.Base(cleanpath)}, sum}
 	return rel, fi, nil
@@ -114,7 +119,8 @@ func MakeTarSumContext(tarStream io.Reader) (ModifiableContext, error) {
 }
 
 func (c *tarSumContext) normalize(path string) (cleanpath, fullpath string, err error) {
-	cleanpath = filepath.Clean(string(os.PathSeparator) + path)[1:]
+	cleanpath = filepath.FromSlash(filepath.Clean(string(os.PathSeparator) + path)[1:])
+	fmt.Println("normalise: cleanpath=", cleanpath)
 	fullpath, err = symlink.FollowSymlinkInScope(filepath.Join(c.root, path), c.root)
 	if err != nil {
 		return "", "", fmt.Errorf("Forbidden path outside the build context: %s (%s)", path, fullpath)

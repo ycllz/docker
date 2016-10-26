@@ -1,6 +1,7 @@
 package tarsum
 
 import "sort"
+import "fmt"
 
 // FileInfoSumInterface provides an interface for accessing file checksum
 // information within a tar file. This info is accessed through interface
@@ -35,11 +36,15 @@ type FileInfoSums []FileInfoSumInterface
 
 // GetFile returns the first FileInfoSumInterface with a matching name.
 func (fis FileInfoSums) GetFile(name string) FileInfoSumInterface {
+	fmt.Println("fis GetFile on ", name)
 	for i := range fis {
+		fmt.Printf("i=%+v %s\n", i, fis[i].Name())
 		if fis[i].Name() == name {
+			fmt.Printf("fis Returning %+v\n", fis[i])
 			return fis[i]
 		}
 	}
+	fmt.Println("fis returning nil. Don't think this is good....")
 	return nil
 }
 

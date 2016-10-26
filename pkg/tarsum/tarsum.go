@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -236,7 +236,8 @@ func (ts *tarSum) Read(buf []byte) (int, error) {
 				}
 				return n, err
 			}
-			ts.currentFile = path.Clean(currentHeader.Name)
+			ts.currentFile = filepath.FromSlash(filepath.Clean(currentHeader.Name))
+			fmt.Println("tarsum setting currentFile to %s from %s\n", ts.currentFile, currentHeader.Name)
 			if err := ts.encodeHeader(currentHeader); err != nil {
 				return 0, err
 			}

@@ -171,6 +171,7 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalD
 		fmt.Println("content:", string(f))
 		if hfi, ok := fi.(builder.Hashed); ok {
 			srcHash = hfi.Hash()
+			fmt.Println("ok, so srcHash being set to ", srcHash)
 		}
 	} else {
 		var hashs []string
@@ -366,14 +367,17 @@ func (b *Builder) calcCopyInfo(cmdName, origPath string, allowLocalDecompression
 
 	hfi, handleHash := fi.(builder.Hashed)
 	if !handleHash {
+		fmt.Println("Didn't get handleHash")
 		return copyInfos, nil
 	}
 
 	// Deal with the single file case
 	if !fi.IsDir() {
+		fmt.Println("\n\n Deal with the single file case \n\n")
 		hfi.SetHash("file:" + hfi.Hash())
 		return copyInfos, nil
 	}
+	fmt.Println("In the must be a dir followthrough. SHouldn't be here in this repro!!!!")
 	// Must be a dir
 	var subfiles []string
 	err = b.context.Walk(statPath, func(path string, info builder.FileInfo, err error) error {
@@ -468,8 +472,8 @@ func (b *Builder) probeCache() (bool, error) {
 	if c == nil || b.options.NoCache || b.cacheBusted {
 		return false, nil
 	}
-	fmt.Printf("probeCache() b.image %+v", b.image)
-	fmt.Printf("probeCache() b.runConfig %+v", b.runConfig)
+	fmt.Printf("probeCache() b.image %+v\n", b.image)
+	fmt.Printf("probeCache() b.runConfig %+v\n", b.runConfig)
 	cache, err := c.GetCache(b.image, b.runConfig)
 	if err != nil {
 		fmt.Println("error in getCache()")
