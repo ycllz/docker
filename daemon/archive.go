@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -343,13 +344,17 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 // TODO: make sure callers don't unnecessarily convert destPath with filepath.FromSlash (Copy does it already).
 // CopyOnBuild should take in abstract paths (with slashes) and the implementation should convert it to OS-specific paths.
 func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileInfo, decompress bool) error {
+	fmt.Printf("COB cID=%s destPath=%s src=%+v\n", cID, destPath, src)
+
 	srcPath := src.Path()
+	fmt.Println("COB srcPath=", srcPath)
 	destExists := true
 	destDir := false
 	rootUID, rootGID := daemon.GetRemappedUIDGID()
 
 	// Work in daemon-local OS specific file paths
 	destPath = filepath.FromSlash(destPath)
+	fmt.Println("COB destPath=", destPath)
 
 	c, err := daemon.GetContainer(cID)
 	if err != nil {
@@ -365,22 +370,27 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 	if err != nil {
 		return err
 	}
+	fmt.Println("COB after GRP dest=", dest)
 
 	// Preserve the trailing slash
 	// TODO: why are we appending another path separator if there was already one?
 	if strings.HasSuffix(destPath, string(os.PathSeparator)) || destPath == "." {
+		fmt.Println("COB preserve trailing slash - destDir --> True")
 		destDir = true
 		dest += string(os.PathSeparator)
+		fmt.Println("COB dest now is", dest)
 	}
 
 	destPath = dest
 
 	destStat, err := os.Stat(destPath)
 	if err != nil {
+		fmt.Println("No error on destStat")
 		if !os.IsNotExist(err) {
 			//logrus.Errorf("Error performing os.Stat on %s. %s", destPath, err)
 			return err
 		}
+		fmt.Println("destExists --> false")
 		destExists = false
 	}
 
@@ -392,6 +402,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 	}
 
 	if src.IsDir() {
+		fmt.Println("Source isDir()")
 		// copy as directory
 		if err := archiver.CopyWithTar(srcPath, destPath); err != nil {
 			return err
@@ -399,6 +410,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 		return fixPermissions(srcPath, destPath, rootUID, rootGID, destExists)
 	}
 	if decompress && archive.IsArchivePath(srcPath) {
+		fmt.Println("In decompress and archive.IsZArchivvePath branch")
 		// Only try to untar if it is a file and that we've been told to decompress (when ADD-ing a remote file)
 
 		// First try to unpack the source as an archive
@@ -422,12 +434,15 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 
 	// only needed for fixPermissions, but might as well put it before CopyFileWithTar
 	if destDir || (destExists && destStat.IsDir()) {
+		fmt.Println("in fixpermissions branch")
 		destPath = filepath.Join(destPath, src.Name())
 	}
 
+	fmt.Println("Calling mkdirallnewas", destPath, filepath.Dir(destPath))
 	if err := idtools.MkdirAllNewAs(filepath.Dir(destPath), 0755, rootUID, rootGID); err != nil {
 		return err
 	}
+	fmt.Println("Calling copyfilewithtar", srcPath, destPath)
 	if err := archiver.CopyFileWithTar(srcPath, destPath); err != nil {
 		return err
 	}
