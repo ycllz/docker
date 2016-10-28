@@ -345,17 +345,21 @@ func (b *Builder) calcCopyInfo(cmdName, origPath string, allowLocalDecompression
 	statPath, fi, err := b.context.Stat(origPath)
 	fmt.Printf("cci statPath %s fi %+v\n", origPath, fi)
 	if err != nil {
+		fmt.Println("error from b.context.Stat", err)
 		return nil, err
 	}
 
 	copyInfos := []copyInfo{{FileInfo: fi, decompress: allowLocalDecompression}}
+	fmt.Println("cci after copyInfos :=")
 
 	hfi, handleHash := fi.(builder.Hashed)
+	fmt.Println("cci after fi.(builder.Hashed)")
 	if !handleHash {
 		fmt.Println("cci not hashandle")
 		return copyInfos, nil
 	}
 
+	fmt.Println("Dealing with single file case")
 	// Deal with the single file case
 	if !fi.IsDir() {
 		fmt.Println("cci single file case" + hfi.Hash())
