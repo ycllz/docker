@@ -3,6 +3,7 @@
 package idtools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -14,6 +15,7 @@ func mkdirAs(path string, mode os.FileMode, ownerUID, ownerGID int, mkAll, chown
 	// all path components leading up to the complete path that don't exist before we MkdirAll
 	// so that we can chown all of them properly at the end.  If chownExisting is false, we won't
 	// chown the full directory path if it exists
+	fmt.Println("calling mkdirAs on ", path)
 	var paths []string
 	if _, err := os.Stat(path); err != nil && os.IsNotExist(err) {
 		paths = []string{path}

@@ -383,9 +383,11 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 
 	destPath = dest
 
+	// JJH THINK THE COPY . bug is os.Stat on \\?\Volume{GUID}\app fails. But succeeds on linux.
+
 	destStat, err := os.Stat(destPath)
 	if err != nil {
-		fmt.Println("No error on destStat")
+		fmt.Println("error on destStat", err)
 		if !os.IsNotExist(err) {
 			//logrus.Errorf("Error performing os.Stat on %s. %s", destPath, err)
 			return err
