@@ -190,9 +190,11 @@ func (b *Builder) runContextCommand(args []string, allowRemote bool, allowLocalD
 
 	// Twiddle the destination when its a relative path - meaning, make it
 	// relative to the WORKINGDIR
+	fmt.Println("A", cmdName, b.runConfig.WorkingDir, dest)
 	if dest, err = normaliseDest(cmdName, b.runConfig.WorkingDir, dest); err != nil {
 		return err
 	}
+	fmt.Println("B", cmdName, b.runConfig.WorkingDir, dest)
 
 	for _, info := range infos {
 		if err := b.docker.CopyOnBuild(container.ID, dest, info.FileInfo, info.decompress); err != nil {
@@ -296,16 +298,21 @@ func (b *Builder) download(srcURL string) (fi builder.FileInfo, err error) {
 
 func (b *Builder) calcCopyInfo(cmdName, origPath string, allowLocalDecompression, allowWildcards bool) ([]copyInfo, error) {
 
+	fmt.Println("cci origPath", origPath)
 	// Work in daemon-specific OS filepath semantics
 	origPath = filepath.FromSlash(origPath)
+	fmt.Println("cci origPath2", origPath)
 
 	if origPath != "" && origPath[0] == os.PathSeparator && len(origPath) > 1 {
+		fmt.Println("cci origPath3", origPath)
 		origPath = origPath[1:]
 	}
 	origPath = strings.TrimPrefix(origPath, "."+string(os.PathSeparator))
+	fmt.Println("cci origPath4", origPath)
 
 	// Deal with wildcards
 	if allowWildcards && containsWildcards(origPath) {
+		fmt.Println("cci origPath5", origPath)
 		var copyInfos []copyInfo
 		if err := b.context.Walk("", func(path string, info builder.FileInfo, err error) error {
 			if err != nil {
@@ -336,6 +343,7 @@ func (b *Builder) calcCopyInfo(cmdName, origPath string, allowLocalDecompression
 	// Must be a dir or a file
 
 	statPath, fi, err := b.context.Stat(origPath)
+	fmt.Printf("cci statPath %s fi %+v\n", origPath, fi)
 	if err != nil {
 		return nil, err
 	}
@@ -344,14 +352,17 @@ func (b *Builder) calcCopyInfo(cmdName, origPath string, allowLocalDecompression
 
 	hfi, handleHash := fi.(builder.Hashed)
 	if !handleHash {
+		fmt.Println("cci not hashandle")
 		return copyInfos, nil
 	}
 
 	// Deal with the single file case
 	if !fi.IsDir() {
+		fmt.Println("cci single file case" + hfi.Hash())
 		hfi.SetHash("file:" + hfi.Hash())
 		return copyInfos, nil
 	}
+	fmt.Println("cci dir")
 	// Must be a dir
 	var subfiles []string
 	err = b.context.Walk(statPath, func(path string, info builder.FileInfo, err error) error {
