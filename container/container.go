@@ -218,15 +218,19 @@ func (container *Container) WriteHostConfig() error {
 
 // SetupWorkingDirectory sets up the container's working directory as set in container.Config.WorkingDir
 func (container *Container) SetupWorkingDirectory(rootUID, rootGID int) error {
+	fmt.Println("SWD enter with", container.Config.WorkingDir)
 	if container.Config.WorkingDir == "" {
+		fmt.Println("SWD exiting as null")
 		return nil
 	}
 
 	container.Config.WorkingDir = filepath.Clean(container.Config.WorkingDir)
+	fmt.Println("SWD after clean", container.Config.WorkingDir)
 
 	// If can't mount container FS at this point (eg Hyper-V Containers on
 	// Windows) bail out now with no action.
 	if !container.canMountFS() {
+		fmt.Println("SWD bail as cannot mount FS", container.Config.WorkingDir)
 		return nil
 	}
 
@@ -234,6 +238,7 @@ func (container *Container) SetupWorkingDirectory(rootUID, rootGID int) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("pth for mkdir=", pth)
 
 	if err := idtools.MkdirAllNewAs(pth, 0755, rootUID, rootGID); err != nil {
 		pthInfo, err2 := os.Stat(pth)

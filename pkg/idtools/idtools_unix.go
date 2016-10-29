@@ -17,9 +17,7 @@ func mkdirAs(path string, mode os.FileMode, ownerUID, ownerGID int, mkAll, chown
 	// so that we can chown all of them properly at the end.  If chownExisting is false, we won't
 	// chown the full directory path if it exists
 	fmt.Println("calling mkdirAs on ", path)
-	if strings.Contains(path, "/app") {
-		panic("What's the callstack?")
-	}
+
 	var paths []string
 	if _, err := os.Stat(path); err != nil && os.IsNotExist(err) {
 		paths = []string{path}
