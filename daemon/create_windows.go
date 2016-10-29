@@ -16,6 +16,10 @@ func (daemon *Daemon) createContainerPlatformSpecificSettings(container *contain
 		hostConfig.Isolation = daemon.defaultIsolation
 	}
 
+	if err := daemon.Mount(container); err != nil {
+		return err
+	}
+	defer daemon.Unmount(container)
 	if err := container.SetupWorkingDirectory(0, 0); err != nil {
 		return err
 	}
