@@ -18,6 +18,7 @@ import (
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/progress"
 	"github.com/docker/docker/pkg/streamformatter"
+	"github.com/docker/docker/pkg/system"
 )
 
 // ValidateContextDirectory checks if all the contents of the directory
@@ -58,7 +59,7 @@ func ValidateContextDirectory(srcPath string, excludes []string) error {
 		}
 
 		if !f.IsDir() {
-			currentFile, err := os.Open(filePath)
+			currentFile, err := system.Open(filePath)
 			if err != nil && os.IsPermission(err) {
 				return fmt.Errorf("no permission to read from '%s'", filePath)
 			}

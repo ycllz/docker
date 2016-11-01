@@ -11,6 +11,7 @@ import (
 
 	"github.com/docker/distribution/digest"
 	"github.com/docker/docker/pkg/ioutils"
+	"github.com/docker/docker/pkg/system"
 )
 
 var (
@@ -259,7 +260,7 @@ func (store *store) save() error {
 }
 
 func (store *store) reload() error {
-	f, err := os.Open(store.jsonPath)
+	f, err := system.Open(store.jsonPath)
 	if err != nil {
 		return err
 	}

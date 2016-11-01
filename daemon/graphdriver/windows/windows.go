@@ -30,6 +30,7 @@ import (
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/longpath"
 	"github.com/docker/docker/pkg/reexec"
+	"github.com/docker/docker/pkg/system"
 	"github.com/docker/go-units"
 )
 
@@ -742,7 +743,7 @@ type fileGetCloserWithBackupPrivileges struct {
 
 func (fg *fileGetCloserWithBackupPrivileges) Get(filename string) (io.ReadCloser, error) {
 	if backupPath, ok := mutatedFiles[filename]; ok {
-		return os.Open(filepath.Join(fg.path, backupPath))
+		return system.Open(filepath.Join(fg.path, backupPath))
 	}
 
 	var f *os.File

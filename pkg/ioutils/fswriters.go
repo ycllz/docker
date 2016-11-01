@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/docker/docker/pkg/system"
 )
 
 // NewAtomicFileWriter returns WriteCloser so that writing to it writes to a
@@ -136,7 +138,7 @@ func (w syncFileCloser) Close() error {
 // FileWriter opens a file writer inside the set. The file
 // should be synced and closed before calling commit.
 func (ws *AtomicWriteSet) FileWriter(name string, flag int, perm os.FileMode) (io.WriteCloser, error) {
-	f, err := os.OpenFile(filepath.Join(ws.root, name), flag, perm)
+	f, err := system.OpenFile(filepath.Join(ws.root, name), flag, perm)
 	if err != nil {
 		return nil, err
 	}

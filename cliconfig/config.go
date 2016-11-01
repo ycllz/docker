@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/cliconfig/configfile"
 	"github.com/docker/docker/pkg/homedir"
+	"github.com/docker/docker/pkg/system"
 )
 
 const (
@@ -82,7 +83,7 @@ func Load(configDir string) (*configfile.ConfigFile, error) {
 
 	// Try happy path first - latest config file
 	if _, err := os.Stat(configFile.Filename); err == nil {
-		file, err := os.Open(configFile.Filename)
+		file, err := system.Open(configFile.Filename)
 		if err != nil {
 			return &configFile, fmt.Errorf("%s - %v", configFile.Filename, err)
 		}
@@ -103,7 +104,7 @@ func Load(configDir string) (*configfile.ConfigFile, error) {
 	if _, err := os.Stat(confFile); err != nil {
 		return &configFile, nil //missing file is not an error
 	}
-	file, err := os.Open(confFile)
+	file, err := system.Open(confFile)
 	if err != nil {
 		return &configFile, fmt.Errorf("%s - %v", confFile, err)
 	}

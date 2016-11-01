@@ -2,7 +2,6 @@ package image
 
 import (
 	"io"
-	"os"
 
 	"golang.org/x/net/context"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/docker/docker/cli/command"
 	dockeropts "github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/pkg/urlutil"
 	"github.com/spf13/cobra"
 )
@@ -58,7 +58,7 @@ func runImport(dockerCli *command.DockerCli, opts importOptions) error {
 		in = dockerCli.In()
 	} else if !urlutil.IsURL(opts.source) {
 		srcName = "-"
-		file, err := os.Open(opts.source)
+		file, err := system.Open(opts.source)
 		if err != nil {
 			return err
 		}

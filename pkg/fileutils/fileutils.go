@@ -11,6 +11,7 @@ import (
 	"text/scanner"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/docker/pkg/system"
 )
 
 // exclusion returns true if the specified pattern is an exclusion
@@ -225,7 +226,7 @@ func CopyFile(src, dst string) (int64, error) {
 	if cleanSrc == cleanDst {
 		return 0, nil
 	}
-	sf, err := os.Open(cleanSrc)
+	sf, err := system.Open(cleanSrc)
 	if err != nil {
 		return 0, err
 	}

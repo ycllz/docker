@@ -17,6 +17,7 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/digest"
 	"github.com/docker/docker/pkg/ioutils"
+	"github.com/docker/docker/pkg/system"
 )
 
 var (
@@ -220,7 +221,7 @@ func (fms *fileMetadataStore) GetDescriptor(layer ChainID) (distribution.Descrip
 }
 
 func (fms *fileMetadataStore) TarSplitReader(layer ChainID) (io.ReadCloser, error) {
-	fz, err := os.Open(fms.getLayerFilename(layer, "tar-split.json.gz"))
+	fz, err := system.Open(fms.getLayerFilename(layer, "tar-split.json.gz"))
 	if err != nil {
 		return nil, err
 	}

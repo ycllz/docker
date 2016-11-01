@@ -190,7 +190,7 @@ func UnpackLayer(dest string, layer io.Reader, options *TarOptions) (size int64,
 				if srcHdr == nil {
 					return 0, fmt.Errorf("Invalid aufs hardlink")
 				}
-				tmpFile, err := os.Open(filepath.Join(aufsTempdir, linkBasename))
+				tmpFile, err := system.Open(filepath.Join(aufsTempdir, linkBasename))
 				if err != nil {
 					return 0, err
 				}

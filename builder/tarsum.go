@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/symlink"
+	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/pkg/tarsum"
 )
 
@@ -35,7 +36,7 @@ func (c *tarSumContext) Open(path string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	r, err := os.Open(fullpath)
+	r, err := system.Open(fullpath)
 	if err != nil {
 		return nil, convertPathError(err, cleanpath)
 	}

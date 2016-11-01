@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/pkg/streamformatter"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/symlink"
+	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/reference"
 )
 
@@ -48,7 +49,7 @@ func (l *tarexporter) Load(inTar io.ReadCloser, outStream io.Writer, quiet bool)
 	if err != nil {
 		return err
 	}
-	manifestFile, err := os.Open(manifestPath)
+	manifestFile, err := system.Open(manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return l.legacyLoad(tmpDir, outStream, progressOutput)
@@ -164,7 +165,7 @@ func (l *tarexporter) setParentID(id, parentID image.ID) error {
 }
 
 func (l *tarexporter) loadLayer(filename string, rootFS image.RootFS, id string, foreignSrc distribution.Descriptor, progressOutput progress.Output) (layer.Layer, error) {
-	rawTar, err := os.Open(filename)
+	rawTar, err := system.Open(filename)
 	if err != nil {
 		logrus.Debugf("Error reading embedded tar: %v", err)
 		return nil, err
@@ -229,7 +230,7 @@ func (l *tarexporter) legacyLoad(tmpDir string, outStream io.Writer, progressOut
 	if err != nil {
 		return err
 	}
-	repositoriesFile, err := os.Open(repositoriesPath)
+	repositoriesFile, err := system.Open(repositoriesPath)
 	if err != nil {
 		return err
 	}

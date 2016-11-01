@@ -120,7 +120,7 @@ func IsArchive(header []byte) bool {
 // IsArchivePath checks if the (possibly compressed) file at the given path
 // starts with a tar file header.
 func IsArchivePath(path string) bool {
-	file, err := os.Open(path)
+	file, err := system.Open(path)
 	if err != nil {
 		return false
 	}
@@ -358,7 +358,7 @@ func (ta *tarAppender) addTarFile(path, name string) error {
 	}
 
 	if hdr.Typeflag == tar.TypeReg && hdr.Size > 0 {
-		file, err := os.Open(path)
+		file, err := system.Open(path)
 		if err != nil {
 			return err
 		}
@@ -397,7 +397,7 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
 
 	case tar.TypeReg, tar.TypeRegA:
 		// Source is regular file
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, hdrInfo.Mode())
+		file, err := system.OpenFile(path, os.O_CREATE|os.O_WRONLY, hdrInfo.Mode())
 		if err != nil {
 			return err
 		}
@@ -915,7 +915,7 @@ func TarUntar(src, dst string) error {
 
 // UntarPath untar a file from path to a destination, src is the source tar file path.
 func (archiver *Archiver) UntarPath(src, dst string) error {
-	archive, err := os.Open(src)
+	archive, err := system.Open(src)
 	if err != nil {
 		return err
 	}
@@ -1001,7 +1001,7 @@ func (archiver *Archiver) CopyFileWithTar(src, dst string) (err error) {
 	errC := promise.Go(func() error {
 		defer w.Close()
 
-		srcF, err := os.Open(src)
+		srcF, err := system.Open(src)
 		if err != nil {
 			return err
 		}
