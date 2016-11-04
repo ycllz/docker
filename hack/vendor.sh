@@ -12,4 +12,8 @@ if ! hash vndr; then
 	exit 1
 fi
 
+cd cmd/
+
 vndr "$@"
+
+ln -s ../../../../ vendor/github.com/docker/docker

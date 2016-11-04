@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/docker/docker/integration-cli/fixtures/load"
+	"github.com/docker/docker/cmd/integration-cli/fixtures/load"
 	"github.com/docker/docker/pkg/integration/checker"
 	"github.com/go-check/check"
 )
