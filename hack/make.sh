@@ -28,10 +28,22 @@ export SCRIPTDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export MAKEDIR="$SCRIPTDIR/make"
 export PKG_CONFIG=${PKG_CONFIG:-pkg-config}
 
+# Finish is a trap function to ensure the symlink at cmd/vendor/github.com/docker/docker is
+# not kept in the repo as git on Windows can't cope, even if in .gitignore.
+function finish {
+	echo Removing temporary symlink...
+	rm cmd/vendor/github.com/docker/docker
+}
+
 # We're a nice, sexy, little shell script, and people might try to run us;
 # but really, they shouldn't. We want to be in a container!
 inContainer="AssumeSoInitially"
 if [ "$(go env GOHOSTOS)" = 'windows' ]; then
+	trap finish EXIT
+	pushd cmd/vendor/github.com/docker
+	powershell -command New-Item -ItemType SymbolicLink -Force -Name docker -Target ../../../../
+	popd
+	
 	if [ -z "$FROM_DOCKERFILE" ]; then
 		unset inContainer
 	fi

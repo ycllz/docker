@@ -30,3 +30,4 @@ man/man1
 man/man5
 man/man8
 vendor/pkg/
+cmd/vendor/github.com/docker/docker/
