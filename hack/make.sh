@@ -32,6 +32,9 @@ export PKG_CONFIG=${PKG_CONFIG:-pkg-config}
 # but really, they shouldn't. We want to be in a container!
 inContainer="AssumeSoInitially"
 if [ "$(go env GOHOSTOS)" = 'windows' ]; then
+	pushd cmd/vendor/github.com/docker
+	powershell -command New-Item -ItemType SymbolicLink -Force -Name docker -Target ../../../../
+	popd
 	if [ -z "$FROM_DOCKERFILE" ]; then
 		unset inContainer
 	fi
