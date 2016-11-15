@@ -546,14 +546,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		downloadRootFS     image.RootFS // rootFS to use for registering layers.
 	)
 
-	// https://github.com/docker/docker/issues/24766 - Err on the side of caution,
-	// explicitly blocking images intended for linux from the Windows daemon. On
-	// Windows, we do this before the attempt to download, effectively serialising
-	// the download slightly slowing it down. We have to do it this way, as
-	// chances are the download of layers itself would fail due to file names
-	// which aren't suitable for NTFS. At some point in the future, if a similar
-	// check to block Windows images being pulled on Linux is implemented, it
-	// may be necessary to perform the same type of serialisation.
+	// Linux images are supported on Windows through the use of a Linux Utility VM
 	if runtime.GOOS == "windows" {
 		configJSON, unmarshalledConfig, err = receiveConfig(configChan, errChan)
 		if err != nil {
@@ -565,7 +558,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		}
 
 		if unmarshalledConfig.OS == "linux" {
-			return "", "", fmt.Errorf("image operating system %q cannot be used on this platform", unmarshalledConfig.OS)
+			logrus.Debugf("pulling a %s image on windows", unmarshalledConfig.OS)
 		}
 	}
 
