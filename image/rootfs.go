@@ -38,6 +38,7 @@ func (r *RootFS) Append(id layer.DiffID) {
 func (r *RootFS) ChainID() layer.ChainID {
 	if runtime.GOOS == "windows" && r.Type == typeLayersWithBase {
 		logrus.Warnf("Layer type is unsupported on this platform. DiffIDs: '%v'", r.DiffIDs)
+		// logrus.Warnf("doing unsupported things!")
 		return ""
 	}
 	return layer.CreateChainID(r.DiffIDs)

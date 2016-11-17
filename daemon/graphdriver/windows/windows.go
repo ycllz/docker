@@ -88,6 +88,7 @@ func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap)
 	if err != nil {
 		return nil, err
 	}
+	logrus.Debugf("WindowsGraphDriver filesystem type: %s", fsType)
 	if strings.ToLower(fsType) == "refs" {
 		return nil, fmt.Errorf("%s is on an ReFS volume - ReFS volumes are not supported", home)
 	}
@@ -114,6 +115,7 @@ func win32FromHresult(hr uintptr) uintptr {
 // getFileSystemType obtains the type of a file system through GetVolumeInformation
 // https://msdn.microsoft.com/en-us/library/windows/desktop/aa364993(v=vs.85).aspx
 func getFileSystemType(drive string) (fsType string, hr error) {
+	logrus.Debugf("getFileSystemType for %s", drive)
 	var (
 		modkernel32              = syscall.NewLazyDLL("kernel32.dll")
 		procGetVolumeInformation = modkernel32.NewProc("GetVolumeInformationW")
@@ -474,7 +476,9 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 			if err != nil {
 				return err
 			}
-			name = filepath.ToSlash(name)
+			logrus.Debugf("name 1: %s", name)
+			// name = filepath.ToSlash(name)
+			// logrus.Debugf("name 2: %s", name)
 			if fileInfo == nil {
 				changes = append(changes, archive.Change{Path: name, Kind: archive.ChangeDelete})
 			} else {
@@ -614,6 +618,7 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 	var bcdBackup *os.File
 	var bcdBackupWriter *winio.BackupFileWriter
 	if backupPath, ok := mutatedFiles[hdr.Name]; ok {
+		logrus.Debugf("root: %s, backupPath: %s", root, backupPath)
 		bcdBackup, err = os.Create(filepath.Join(root, backupPath))
 		if err != nil {
 			return nil, err
@@ -654,6 +659,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 	totalSize := int64(0)
 	buf := bufio.NewWriter(nil)
 	for err == nil {
+		logrus.Debugf("hdr.Name: %s", hdr.Name)
 		base := path.Base(hdr.Name)
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
@@ -669,6 +675,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 			}
 			hdr, err = t.Next()
 		} else {
+			// ANDY this is where we'd write EA
 			var (
 				name     string
 				size     int64
@@ -678,7 +685,8 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 			if err != nil {
 				return 0, err
 			}
-			err = w.Add(filepath.FromSlash(name), fileInfo)
+			// err = w.Add(filepath.FromSlash(name), fileInfo)
+			err = w.Add(name, fileInfo)
 			if err != nil {
 				return 0, err
 			}
