@@ -290,7 +290,9 @@ func workdir(b *Builder, args []string, attributes map[string]bool, original str
 		return nil
 	}
 	b.runConfig.Image = b.image
-	container, err := b.docker.ContainerCreate(types.ContainerCreateConfig{Config: b.runConfig}, true)
+	b.runConfig.Entrypoint = strslice.StrSlice(nil)
+	b.runConfig.Cmd = strslice.StrSlice(nil)
+	container, err := b.docker.ContainerCreate(types.ContainerCreateConfig{Config: b.runConfig}, true, true)
 	if err != nil {
 		return err
 	}

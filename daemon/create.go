@@ -26,15 +26,15 @@ import (
 
 // CreateManagedContainer creates a container that is managed by a Service
 func (daemon *Daemon) CreateManagedContainer(params types.ContainerCreateConfig, validateHostname bool) (containertypes.ContainerCreateCreatedBody, error) {
-	return daemon.containerCreate(params, true, validateHostname)
+	return daemon.containerCreate(params, true, validateHostname, false)
 }
 
 // ContainerCreate creates a regular container
-func (daemon *Daemon) ContainerCreate(params types.ContainerCreateConfig, validateHostname bool) (containertypes.ContainerCreateCreatedBody, error) {
-	return daemon.containerCreate(params, false, validateHostname)
+func (daemon *Daemon) ContainerCreate(params types.ContainerCreateConfig, validateHostname bool, allowEmptyCmdOrEntrypoint bool) (containertypes.ContainerCreateCreatedBody, error) {
+	return daemon.containerCreate(params, false, validateHostname, allowEmptyCmdOrEntrypoint)
 }
 
-func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, managed bool, validateHostname bool) (containertypes.ContainerCreateCreatedBody, error) {
+func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, managed bool, validateHostname bool, allowEmptyCmdOrEntrypoint bool) (containertypes.ContainerCreateCreatedBody, error) {
 	start := time.Now()
 	if params.Config == nil {
 		return containertypes.ContainerCreateCreatedBody{}, fmt.Errorf("Config cannot be empty in order to create a container")
@@ -58,7 +58,7 @@ func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, manage
 		return containertypes.ContainerCreateCreatedBody{Warnings: warnings}, err
 	}
 
-	container, err := daemon.create(params, managed)
+	container, err := daemon.create(params, managed, allowEmptyCmdOrEntrypoint)
 	if err != nil {
 		return containertypes.ContainerCreateCreatedBody{Warnings: warnings}, daemon.imageNotExistToErrcode(err)
 	}
@@ -68,7 +68,7 @@ func (daemon *Daemon) containerCreate(params types.ContainerCreateConfig, manage
 }
 
 // Create creates a new container from the given configuration with a given name.
-func (daemon *Daemon) create(params types.ContainerCreateConfig, managed bool) (retC *container.Container, retErr error) {
+func (daemon *Daemon) create(params types.ContainerCreateConfig, managed bool, allowEmptyCmdOrEntrypoint bool) (retC *container.Container, retErr error) {
 	var (
 		container *container.Container
 		img       *image.Image
@@ -88,7 +88,7 @@ func (daemon *Daemon) create(params types.ContainerCreateConfig, managed bool) (
 		imgID = img.ID()
 	}
 
-	if err := daemon.mergeAndVerifyConfig(params.Config, img); err != nil {
+	if err := daemon.mergeAndVerifyConfig(params.Config, img, allowEmptyCmdOrEntrypoint); err != nil {
 		return nil, err
 	}
 
@@ -246,7 +246,7 @@ func (daemon *Daemon) VolumeCreate(name, driverName string, opts, labels map[str
 	return apiV, nil
 }
 
-func (daemon *Daemon) mergeAndVerifyConfig(config *containertypes.Config, img *image.Image) error {
+func (daemon *Daemon) mergeAndVerifyConfig(config *containertypes.Config, img *image.Image, allowEmptyCmdOrEntrypoint bool) error {
 	if img != nil && img.Config != nil {
 		if err := merge(config, img.Config); err != nil {
 			return err
@@ -257,6 +257,9 @@ func (daemon *Daemon) mergeAndVerifyConfig(config *containertypes.Config, img *i
 		config.Entrypoint = nil
 	}
 	if len(config.Entrypoint) == 0 && len(config.Cmd) == 0 {
+		fmt.Println("!!!!JJH!!!!")
+	}
+	if !allowEmptyCmdOrEntrypoint && len(config.Entrypoint) == 0 && len(config.Cmd) == 0 {
 		return fmt.Errorf("No command specified")
 	}
 	return nil
