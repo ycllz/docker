@@ -21,27 +21,27 @@ func ImportLayer(info DriverInfo, layerID string, importFolderPath string, paren
 	logrus.Debugf(title+"flavour %d layerId %s folder %s", info.Flavour, layerID, importFolderPath)
 
 	// AKASH
-	// This stuff is windows only.
+	// This stuff is windows only. Just ingore the error for now :)
 
-	/*	// Generate layer descriptors
-		layers, err := layerPathsToDescriptors(parentLayerPaths)
-		if err != nil {
-			return err
-		}
+	// Generate layer descriptors
+	layers, err := layerPathsToDescriptors(parentLayerPaths)
+	if err != nil {
+		return err
+	}
 
-		// Convert info to API calling convention
-		infop, err := convertDriverInfo(info)
-		if err != nil {
-			logrus.Error(err)
-			return err
-		}
+	// Convert info to API calling convention
+	infop, err := convertDriverInfo(info)
+	if err != nil {
+		logrus.Error(err)
+		return err
+	}
 
-		err = importLayer(&infop, layerID, importFolderPath, layers)
-		if err != nil {
-			err = makeErrorf(err, title, "layerId=%s flavour=%d folder=%s", layerID, info.Flavour, importFolderPath)
-			logrus.Error(err)
-			return err
-		}*/
+	err = importLayer(&infop, layerID, importFolderPath, layers)
+	/*if err != nil {
+		err = makeErrorf(err, title, "layerId=%s flavour=%d folder=%s", layerID, info.Flavour, importFolderPath)
+		logrus.Error(err)
+		return err
+	}*/
 
 	logrus.Debugf(title+"succeeded flavour=%d layerId=%s folder=%s", info.Flavour, layerID, importFolderPath)
 	return nil

@@ -609,9 +609,11 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 		return err
 	}
 
-	var requiredPrefix string
-	var roots []string
-	if prefix := `Files\`; strings.HasPrefix(name, prefix) {
+	// Look for the this layer and all parent layers.
+	roots := []string{w.destRoot}
+	roots = append(roots, w.parentRoots...)
+	//var requiredPrefix string
+	/* if prefix := `Files\`; strings.HasPrefix(name, prefix) {
 		requiredPrefix = prefix
 		// Look for cross-layer hard link targets in the parent layers, since
 		// nothing is in the destination path yet.
@@ -622,13 +624,16 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 		// already, look for cross-layer hard link targets directly in the
 		// destination path.
 		roots = []string{w.destRoot}
-	}
+	} */
 
-	if requiredPrefix == "" || !strings.HasPrefix(target, requiredPrefix) {
+	//fmt.Println(w.parentRoots)
+	//fmt.Println(w.destRoot)
+
+	/* if requiredPrefix == "" || !strings.HasPrefix(target, requiredPrefix) {
 		fmt.Printf("Link: %s -> %s\n", name, target)
 		roots = w.parentRoots
 		//return errors.New("invalid hard link in layer")
-	}
+	} */
 
 	// Find to try the target of the link in a previously added file. If that
 	// fails, search in parent layers.
@@ -646,9 +651,9 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 				break
 			}
 		}
-		/*if selectedRoot == "" {
+		if selectedRoot == "" {
 			return fmt.Errorf("failed to find link target for '%s' -> '%s'", name, target)
-		}*/
+		}
 	}
 	// The link can't be written until after the ImportLayer call.
 	w.PendingLinks = append(w.PendingLinks, pendingLink{

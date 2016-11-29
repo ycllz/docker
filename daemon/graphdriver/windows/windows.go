@@ -21,6 +21,8 @@ import (
 	"time"
 	"unsafe"
 
+	"reflect"
+
 	ntfsposix "github.com/Microsoft/go-ntfsposix"
 	winio "github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/archive/tar"
@@ -668,6 +670,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 	totalSize := int64(0)
 	buf := bufio.NewWriter(nil)
 	debug.PrintStack()
+	fmt.Printf("TYPE OF WRITER: %v\n", reflect.TypeOf(w))
 
 	for err == nil {
 		// FixUnixPath noops on Windows since Windows paths is a subset of Unix paths
@@ -675,6 +678,10 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
 			// Whiteout files are handled the same as they.
+			if strings.Contains(base, "perl") {
+				fmt.Printf("PERL WHITEOUT: %s\n", hdr.Name)
+			}
+
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
 			err = w.Remove(ntfsposix.FixUnixPath(name))
 			if err != nil {
@@ -685,6 +692,9 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 		} else if hdr.Typeflag == tar.TypeLink {
 			hdrLinkname := ntfsposix.FixUnixPath(hdr.Linkname)
 			err = w.AddLink(ntfsposix.FixUnixPath(hdr.Name), hdrLinkname)
+			if strings.Contains(base, "perl") {
+				fmt.Printf("PERL LINK: %s -> %s\n", hdr.Name, hdrLinkname)
+			}
 			if err != nil {
 				logrus.Debugln("XXX: ERRROR LINK")
 				return 0, err
@@ -697,6 +707,10 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 				size     int64
 				fileInfo *winio.FileBasicInfo
 			)
+			if strings.Contains(base, "perl") {
+				fmt.Printf("PERL FILE: %s\n", hdr.Name)
+			}
+
 			name, size, fileInfo, err = backuptar.FileInfoFromHeader(hdr)
 			if err != nil {
 				logrus.Debugln("XXX: ERROR OTHER 1")
