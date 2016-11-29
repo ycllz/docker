@@ -11,7 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/Microsoft/go-winio"
+	winio "github.com/Microsoft/go-winio"
+	"github.com/docker/docker/pkg/archive"
 )
 
 var errorIterationCanceled = errors.New("")
@@ -624,7 +625,9 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 	}
 
 	if requiredPrefix == "" || !strings.HasPrefix(target, requiredPrefix) {
-		return errors.New("invalid hard link in layer")
+		fmt.Printf("Link: %s -> %s\n", name, target)
+		roots = w.parentRoots
+		//return errors.New("invalid hard link in layer")
 	}
 
 	// Find to try the target of the link in a previously added file. If that
@@ -643,9 +646,9 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 				break
 			}
 		}
-		if selectedRoot == "" {
+		/*if selectedRoot == "" {
 			return fmt.Errorf("failed to find link target for '%s' -> '%s'", name, target)
-		}
+		}*/
 	}
 	// The link can't be written until after the ImportLayer call.
 	w.PendingLinks = append(w.PendingLinks, pendingLink{
@@ -657,6 +660,26 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 }
 
 func (w *legacyLayerWriter) Remove(name string) error {
+	// AKASH
+	// Changed this around to support white out files on Linux
+	// It's bascially the same thing as add.
+	var i int
+	for i = len(name) - 1; i >= 0; i-- {
+		if name[i] == '\\' {
+			break
+		}
+	}
+
+	if i == len(name)-1 {
+		return fmt.Errorf("Invalid path name: trailing slash")
+	}
+
+	wname := name[:i+1] + archive.WhiteoutPrefix + name[i+1:]
+
+	_, err := os.Create(filepath.Join(w.root, wname))
+	return err
+
+	/* OLD CODE
 	if strings.HasPrefix(name, `Files\`) {
 		w.tombstones = append(w.tombstones, name[len(`Files\`):])
 	} else if strings.HasPrefix(name, `UtilityVM\Files\`) {
@@ -678,8 +701,8 @@ func (w *legacyLayerWriter) Remove(name string) error {
 	} else {
 		return fmt.Errorf("invalid tombstone %s", name)
 	}
-
 	return nil
+	*/
 }
 
 func (w *legacyLayerWriter) Write(b []byte) (int, error) {

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,7 +21,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Microsoft/go-winio"
+	ntfsposix "github.com/Microsoft/go-ntfsposix"
+	winio "github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/archive/tar"
 	"github.com/Microsoft/go-winio/backuptar"
 	"github.com/Microsoft/hcsshim"
@@ -31,7 +33,7 @@ import (
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/longpath"
 	"github.com/docker/docker/pkg/reexec"
-	"github.com/docker/go-units"
+	units "github.com/docker/go-units"
 )
 
 // filterDriver is an HCSShim driver type for the Windows Filter driver.
@@ -83,6 +85,9 @@ type Driver struct {
 // InitFilter returns a new Windows storage filter driver.
 func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
 	logrus.Debugf("WindowsGraphDriver InitFilter at %s", home)
+	logrus.Debugf("Options: %v", options)
+	logrus.Debugf("Uid Map : %v", uidMaps)
+	logrus.Debugf("Gid Map: %v", gidMaps)
 
 	fsType, err := getFileSystemType(string(home[0]))
 	if err != nil {
@@ -165,6 +170,7 @@ func (d *Driver) Exists(id string) bool {
 // CreateReadWrite creates a layer that is writable for use as a container
 // file system.
 func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts) error {
+	logrus.Println("XXX: CreateReadWrite")
 	if opts != nil {
 		return d.create(id, parent, opts.MountLabel, false, opts.StorageOpt)
 	} else {
@@ -174,6 +180,7 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 
 // Create creates a new read-only layer with the given id.
 func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
+	logrus.Println("XXX: Create")
 	if opts != nil {
 		return d.create(id, parent, opts.MountLabel, true, opts.StorageOpt)
 	} else {
@@ -212,6 +219,7 @@ func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt
 		if err := hcsshim.CreateLayer(d.info, id, rPId); err != nil {
 			return err
 		}
+		logrus.Debugln("XXX: CREATED LAYER")
 	} else {
 		var parentPath string
 		if len(layerChain) != 0 {
@@ -477,7 +485,7 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 				return err
 			}
 			logrus.Debugf("name 1: %s", name)
-			// name = filepath.ToSlash(name)
+			name = filepath.ToSlash(name)
 			// logrus.Debugf("name 2: %s", name)
 			if fileInfo == nil {
 				changes = append(changes, archive.Change{Path: name, Kind: archive.ChangeDelete})
@@ -654,23 +662,31 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 }
 
 func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, error) {
+	logrus.Println("XXX: writeLayerFromTar")
 	t := tar.NewReader(r)
 	hdr, err := t.Next()
 	totalSize := int64(0)
 	buf := bufio.NewWriter(nil)
+	debug.PrintStack()
+
 	for err == nil {
-		logrus.Debugf("hdr.Name: %s", hdr.Name)
+		// FixUnixPath noops on Windows since Windows paths is a subset of Unix paths
 		base := path.Base(hdr.Name)
+
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
+			// Whiteout files are handled the same as they.
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
-			err = w.Remove(filepath.FromSlash(name))
+			err = w.Remove(ntfsposix.FixUnixPath(name))
 			if err != nil {
+				logrus.Debugln("XXX: ERRROR WHITEOUT")
 				return 0, err
 			}
 			hdr, err = t.Next()
 		} else if hdr.Typeflag == tar.TypeLink {
-			err = w.AddLink(filepath.FromSlash(hdr.Name), filepath.FromSlash(hdr.Linkname))
+			hdrLinkname := ntfsposix.FixUnixPath(hdr.Linkname)
+			err = w.AddLink(ntfsposix.FixUnixPath(hdr.Name), hdrLinkname)
 			if err != nil {
+				logrus.Debugln("XXX: ERRROR LINK")
 				return 0, err
 			}
 			hdr, err = t.Next()
@@ -683,11 +699,14 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 			)
 			name, size, fileInfo, err = backuptar.FileInfoFromHeader(hdr)
 			if err != nil {
+				logrus.Debugln("XXX: ERROR OTHER 1")
 				return 0, err
 			}
-			// err = w.Add(filepath.FromSlash(name), fileInfo)
+			name = ntfsposix.FixUnixPath(name)
 			err = w.Add(name, fileInfo)
+
 			if err != nil {
+				logrus.Debugln("XXX: ERROR OTHER 2")
 				return 0, err
 			}
 			hdr, err = writeBackupStreamFromTarAndSaveMutatedFiles(buf, w, t, hdr, root)
@@ -695,6 +714,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 		}
 	}
 	if err != io.EOF {
+		logrus.Debugln("XXX: ERROR TRUNCATE")
 		return 0, err
 	}
 	return totalSize, nil
@@ -702,6 +722,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 
 // importLayer adds a new layer to the tag and graph store based on the given data.
 func (d *Driver) importLayer(id string, layerData io.Reader, parentLayerPaths []string) (size int64, err error) {
+	logrus.Println("XXX: importLayer")
 	if !noreexec {
 		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id}, parentLayerPaths...)...)
 		output := bytes.NewBuffer(nil)
@@ -753,6 +774,7 @@ func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ..
 		HomeDir: home,
 	}
 
+	logrus.Printf("XXX: PARENT LAYERS: %v", parentLayerPaths)
 	w, err := hcsshim.NewLayerWriter(info, id, parentLayerPaths)
 	if err != nil {
 		return 0, err
@@ -762,12 +784,13 @@ func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ..
 	if err != nil {
 		return 0, err
 	}
+	fmt.Println("XXX: DONE IMPORTING LAYERS")
 
 	err = w.Close()
 	if err != nil {
 		return 0, err
 	}
-
+	fmt.Println("XXX: DONE CLOSING")
 	return size, nil
 }
 

@@ -562,8 +562,17 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		}
 	}
 
+	// AKASH
+	// This is the easiest way I could transfer the OS without breaking anything
+	// Maybe search for better solutions.
 	downloadRootFS = *image.NewRootFS()
 
+	// Set the operating system for the download layers
+	/*if configJSON != nil {
+		downloadRootFS.OS = unmarshalledConfig.OS
+	} else {
+		downloadRootFS.OS = runtime.GOOS
+	}*/
 	rootFS, release, err := p.config.DownloadManager.Download(ctx, downloadRootFS, descriptors, p.config.ProgressOutput)
 	if err != nil {
 		if configJSON != nil {

@@ -6,6 +6,8 @@ import (
 	"io"
 	"time"
 
+	"runtime/debug"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/distribution"
 	"github.com/docker/docker/image"
@@ -97,6 +99,8 @@ func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS ima
 		transferKey    = ""
 		downloadsByKey = make(map[string]*downloadTransfer)
 	)
+
+	debug.PrintStack()
 
 	rootFS := initialRootFS
 	for _, descriptor := range layers {

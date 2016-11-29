@@ -2,12 +2,13 @@ package hcsshim
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 
-	"github.com/Microsoft/go-winio"
+	winio "github.com/Microsoft/go-winio"
 	"github.com/Sirupsen/logrus"
 )
 
@@ -19,25 +20,28 @@ func ImportLayer(info DriverInfo, layerID string, importFolderPath string, paren
 	title := "hcsshim::ImportLayer "
 	logrus.Debugf(title+"flavour %d layerId %s folder %s", info.Flavour, layerID, importFolderPath)
 
-	// Generate layer descriptors
-	layers, err := layerPathsToDescriptors(parentLayerPaths)
-	if err != nil {
-		return err
-	}
+	// AKASH
+	// This stuff is windows only.
 
-	// Convert info to API calling convention
-	infop, err := convertDriverInfo(info)
-	if err != nil {
-		logrus.Error(err)
-		return err
-	}
+	/*	// Generate layer descriptors
+		layers, err := layerPathsToDescriptors(parentLayerPaths)
+		if err != nil {
+			return err
+		}
 
-	err = importLayer(&infop, layerID, importFolderPath, layers)
-	if err != nil {
-		err = makeErrorf(err, title, "layerId=%s flavour=%d folder=%s", layerID, info.Flavour, importFolderPath)
-		logrus.Error(err)
-		return err
-	}
+		// Convert info to API calling convention
+		infop, err := convertDriverInfo(info)
+		if err != nil {
+			logrus.Error(err)
+			return err
+		}
+
+		err = importLayer(&infop, layerID, importFolderPath, layers)
+		if err != nil {
+			err = makeErrorf(err, title, "layerId=%s flavour=%d folder=%s", layerID, info.Flavour, importFolderPath)
+			logrus.Error(err)
+			return err
+		}*/
 
 	logrus.Debugf(title+"succeeded flavour=%d layerId=%s folder=%s", info.Flavour, layerID, importFolderPath)
 	return nil
@@ -182,6 +186,7 @@ func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) 
 	if procImportLayerBegin.Find() != nil {
 		// The new layer reader is not available on this Windows build. Fall back to the
 		// legacy export code path.
+		fmt.Println("LEGACY WRITER HERE")
 		path, err := ioutil.TempDir("", "hcs")
 		if err != nil {
 			return nil, err
@@ -194,6 +199,8 @@ func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) 
 			parentLayerPaths:  parentLayerPaths,
 		}, nil
 	}
+
+	fmt.Println("NO LEGACY WRITER")
 	layers, err := layerPathsToDescriptors(parentLayerPaths)
 	if err != nil {
 		return nil, err

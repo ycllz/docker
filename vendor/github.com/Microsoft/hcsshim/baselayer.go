@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/Microsoft/go-winio"
+	winio "github.com/Microsoft/go-winio"
 )
 
 type baseLayerWriter struct {
@@ -167,7 +167,9 @@ func (w *baseLayerWriter) Close() error {
 			return err
 		}
 
-		err = ProcessBaseLayer(w.root)
+		// AKASH
+		// This stuff seems to be windows specific, we might not need it for linux.
+		/*err = ProcessBaseLayer(w.root)
 		if err != nil {
 			return err
 		}
@@ -177,7 +179,7 @@ func (w *baseLayerWriter) Close() error {
 			if err != nil {
 				return err
 			}
-		}
+		} */
 	}
 	return w.err
 }
