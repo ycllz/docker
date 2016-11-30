@@ -54,7 +54,10 @@ func (daemon *Daemon) migrateLegacySqliteLinks(db *graphdb.Database, container *
 func (daemon *Daemon) sqliteMigration(containers map[string]*container.Container) error {
 	// migrate any legacy links from sqlite
 	linkdbFile := filepath.Join(daemon.root, "linkgraph.db")
-	var legacyLinkDB *graphdb.Database
+	var (
+		legacyLinkDB *graphdb.Database
+		err          error
+	)
 
 	legacyLinkDB, err = graphdb.NewSqliteConn(linkdbFile)
 	if err != nil {
