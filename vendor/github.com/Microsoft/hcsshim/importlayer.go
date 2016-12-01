@@ -2,7 +2,6 @@ package hcsshim
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -175,7 +174,7 @@ func (r *legacyLayerWriterWrapper) Close() error {
 // NewLayerWriter returns a new layer writer for creating a layer on disk.
 // The caller must have taken the SeBackupPrivilege and SeRestorePrivilege privileges
 // to call this and any methods on the resulting LayerWriter.
-func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) (LayerWriter, error) {
+func NewLayerWriter(info DriverInfo, layerID string, osType string, parentLayerPaths []string) (LayerWriter, error) {
 	if len(parentLayerPaths) == 0 {
 		// This is a base layer. It gets imported differently.
 		return &baseLayerWriter{
@@ -186,7 +185,6 @@ func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) 
 	if procImportLayerBegin.Find() != nil {
 		// The new layer reader is not available on this Windows build. Fall back to the
 		// legacy export code path.
-		fmt.Println("LEGACY WRITER HERE")
 		path, err := ioutil.TempDir("", "hcs")
 		if err != nil {
 			return nil, err
@@ -200,7 +198,6 @@ func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) 
 		}, nil
 	}
 
-	fmt.Println("NO LEGACY WRITER")
 	layers, err := layerPathsToDescriptors(parentLayerPaths)
 	if err != nil {
 		return nil, err

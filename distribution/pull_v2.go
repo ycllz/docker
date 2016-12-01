@@ -508,22 +508,6 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		return target.Digest, manifestDigest, nil
 	}
 
-	var descriptors []xfer.DownloadDescriptor
-
-	// Note that the order of this loop is in the direction of bottom-most
-	// to top-most, so that the downloads slice gets ordered correctly.
-	for _, d := range mfst.Layers {
-		layerDescriptor := &v2LayerDescriptor{
-			digest:            d.Digest,
-			repo:              p.repo,
-			repoInfo:          p.repoInfo,
-			V2MetadataService: p.V2MetadataService,
-			src:               d,
-		}
-
-		descriptors = append(descriptors, layerDescriptor)
-	}
-
 	configChan := make(chan []byte, 1)
 	errChan := make(chan error, 1)
 	var cancel func()
@@ -547,6 +531,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 	)
 
 	// Linux images are supported on Windows through the use of a Linux Utility VM
+	osType := runtime.GOOS
 	if runtime.GOOS == "windows" {
 		configJSON, unmarshalledConfig, err = receiveConfig(configChan, errChan)
 		if err != nil {
@@ -559,20 +544,26 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 
 		if unmarshalledConfig.OS == "linux" {
 			logrus.Debugf("pulling a %s image on windows", unmarshalledConfig.OS)
+			osType = unmarshalledConfig.OS
 		}
 	}
 
-	// AKASH
-	// This is the easiest way I could transfer the OS without breaking anything
-	// Maybe search for better solutions.
-	downloadRootFS = *image.NewRootFS()
+	var descriptors []xfer.DownloadDescriptor
+	// Note that the order of this loop is in the direction of bottom-most
+	// to top-most, so that the downloads slice gets ordered correctly.
+	for _, d := range mfst.Layers {
+		layerDescriptor := &v2LayerDescriptor{
+			digest:            d.Digest,
+			repo:              p.repo,
+			repoInfo:          p.repoInfo,
+			V2MetadataService: p.V2MetadataService,
+			src:               d,
+		}
+		layerDescriptor.src.OS = osType
+		descriptors = append(descriptors, layerDescriptor)
+	}
 
-	// Set the operating system for the download layers
-	/*if configJSON != nil {
-		downloadRootFS.OS = unmarshalledConfig.OS
-	} else {
-		downloadRootFS.OS = runtime.GOOS
-	}*/
+	downloadRootFS = *image.NewRootFS()
 	rootFS, release, err := p.config.DownloadManager.Download(ctx, downloadRootFS, descriptors, p.config.ProgressOutput)
 	if err != nil {
 		if configJSON != nil {

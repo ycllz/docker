@@ -23,10 +23,10 @@ import (
 
 	"reflect"
 
-	ntfsposix "github.com/Microsoft/go-ntfsposix"
 	winio "github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/archive/tar"
 	"github.com/Microsoft/go-winio/backuptar"
+	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/graphdriver"
@@ -510,6 +510,14 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // The layer should not be mounted when calling this function
 func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	var layerChain []string
+
+	// First have to split the OS part of the id
+	osType, id2 := winlx.DecodeOS(id)
+	if id2 == "" {
+		return 0, fmt.Errorf("Invalid ID: %s", id)
+	}
+	id = id2
+
 	if parent != "" {
 		rPId, err := d.resolveID(parent)
 		if err != nil {
@@ -527,7 +535,7 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 		layerChain = append(layerChain, parentChain...)
 	}
 
-	size, err := d.importLayer(id, diff, layerChain)
+	size, err := d.importLayer(id, diff, osType, layerChain)
 	if err != nil {
 		return 0, err
 	}
@@ -664,7 +672,6 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 }
 
 func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, error) {
-	logrus.Println("XXX: writeLayerFromTar")
 	t := tar.NewReader(r)
 	hdr, err := t.Next()
 	totalSize := int64(0)
@@ -683,15 +690,15 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 			}
 
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
-			err = w.Remove(ntfsposix.FixUnixPath(name))
+			err = w.Remove(winlx.FixUnixPath(name))
 			if err != nil {
 				logrus.Debugln("XXX: ERRROR WHITEOUT")
 				return 0, err
 			}
 			hdr, err = t.Next()
 		} else if hdr.Typeflag == tar.TypeLink {
-			hdrLinkname := ntfsposix.FixUnixPath(hdr.Linkname)
-			err = w.AddLink(ntfsposix.FixUnixPath(hdr.Name), hdrLinkname)
+			hdrLinkname := winlx.FixUnixPath(hdr.Linkname)
+			err = w.AddLink(winlx.FixUnixPath(hdr.Name), hdrLinkname)
 			if strings.Contains(base, "perl") {
 				fmt.Printf("PERL LINK: %s -> %s\n", hdr.Name, hdrLinkname)
 			}
@@ -716,7 +723,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 				logrus.Debugln("XXX: ERROR OTHER 1")
 				return 0, err
 			}
-			name = ntfsposix.FixUnixPath(name)
+			name = winlx.FixUnixPath(name)
 			err = w.Add(name, fileInfo)
 
 			if err != nil {
@@ -735,10 +742,9 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 }
 
 // importLayer adds a new layer to the tag and graph store based on the given data.
-func (d *Driver) importLayer(id string, layerData io.Reader, parentLayerPaths []string) (size int64, err error) {
-	logrus.Println("XXX: importLayer")
+func (d *Driver) importLayer(id string, layerData io.Reader, osType string, parentLayerPaths []string) (size int64, err error) {
 	if !noreexec {
-		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id}, parentLayerPaths...)...)
+		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id, osType}, parentLayerPaths...)...)
 		output := bytes.NewBuffer(nil)
 		cmd.Stdin = layerData
 		cmd.Stdout = output
@@ -754,12 +760,12 @@ func (d *Driver) importLayer(id string, layerData io.Reader, parentLayerPaths []
 
 		return strconv.ParseInt(output.String(), 10, 64)
 	}
-	return writeLayer(layerData, d.info.HomeDir, id, parentLayerPaths...)
+	return writeLayer(layerData, d.info.HomeDir, id, osType, parentLayerPaths...)
 }
 
 // writeLayerReexec is the re-exec entry point for writing a layer from a tar file
 func writeLayerReexec() {
-	size, err := writeLayer(os.Stdin, os.Args[1], os.Args[2], os.Args[3:]...)
+	size, err := writeLayer(os.Stdin, os.Args[1], os.Args[2], os.Args[3], os.Args[4:]...)
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		os.Exit(1)
@@ -768,7 +774,7 @@ func writeLayerReexec() {
 }
 
 // writeLayer writes a layer from a tar file.
-func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ...string) (int64, error) {
+func writeLayer(layerData io.Reader, home string, id string, osType string, parentLayerPaths ...string) (int64, error) {
 	err := winio.EnableProcessPrivileges([]string{winio.SeBackupPrivilege, winio.SeRestorePrivilege})
 	if err != nil {
 		return 0, err
@@ -789,7 +795,9 @@ func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ..
 	}
 
 	logrus.Printf("XXX: PARENT LAYERS: %v", parentLayerPaths)
-	w, err := hcsshim.NewLayerWriter(info, id, parentLayerPaths)
+	logrus.Printf("XXX: OS: %s", osType)
+	logrus.Printf("XXX: ID: %s", id)
+	w, err := hcsshim.NewLayerWriter(info, id, osType, parentLayerPaths)
 	if err != nil {
 		return 0, err
 	}

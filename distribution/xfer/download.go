@@ -6,8 +6,6 @@ import (
 	"io"
 	"time"
 
-	"runtime/debug"
-
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/distribution"
 	"github.com/docker/docker/image"
@@ -99,8 +97,6 @@ func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS ima
 		transferKey    = ""
 		downloadsByKey = make(map[string]*downloadTransfer)
 	)
-
-	debug.PrintStack()
 
 	rootFS := initialRootFS
 	for _, descriptor := range layers {
@@ -327,6 +323,7 @@ func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor,
 			if fs, ok := descriptor.(distribution.Describable); ok {
 				src = fs.Descriptor()
 			}
+
 			if ds, ok := d.layerStore.(layer.DescribableStore); ok {
 				d.layer, err = ds.RegisterWithDescriptor(inflatedLayerData, parentLayer, src)
 			} else {

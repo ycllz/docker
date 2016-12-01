@@ -1,7 +1,8 @@
-package ntfsposix
+package winlx
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ const FILE_FLAG_POSIX_SEMANTICS = 0x01000000
 const legalUnixChars = "<>:\"\\|?*#!"
 const encodingPrefix = "#"
 const encodingCapPrefix = "!"
+const osSplit = "-"
 
 func toHex(x rune) rune {
 	if x >= 0 && x <= 9 {
@@ -53,4 +55,20 @@ func FixUnixPath(unixPath string) string {
 
 	// Now, just replace the '/' with '\'
 	return filepath.FromSlash(string(newString))
+}
+
+func EncodeOS(id, os string) string {
+	return os + osSplit + id
+}
+
+func DecodeOS(id string) (string, string) {
+	i := strings.Index(id, osSplit)
+	if i == len(id)-1 {
+		// This should never happen
+		return "", ""
+	} else if i == -1 {
+		// Just return the runtime OS then
+		return runtime.GOOS, id
+	}
+	return id[:i], id[i+1:]
 }
