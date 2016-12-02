@@ -20,12 +20,17 @@ type FileBasicInfo struct {
 	FileAttributes                                          uintptr // includes padding
 }
 
-// FileFullInfo contains the uid, gid and mode for linux containers.
+// FileLinuxInfo contains the uid, gid, and mode for linux containers
+type FileLinuxInfo struct {
+	UID  int
+	GID  int
+	Mode int64
+}
+
+// FileFullInfo contains the information file information for muliple OSes.
 type FileFullInfo struct {
-	FileBasicInfo
-	UID  uint32
-	GID  uint32
-	Mode uint32
+	BasicInfo FileBasicInfo
+	LinuxInfo FileLinuxInfo
 }
 
 // GetFileBasicInfo retrieves times and attributes for a file.

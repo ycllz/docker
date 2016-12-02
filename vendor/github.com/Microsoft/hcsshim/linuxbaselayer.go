@@ -9,7 +9,9 @@ import (
 	winio "github.com/Microsoft/go-winio"
 )
 
-type baseWindowsLayerWriter struct {
+// TODO: Add the EAs later, just show that you can pull both Windows
+// and Linux right now
+type baseLinuxLayerWriter struct {
 	root         string
 	f            *os.File
 	bw           *winio.BackupFileWriter
@@ -18,32 +20,7 @@ type baseWindowsLayerWriter struct {
 	dirInfo      []dirInfo
 }
 
-type dirInfo struct {
-	path     string
-	fileInfo winio.FileBasicInfo
-}
-
-// reapplyDirectoryTimes reapplies directory modification, creation, etc. times
-// after processing of the directory tree has completed. The times are expected
-// to be ordered such that parent directories come before child directories.
-func reapplyDirectoryTimes(dis []dirInfo) error {
-	for i := range dis {
-		di := &dis[len(dis)-i-1] // reverse order: process child directories first
-		f, err := winio.OpenForBackup(di.path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, syscall.FILE_SHARE_READ, syscall.OPEN_EXISTING)
-		if err != nil {
-			return err
-		}
-
-		err = winio.SetFileBasicInfo(f, &di.fileInfo)
-		f.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (w *baseWindowsLayerWriter) closeCurrentFile() error {
+func (w *baseLinuxLayerWriter) closeCurrentFile() error {
 	if w.f != nil {
 		err := w.bw.Close()
 		err2 := w.f.Close()
@@ -59,7 +36,7 @@ func (w *baseWindowsLayerWriter) closeCurrentFile() error {
 	return nil
 }
 
-func (w *baseWindowsLayerWriter) Add(name string, fileFullInfo *winio.FileFullInfo) (err error) {
+func (w *baseLinuxLayerWriter) Add(name string, fileFullInfo *winio.FileFullInfo) (err error) {
 	fileInfo := &fileFullInfo.BasicInfo
 	defer func() {
 		if err != nil {
@@ -118,7 +95,7 @@ func (w *baseWindowsLayerWriter) Add(name string, fileFullInfo *winio.FileFullIn
 	return nil
 }
 
-func (w *baseWindowsLayerWriter) AddLink(name string, target string) (err error) {
+func (w *baseLinuxLayerWriter) AddLink(name string, target string) (err error) {
 	defer func() {
 		if err != nil {
 			w.err = err
@@ -143,11 +120,11 @@ func (w *baseWindowsLayerWriter) AddLink(name string, target string) (err error)
 	return os.Link(linktarget, linkpath)
 }
 
-func (w *baseWindowsLayerWriter) Remove(name string) error {
+func (w *baseLinuxLayerWriter) Remove(name string) error {
 	return errors.New("base layer cannot have tombstones")
 }
 
-func (w *baseWindowsLayerWriter) Write(b []byte) (int, error) {
+func (w *baseLinuxLayerWriter) Write(b []byte) (int, error) {
 	n, err := w.bw.Write(b)
 	if err != nil {
 		w.err = err
@@ -155,29 +132,18 @@ func (w *baseWindowsLayerWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-func (w *baseWindowsLayerWriter) Close() error {
+func (w *baseLinuxLayerWriter) Close() error {
 	err := w.closeCurrentFile()
 	if err != nil {
 		return err
 	}
+
 	if w.err == nil {
 		// Restore the file times of all the directories, since they may have
 		// been modified by creating child directories.
 		err = reapplyDirectoryTimes(w.dirInfo)
 		if err != nil {
 			return err
-		}
-
-		err = ProcessBaseLayer(w.root)
-		if err != nil {
-			return err
-		}
-
-		if w.hasUtilityVM {
-			err = ProcessUtilityVMImage(filepath.Join(w.root, "UtilityVM"))
-			if err != nil {
-				return err
-			}
 		}
 	}
 	return w.err

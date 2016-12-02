@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Microsoft/go-winio"
+	winio "github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/archive/tar" // until archive/tar supports pax extensions in its interface
 )
 
@@ -229,30 +229,38 @@ func WriteTarFileFromBackupStream(t *tar.Writer, r io.Reader, name string, size 
 	return nil
 }
 
-// FileInfoFromHeader retrieves basic Win32 file information from a tar header, using the additional metadata written by
+// FileInfoFromHeader retrieves file information from a tar header, using the additional metadata written by
 // WriteTarFileFromBackupStream.
-func FileInfoFromHeader(hdr *tar.Header) (name string, size int64, fileInfo *winio.FileBasicInfo, err error) {
+func FileInfoFromHeader(hdr *tar.Header) (name string, size int64, fileFullInfo *winio.FileFullInfo, err error) {
 	name = hdr.Name
 	if hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeRegA {
 		size = hdr.Size
 	}
-	fileInfo = &winio.FileBasicInfo{
+
+	basicInfo := winio.FileBasicInfo{
 		LastAccessTime: syscall.NsecToFiletime(hdr.AccessTime.UnixNano()),
 		LastWriteTime:  syscall.NsecToFiletime(hdr.ModTime.UnixNano()),
 		ChangeTime:     syscall.NsecToFiletime(hdr.ChangeTime.UnixNano()),
 		CreationTime:   syscall.NsecToFiletime(hdr.CreationTime.UnixNano()),
 	}
+	linuxInfo := winio.FileLinuxInfo{
+		UID:  hdr.Uid,
+		GID:  hdr.Gid,
+		Mode: hdr.Mode,
+	}
+
 	if attrStr, ok := hdr.Winheaders[hdrFileAttributes]; ok {
 		attr, err := strconv.ParseUint(attrStr, 10, 32)
 		if err != nil {
 			return "", 0, nil, err
 		}
-		fileInfo.FileAttributes = uintptr(attr)
+		basicInfo.FileAttributes = uintptr(attr)
 	} else {
 		if hdr.Typeflag == tar.TypeDir {
-			fileInfo.FileAttributes |= syscall.FILE_ATTRIBUTE_DIRECTORY
+			basicInfo.FileAttributes |= syscall.FILE_ATTRIBUTE_DIRECTORY
 		}
 	}
+	fileFullInfo = &winio.FileFullInfo{BasicInfo: basicInfo, LinuxInfo: linuxInfo}
 	return
 }
 

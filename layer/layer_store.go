@@ -225,7 +225,7 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 
 	// Lets do this hack to distinguish between linux and windows
 	layerID := layer.cacheID
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && layer.descriptor.OS != "" {
 		// Append the OS information infront of the string.
 		layerID = winlx.EncodeOS(layerID, layer.descriptor.OS)
 	}

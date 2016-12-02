@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	winio "github.com/Microsoft/go-winio"
-	"github.com/docker/docker/pkg/archive"
 )
 
 var errorIterationCanceled = errors.New("")
@@ -484,7 +483,9 @@ func cloneTree(srcPath, destPath string, mutatedFiles map[string]bool) error {
 	return reapplyDirectoryTimes(di)
 }
 
-func (w *legacyLayerWriter) Add(name string, fileInfo *winio.FileBasicInfo) error {
+func (w *legacyLayerWriter) Add(name string, fileFullInfo *winio.FileFullInfo) error {
+	fileInfo := &fileFullInfo.BasicInfo
+
 	w.reset()
 	err := w.init()
 	if err != nil {
@@ -610,10 +611,9 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 	}
 
 	// Look for the this layer and all parent layers.
-	roots := []string{w.destRoot}
-	roots = append(roots, w.parentRoots...)
-	//var requiredPrefix string
-	/* if prefix := `Files\`; strings.HasPrefix(name, prefix) {
+	var requiredPrefix string
+	var roots []string
+	if prefix := `Files\`; strings.HasPrefix(name, prefix) {
 		requiredPrefix = prefix
 		// Look for cross-layer hard link targets in the parent layers, since
 		// nothing is in the destination path yet.
@@ -624,16 +624,11 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 		// already, look for cross-layer hard link targets directly in the
 		// destination path.
 		roots = []string{w.destRoot}
-	} */
+	}
 
-	//fmt.Println(w.parentRoots)
-	//fmt.Println(w.destRoot)
-
-	/* if requiredPrefix == "" || !strings.HasPrefix(target, requiredPrefix) {
-		fmt.Printf("Link: %s -> %s\n", name, target)
-		roots = w.parentRoots
-		//return errors.New("invalid hard link in layer")
-	} */
+	if requiredPrefix == "" || !strings.HasPrefix(target, requiredPrefix) {
+		return errors.New("invalid hard link in layer")
+	}
 
 	// Find to try the target of the link in a previously added file. If that
 	// fails, search in parent layers.
@@ -665,26 +660,6 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 }
 
 func (w *legacyLayerWriter) Remove(name string) error {
-	// AKASH
-	// Changed this around to support white out files on Linux
-	// It's bascially the same thing as add.
-	var i int
-	for i = len(name) - 1; i >= 0; i-- {
-		if name[i] == '\\' {
-			break
-		}
-	}
-
-	if i == len(name)-1 {
-		return fmt.Errorf("Invalid path name: trailing slash")
-	}
-
-	wname := name[:i+1] + archive.WhiteoutPrefix + name[i+1:]
-
-	_, err := os.Create(filepath.Join(w.root, wname))
-	return err
-
-	/* OLD CODE
 	if strings.HasPrefix(name, `Files\`) {
 		w.tombstones = append(w.tombstones, name[len(`Files\`):])
 	} else if strings.HasPrefix(name, `UtilityVM\Files\`) {
@@ -707,7 +682,6 @@ func (w *legacyLayerWriter) Remove(name string) error {
 		return fmt.Errorf("invalid tombstone %s", name)
 	}
 	return nil
-	*/
 }
 
 func (w *legacyLayerWriter) Write(b []byte) (int, error) {
@@ -737,12 +711,6 @@ func (w *legacyLayerWriter) Close() error {
 	}
 	for _, t := range w.tombstones {
 		_, err = tf.Write([]byte(filepath.Join(`\`, t) + "\n"))
-		if err != nil {
-			return err
-		}
-	}
-	if w.HasUtilityVM {
-		err = reapplyDirectoryTimes(w.uvmDi)
 		if err != nil {
 			return err
 		}

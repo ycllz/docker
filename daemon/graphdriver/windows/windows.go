@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -671,37 +670,36 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 	return backuptar.WriteBackupStreamFromTarFile(buf, t, hdr)
 }
 
-func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, error) {
+func fixPath(path string, isWindows bool) string {
+	if isWindows {
+		return filepath.FromSlash(path)
+	}
+	return winlx.FixUnixPath(path)
+}
+
+func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string, osType string) (int64, error) {
 	t := tar.NewReader(r)
 	hdr, err := t.Next()
 	totalSize := int64(0)
 	buf := bufio.NewWriter(nil)
-	debug.PrintStack()
+	isWindows := osType == "windows"
+
 	fmt.Printf("TYPE OF WRITER: %v\n", reflect.TypeOf(w))
 
 	for err == nil {
-		// FixUnixPath noops on Windows since Windows paths is a subset of Unix paths
 		base := path.Base(hdr.Name)
 
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
-			// Whiteout files are handled the same as they.
-			if strings.Contains(base, "perl") {
-				fmt.Printf("PERL WHITEOUT: %s\n", hdr.Name)
-			}
-
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
-			err = w.Remove(winlx.FixUnixPath(name))
+			err = w.Remove(fixPath(name, isWindows))
 			if err != nil {
 				logrus.Debugln("XXX: ERRROR WHITEOUT")
 				return 0, err
 			}
 			hdr, err = t.Next()
 		} else if hdr.Typeflag == tar.TypeLink {
-			hdrLinkname := winlx.FixUnixPath(hdr.Linkname)
-			err = w.AddLink(winlx.FixUnixPath(hdr.Name), hdrLinkname)
-			if strings.Contains(base, "perl") {
-				fmt.Printf("PERL LINK: %s -> %s\n", hdr.Name, hdrLinkname)
-			}
+			hdrLinkname := fixPath(hdr.Linkname, isWindows)
+			err = w.AddLink(fixPath(hdr.Name, isWindows), hdrLinkname)
 			if err != nil {
 				logrus.Debugln("XXX: ERRROR LINK")
 				return 0, err
@@ -712,18 +710,15 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 			var (
 				name     string
 				size     int64
-				fileInfo *winio.FileBasicInfo
+				fileInfo *winio.FileFullInfo
 			)
-			if strings.Contains(base, "perl") {
-				fmt.Printf("PERL FILE: %s\n", hdr.Name)
-			}
 
 			name, size, fileInfo, err = backuptar.FileInfoFromHeader(hdr)
 			if err != nil {
 				logrus.Debugln("XXX: ERROR OTHER 1")
 				return 0, err
 			}
-			name = winlx.FixUnixPath(name)
+			name = fixPath(name, isWindows)
 			err = w.Add(name, fileInfo)
 
 			if err != nil {
@@ -802,7 +797,7 @@ func writeLayer(layerData io.Reader, home string, id string, osType string, pare
 		return 0, err
 	}
 
-	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id))
+	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id), osType)
 	if err != nil {
 		return 0, err
 	}
