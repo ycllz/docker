@@ -24,11 +24,6 @@ type linuxLayerWriter struct {
 	uvmDi        []dirInfo
 	addedFiles   map[string]bool
 	PendingLinks []pendingLink
-
-	info             DriverInfo
-	layerID          string
-	path             string
-	parentLayerPaths []string
 }
 
 // newlinuxLayerWriter returns a LayerWriter that can write the contaler layer
@@ -196,8 +191,6 @@ func (w *linuxLayerWriter) Write(b []byte) (int, error) {
 }
 
 func (w *linuxLayerWriter) Close() error {
-	defer os.RemoveAll(w.root)
-
 	w.reset()
 	err := w.init()
 	if err != nil {
