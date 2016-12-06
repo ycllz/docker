@@ -35,7 +35,11 @@ type v1Puller struct {
 	session     *registry.Session
 }
 
-func (p *v1Puller) Pull(ctx context.Context, ref reference.Named) error {
+func (p *v1Puller) Pull(ctx context.Context, ref reference.Named, enableNonNative bool) error {
+	// TODO @jhowardmsft - Do we need to extend v1 the same as v2?
+	if enableNonNative {
+		return errors.New("non-native v1 images are not supported")
+	}
 	if _, isCanonical := ref.(reference.Canonical); isCanonical {
 		// Allowing fallback, because HTTPS v1 is before HTTP v2
 		return fallbackError{err: ErrNoSupport{Err: errors.New("Cannot pull by digest with v1 registry")}}

@@ -85,7 +85,8 @@ func (c *containerAdapter) pullImage(ctx context.Context) error {
 	pr, pw := io.Pipe()
 	metaHeaders := map[string][]string{}
 	go func() {
-		err := c.backend.PullImage(ctx, c.container.image(), "", metaHeaders, authConfig, pw)
+		// TODO jhowardmsft - Not sure I understand the context under which this is called. For now, hard-code enableNonNative to false.
+		err := c.backend.PullImage(ctx, c.container.image(), "", metaHeaders, authConfig, pw, false)
 		pw.CloseWithError(err)
 	}()
 

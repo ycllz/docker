@@ -60,7 +60,11 @@ type v2Puller struct {
 	confirmedV2 bool
 }
 
-func (p *v2Puller) Pull(ctx context.Context, ref reference.Named) (err error) {
+func (p *v2Puller) Pull(ctx context.Context, ref reference.Named, enableNonNative bool) (err error) {
+	if runtime.GOOS != "windows" && enableNonNative {
+		return errors.New("non-native images are not supported on this platform")
+	}
+
 	// TODO(tiborvass): was ReceiveTimeout
 	p.repo, p.confirmedV2, err = NewV2Repository(ctx, p.repoInfo, p.endpoint, p.config.MetaHeaders, p.config.AuthConfig, "pull")
 	if err != nil {
@@ -68,7 +72,7 @@ func (p *v2Puller) Pull(ctx context.Context, ref reference.Named) (err error) {
 		return err
 	}
 
-	if err = p.pullV2Repository(ctx, ref); err != nil {
+	if err = p.pullV2Repository(ctx, ref, enableNonNative); err != nil {
 		if _, ok := err.(fallbackError); ok {
 			return err
 		}
@@ -84,10 +88,10 @@ func (p *v2Puller) Pull(ctx context.Context, ref reference.Named) (err error) {
 	return err
 }
 
-func (p *v2Puller) pullV2Repository(ctx context.Context, ref reference.Named) (err error) {
+func (p *v2Puller) pullV2Repository(ctx context.Context, ref reference.Named, enableNonNative bool) (err error) {
 	var layersDownloaded bool
 	if !reference.IsNameOnly(ref) {
-		layersDownloaded, err = p.pullV2Tag(ctx, ref)
+		layersDownloaded, err = p.pullV2Tag(ctx, ref, enableNonNative)
 		if err != nil {
 			return err
 		}
@@ -109,7 +113,7 @@ func (p *v2Puller) pullV2Repository(ctx context.Context, ref reference.Named) (e
 			if err != nil {
 				return err
 			}
-			pulledNew, err := p.pullV2Tag(ctx, tagRef)
+			pulledNew, err := p.pullV2Tag(ctx, tagRef, enableNonNative)
 			if err != nil {
 				// Since this is the pull-all-tags case, don't
 				// allow an error pulling a particular tag to
@@ -324,7 +328,7 @@ func (ld *v2LayerDescriptor) Registered(diffID layer.DiffID) {
 	ld.V2MetadataService.Add(diffID, metadata.V2Metadata{Digest: ld.digest, SourceRepository: ld.repoInfo.FullName()})
 }
 
-func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named) (tagUpdated bool, err error) {
+func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named, enableNonNative bool) (tagUpdated bool, err error) {
 	manSvc, err := p.repo.Manifests(ctx)
 	if err != nil {
 		return false, err
@@ -375,17 +379,18 @@ func (p *v2Puller) pullV2Tag(ctx context.Context, ref reference.Named) (tagUpdat
 
 	switch v := manifest.(type) {
 	case *schema1.SignedManifest:
+		// TODO @jhowardmsft - Do we need to extend enableNonNative to here as well?
 		id, manifestDigest, err = p.pullSchema1(ctx, ref, v)
 		if err != nil {
 			return false, err
 		}
 	case *schema2.DeserializedManifest:
-		id, manifestDigest, err = p.pullSchema2(ctx, ref, v)
+		id, manifestDigest, err = p.pullSchema2(ctx, ref, v, enableNonNative)
 		if err != nil {
 			return false, err
 		}
 	case *manifestlist.DeserializedManifestList:
-		id, manifestDigest, err = p.pullManifestList(ctx, ref, v)
+		id, manifestDigest, err = p.pullManifestList(ctx, ref, v, enableNonNative)
 		if err != nil {
 			return false, err
 		}
@@ -492,7 +497,7 @@ func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Named, unverif
 	return imageID.Digest(), manifestDigest, nil
 }
 
-func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *schema2.DeserializedManifest) (id digest.Digest, manifestDigest digest.Digest, err error) {
+func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *schema2.DeserializedManifest, enableNonNative bool) (id digest.Digest, manifestDigest digest.Digest, err error) {
 	manifestDigest, err = schema2ManifestDigest(ref, mfst)
 	if err != nil {
 		return "", "", err
@@ -561,7 +566,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 			return "", "", errRootFSInvalid
 		}
 
-		if unmarshalledConfig.OS == "linux" {
+		if !enableNonNative && unmarshalledConfig.OS == "linux" {
 			return "", "", fmt.Errorf("image operating system %q cannot be used on this platform", unmarshalledConfig.OS)
 		}
 	}
@@ -637,7 +642,7 @@ func receiveConfig(configChan <-chan []byte, errChan <-chan error) ([]byte, imag
 
 // pullManifestList handles "manifest lists" which point to various
 // platform-specifc manifests.
-func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mfstList *manifestlist.DeserializedManifestList) (id digest.Digest, manifestListDigest digest.Digest, err error) {
+func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mfstList *manifestlist.DeserializedManifestList, enableNonNative bool) (id digest.Digest, manifestListDigest digest.Digest, err error) {
 	manifestListDigest, err = schema2ManifestDigest(ref, mfstList)
 	if err != nil {
 		return "", "", err
@@ -680,7 +685,7 @@ func (p *v2Puller) pullManifestList(ctx context.Context, ref reference.Named, mf
 			return "", "", err
 		}
 	case *schema2.DeserializedManifest:
-		id, _, err = p.pullSchema2(ctx, manifestRef, v)
+		id, _, err = p.pullSchema2(ctx, manifestRef, v, enableNonNative)
 		if err != nil {
 			return "", "", err
 		}

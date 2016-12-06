@@ -30,6 +30,9 @@ func (cli *Client) ImagePull(ctx context.Context, ref string, options types.Imag
 	if tag != "" && !options.All {
 		query.Set("tag", tag)
 	}
+	if options.EnableNonNative {
+		query.Set("enableNonNative", "yes")
+	}
 
 	resp, err := cli.tryImageCreate(ctx, query, options.RegistryAuth)
 	if resp.statusCode == http.StatusUnauthorized && options.PrivilegeFunc != nil {

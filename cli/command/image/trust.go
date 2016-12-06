@@ -296,7 +296,7 @@ func trustedPull(ctx context.Context, cli *command.DockerCli, repoInfo *registry
 		if err != nil {
 			return err
 		}
-		if err := imagePullPrivileged(ctx, cli, authConfig, ref.String(), requestPrivilege, false); err != nil {
+		if err := imagePullPrivileged(ctx, cli, authConfig, ref.String(), requestPrivilege, false, false); err != nil {
 			return err
 		}
 
@@ -319,16 +319,17 @@ func trustedPull(ctx context.Context, cli *command.DockerCli, repoInfo *registry
 }
 
 // imagePullPrivileged pulls the image and displays it to the output
-func imagePullPrivileged(ctx context.Context, cli *command.DockerCli, authConfig types.AuthConfig, ref string, requestPrivilege types.RequestPrivilegeFunc, all bool) error {
+func imagePullPrivileged(ctx context.Context, cli *command.DockerCli, authConfig types.AuthConfig, ref string, requestPrivilege types.RequestPrivilegeFunc, all, enableNonNative bool) error {
 
 	encodedAuth, err := command.EncodeAuthToBase64(authConfig)
 	if err != nil {
 		return err
 	}
 	options := types.ImagePullOptions{
-		RegistryAuth:  encodedAuth,
-		PrivilegeFunc: requestPrivilege,
-		All:           all,
+		RegistryAuth:    encodedAuth,
+		PrivilegeFunc:   requestPrivilege,
+		All:             all,
+		EnableNonNative: enableNonNative,
 	}
 
 	responseBody, err := cli.Client().ImagePull(ctx, ref, options)

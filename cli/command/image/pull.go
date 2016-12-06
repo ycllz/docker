@@ -15,8 +15,9 @@ import (
 )
 
 type pullOptions struct {
-	remote string
-	all    bool
+	remote          string
+	all             bool
+	enableNonNative bool
 }
 
 // NewPullCommand creates a new `docker pull` command
@@ -36,6 +37,7 @@ func NewPullCommand(dockerCli *command.DockerCli) *cobra.Command {
 	flags := cmd.Flags()
 
 	flags.BoolVarP(&opts.all, "all-tags", "a", false, "Download all tagged images in the repository")
+	flags.BoolVarP(&opts.enableNonNative, "enable-non-native", "e", false, "Enable non-native images")
 	command.AddTrustedFlags(flags, true)
 
 	return cmd
@@ -78,9 +80,10 @@ func runPull(dockerCli *command.DockerCli, opts pullOptions) error {
 
 	if command.IsTrusted() && !registryRef.HasDigest() {
 		// Check if tag is digest
+		// TODO @jhowardmsft Extend trustedPull to cater for non-native images
 		err = trustedPull(ctx, dockerCli, repoInfo, registryRef, authConfig, requestPrivilege)
 	} else {
-		err = imagePullPrivileged(ctx, dockerCli, authConfig, distributionRef.String(), requestPrivilege, opts.all)
+		err = imagePullPrivileged(ctx, dockerCli, authConfig, distributionRef.String(), requestPrivilege, opts.all, opts.enableNonNative)
 	}
 	if err != nil {
 		if strings.Contains(err.Error(), "target is a plugin") {
