@@ -46,7 +46,7 @@ func (daemon *Daemon) PullImage(ctx context.Context, image, tag string, metaHead
 }
 
 // PullOnBuild tells Docker to pull image referenced by `name`.
-func (daemon *Daemon) PullOnBuild(ctx context.Context, name string, authConfigs map[string]types.AuthConfig, output io.Writer) (builder.Image, error) {
+func (daemon *Daemon) PullOnBuild(ctx context.Context, name string, authConfigs map[string]types.AuthConfig, output io.Writer, enableNonNative bool) (builder.Image, error) {
 	ref, err := reference.ParseNamed(name)
 	if err != nil {
 		return nil, err
@@ -67,9 +67,7 @@ func (daemon *Daemon) PullOnBuild(ctx context.Context, name string, authConfigs 
 		)
 		pullRegistryAuth = &resolvedConfig
 	}
-
-	// TODO @jhowardmsft. For now, hard-code enableNonNative on build to false. Runtime flag to add.
-	if err := daemon.pullImageWithReference(ctx, ref, nil, pullRegistryAuth, output, false); err != nil {
+	if err := daemon.pullImageWithReference(ctx, ref, nil, pullRegistryAuth, output, enableNonNative); err != nil {
 		return nil, err
 	}
 	return daemon.GetImage(name)

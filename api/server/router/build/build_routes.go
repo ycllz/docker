@@ -55,6 +55,7 @@ func newImageBuildOptions(ctx context.Context, r *http.Request) (*types.ImageBui
 	options.Tags = r.Form["t"]
 	options.SecurityOpt = r.Form["securityopt"]
 	options.Squash = httputils.BoolValue(r, "squash")
+	options.EnableNonNative = httputils.BoolValue(r, "enablenonnative")
 
 	if r.Form.Get("shmsize") != "" {
 		shmSize, err := strconv.ParseInt(r.Form.Get("shmsize"), 10, 64)
@@ -71,8 +72,13 @@ func newImageBuildOptions(ctx context.Context, r *http.Request) (*types.ImageBui
 		options.Isolation = i
 	}
 
-	if runtime.GOOS != "windows" && options.SecurityOpt != nil {
-		return nil, fmt.Errorf("the daemon on this platform does not support --security-opt to build")
+	if runtime.GOOS != "windows" {
+		if options.SecurityOpt != nil {
+			return nil, fmt.Errorf("the daemon on this platform does not support --security-opt to build")
+		}
+		if options.EnableNonNative {
+			return nil, fmt.Errorf("the daemon on this platform does not support --enable-non-native to build")
+		}
 	}
 
 	var buildUlimits = []*units.Ulimit{}

@@ -79,6 +79,13 @@ func (cli *Client) imageBuildOptionsToQuery(options types.ImageBuildOptions) (ur
 		query.Set("squash", "1")
 	}
 
+	if options.EnableNonNative {
+		if err := cli.NewVersionError("1.26", "enable-non-native"); err != nil {
+			return query, err
+		}
+		query.Set("enablenonnative", "1")
+	}
+
 	if !container.Isolation.IsDefault(options.Isolation) {
 		query.Set("isolation", string(options.Isolation))
 	}

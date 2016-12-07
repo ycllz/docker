@@ -170,8 +170,9 @@ type ImageBuildOptions struct {
 	Squash bool
 	// CacheFrom specifies images that are used for matching cache. Images
 	// specified here do not need to have a valid parent chain to match cache.
-	CacheFrom   []string
-	SecurityOpt []string
+	CacheFrom       []string
+	SecurityOpt     []string
+	EnableNonNative bool
 }
 
 // ImageBuildResponse holds information

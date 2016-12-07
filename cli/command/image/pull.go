@@ -38,6 +38,7 @@ func NewPullCommand(dockerCli *command.DockerCli) *cobra.Command {
 
 	flags.BoolVarP(&opts.all, "all-tags", "a", false, "Download all tagged images in the repository")
 	flags.BoolVarP(&opts.enableNonNative, "enable-non-native", "e", false, "Enable non-native images")
+	flags.SetAnnotation("enable-non-native", "version", []string{"1.26"})
 	command.AddTrustedFlags(flags, true)
 
 	return cmd

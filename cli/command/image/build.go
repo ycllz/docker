@@ -34,32 +34,33 @@ import (
 )
 
 type buildOptions struct {
-	context        string
-	dockerfileName string
-	tags           opts.ListOpts
-	labels         opts.ListOpts
-	buildArgs      opts.ListOpts
-	ulimits        *runconfigopts.UlimitOpt
-	memory         string
-	memorySwap     string
-	shmSize        string
-	cpuShares      int64
-	cpuPeriod      int64
-	cpuQuota       int64
-	cpuSetCpus     string
-	cpuSetMems     string
-	cgroupParent   string
-	isolation      string
-	quiet          bool
-	noCache        bool
-	rm             bool
-	forceRm        bool
-	pull           bool
-	cacheFrom      []string
-	compress       bool
-	securityOpt    []string
-	networkMode    string
-	squash         bool
+	context         string
+	dockerfileName  string
+	tags            opts.ListOpts
+	labels          opts.ListOpts
+	buildArgs       opts.ListOpts
+	ulimits         *runconfigopts.UlimitOpt
+	memory          string
+	memorySwap      string
+	shmSize         string
+	cpuShares       int64
+	cpuPeriod       int64
+	cpuQuota        int64
+	cpuSetCpus      string
+	cpuSetMems      string
+	cgroupParent    string
+	isolation       string
+	quiet           bool
+	noCache         bool
+	rm              bool
+	forceRm         bool
+	pull            bool
+	cacheFrom       []string
+	compress        bool
+	securityOpt     []string
+	networkMode     string
+	squash          bool
+	enableNonNative bool
 }
 
 // NewBuildCommand creates a new `docker build` command
@@ -114,6 +115,8 @@ func NewBuildCommand(dockerCli *command.DockerCli) *cobra.Command {
 	flags.BoolVar(&options.squash, "squash", false, "Squash newly built layers into a single new layer")
 	flags.SetAnnotation("squash", "experimental", nil)
 	flags.SetAnnotation("squash", "version", []string{"1.25"})
+	flags.BoolVarP(&options.enableNonNative, "enable-non-native", "e", false, "Enable non-native images")
+	flags.SetAnnotation("enable-non-native", "version", []string{"1.26"})
 
 	return cmd
 }
@@ -282,31 +285,32 @@ func runBuild(dockerCli *command.DockerCli, options buildOptions) error {
 
 	authConfigs, _ := dockerCli.GetAllCredentials()
 	buildOptions := types.ImageBuildOptions{
-		Memory:         memory,
-		MemorySwap:     memorySwap,
-		Tags:           options.tags.GetAll(),
-		SuppressOutput: options.quiet,
-		NoCache:        options.noCache,
-		Remove:         options.rm,
-		ForceRemove:    options.forceRm,
-		PullParent:     options.pull,
-		Isolation:      container.Isolation(options.isolation),
-		CPUSetCPUs:     options.cpuSetCpus,
-		CPUSetMems:     options.cpuSetMems,
-		CPUShares:      options.cpuShares,
-		CPUQuota:       options.cpuQuota,
-		CPUPeriod:      options.cpuPeriod,
-		CgroupParent:   options.cgroupParent,
-		Dockerfile:     relDockerfile,
-		ShmSize:        shmSize,
-		Ulimits:        options.ulimits.GetList(),
-		BuildArgs:      runconfigopts.ConvertKVStringsToMap(options.buildArgs.GetAll()),
-		AuthConfigs:    authConfigs,
-		Labels:         runconfigopts.ConvertKVStringsToMap(options.labels.GetAll()),
-		CacheFrom:      options.cacheFrom,
-		SecurityOpt:    options.securityOpt,
-		NetworkMode:    options.networkMode,
-		Squash:         options.squash,
+		Memory:          memory,
+		MemorySwap:      memorySwap,
+		Tags:            options.tags.GetAll(),
+		SuppressOutput:  options.quiet,
+		NoCache:         options.noCache,
+		Remove:          options.rm,
+		ForceRemove:     options.forceRm,
+		PullParent:      options.pull,
+		Isolation:       container.Isolation(options.isolation),
+		CPUSetCPUs:      options.cpuSetCpus,
+		CPUSetMems:      options.cpuSetMems,
+		CPUShares:       options.cpuShares,
+		CPUQuota:        options.cpuQuota,
+		CPUPeriod:       options.cpuPeriod,
+		CgroupParent:    options.cgroupParent,
+		Dockerfile:      relDockerfile,
+		ShmSize:         shmSize,
+		Ulimits:         options.ulimits.GetList(),
+		BuildArgs:       runconfigopts.ConvertKVStringsToMap(options.buildArgs.GetAll()),
+		AuthConfigs:     authConfigs,
+		Labels:          runconfigopts.ConvertKVStringsToMap(options.labels.GetAll()),
+		CacheFrom:       options.cacheFrom,
+		SecurityOpt:     options.securityOpt,
+		NetworkMode:     options.networkMode,
+		Squash:          options.squash,
+		EnableNonNative: options.enableNonNative,
 	}
 
 	response, err := dockerCli.Client().ImageBuild(ctx, body, buildOptions)
