@@ -37,7 +37,7 @@ type ApplyDiffProtoDriver interface {
 	graphdriver.ProtoDriver
 	// ApplyDiff writes the diff to the archive for the given id and parent id.
 	// It returns the size in bytes written if successful, an error ErrApplyDiffFallback is returned otherwise.
-	ApplyDiff(id, parent string, diff io.Reader) (size int64, err error)
+	ApplyDiff(id, parent string, diff io.Reader, imagePlatform string) (size int64, err error)
 }
 
 type naiveDiffDriverWithApply struct {
@@ -54,10 +54,10 @@ func NaiveDiffDriverWithApply(driver ApplyDiffProtoDriver, uidMaps, gidMaps []id
 }
 
 // ApplyDiff creates a diff layer with either the NaiveDiffDriver or with a fallback.
-func (d *naiveDiffDriverWithApply) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
-	b, err := d.applyDiff.ApplyDiff(id, parent, diff)
+func (d *naiveDiffDriverWithApply) ApplyDiff(id, parent string, diff io.Reader, imagePlatform string) (int64, error) {
+	b, err := d.applyDiff.ApplyDiff(id, parent, diff, imagePlatform)
 	if err == ErrApplyDiffFallback {
-		return d.Driver.ApplyDiff(id, parent, diff)
+		return d.Driver.ApplyDiff(id, parent, diff, imagePlatform)
 	}
 	return b, err
 }
@@ -404,7 +404,7 @@ func (d *Driver) Put(id string) error {
 }
 
 // ApplyDiff applies the new layer on top of the root, if parent does not exist with will return an ErrApplyDiffFallback error.
-func (d *Driver) ApplyDiff(id string, parent string, diff io.Reader) (size int64, err error) {
+func (d *Driver) ApplyDiff(id string, parent string, diff io.Reader, imagePlatform string) (size int64, err error) {
 	dir := d.dir(id)
 
 	if parent == "" {

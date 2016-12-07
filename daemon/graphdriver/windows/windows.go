@@ -493,7 +493,7 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // layer with the specified id and parent, returning the size of the
 // new layer in bytes.
 // The layer should not be mounted when calling this function
-func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
+func (d *Driver) ApplyDiff(id, parent string, diff io.Reader, imagePlatform string) (int64, error) {
 	var layerChain []string
 	if parent != "" {
 		rPId, err := d.resolveID(parent)
@@ -512,7 +512,7 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 		layerChain = append(layerChain, parentChain...)
 	}
 
-	size, err := d.importLayer(id, diff, layerChain)
+	size, err := d.importLayer(id, diff, layerChain, imagePlatform)
 	if err != nil {
 		return 0, err
 	}
@@ -692,9 +692,9 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 }
 
 // importLayer adds a new layer to the tag and graph store based on the given data.
-func (d *Driver) importLayer(id string, layerData io.Reader, parentLayerPaths []string) (size int64, err error) {
+func (d *Driver) importLayer(id string, layerData io.Reader, parentLayerPaths []string, imagePlatform string) (size int64, err error) {
 	if !noreexec {
-		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id}, parentLayerPaths...)...)
+		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id, imagePlatform}, parentLayerPaths...)...)
 		output := bytes.NewBuffer(nil)
 		cmd.Stdin = layerData
 		cmd.Stdout = output
@@ -710,12 +710,12 @@ func (d *Driver) importLayer(id string, layerData io.Reader, parentLayerPaths []
 
 		return strconv.ParseInt(output.String(), 10, 64)
 	}
-	return writeLayer(layerData, d.info.HomeDir, id, parentLayerPaths...)
+	return writeLayer(layerData, d.info.HomeDir, id, imagePlatform, parentLayerPaths...)
 }
 
 // writeLayerReexec is the re-exec entry point for writing a layer from a tar file
 func writeLayerReexec() {
-	size, err := writeLayer(os.Stdin, os.Args[1], os.Args[2], os.Args[3:]...)
+	size, err := writeLayer(os.Stdin, os.Args[1], os.Args[2], os.Args[3], os.Args[4:]...)
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
 		os.Exit(1)
@@ -724,7 +724,7 @@ func writeLayerReexec() {
 }
 
 // writeLayer writes a layer from a tar file.
-func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ...string) (int64, error) {
+func writeLayer(layerData io.Reader, home string, id string, imagePlatform string, parentLayerPaths ...string) (int64, error) {
 	err := winio.EnableProcessPrivileges([]string{winio.SeBackupPrivilege, winio.SeRestorePrivilege})
 	if err != nil {
 		return 0, err
@@ -751,14 +751,23 @@ func writeLayer(layerData io.Reader, home string, id string, parentLayerPaths ..
 
 	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id))
 	if err != nil {
+		// JJH eg pulling Linux image and file has a colon in it  eg docker pull -e node
+		// ailed to register layer: Failed to OpenForBackup failed in Win32:
+		// open \\?\C:\control\windowsfilter\d257cf78997b7c876c95e3a009f8a5fe5611de76042779dafd193d0948f3f246\usr\share\man\man3\Locale::gettext.3pm.gz:
+		// The filename, directory name, or volume label syntax is incorrect. (0x1f)
+		// \\?\C:\control\windowsfilter\d257cf78997b7c876c95e3a009f8a5fe5611de76042779dafd193d0948f3f246\usr\share\man\man3\Locale::gettext.3pm.gz
+		fmt.Println("JJH windows graphdriver error from writeLayerFromTar", id, err)
 		return 0, err
 	}
 
 	err = w.Close()
 	if err != nil {
+		// JJH eg docker pull -e cirros. Why fail here and not in the writeLayerFromTar?
+		fmt.Println("JJH writeLayer failed to close the writer", err)
 		return 0, err
 	}
 
+	fmt.Println("JJH windows graphdriver writeLayer() returning success with size", size)
 	return size, nil
 }
 

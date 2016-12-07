@@ -206,7 +206,7 @@ func (d *graphDriverProxy) Changes(id, parent string) ([]archive.Change, error) 
 	return ret.Changes, nil
 }
 
-func (d *graphDriverProxy) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
+func (d *graphDriverProxy) ApplyDiff(id, parent string, diff io.Reader, imagePlatform string) (int64, error) {
 	var ret graphDriverResponse
 	if err := d.client.SendFile(fmt.Sprintf("GraphDriver.ApplyDiff?id=%s&parent=%s", id, parent), diff, &ret); err != nil {
 		return -1, err

@@ -202,7 +202,7 @@ func (ls *layerStore) loadMount(mount string) error {
 	return nil
 }
 
-func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent string, layer *roLayer) error {
+func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent string, layer *roLayer, imagePlatform ImagePlatform) error {
 	digester := digest.Canonical.New()
 	tr := io.TeeReader(ts, digester.Hash())
 
@@ -220,7 +220,7 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 		return err
 	}
 
-	applySize, err := ls.driver.ApplyDiff(layer.cacheID, parent, rdr)
+	applySize, err := ls.driver.ApplyDiff(layer.cacheID, parent, rdr, string(imagePlatform))
 	if err != nil {
 		return err
 	}
@@ -267,8 +267,6 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		}
 	}
 
-	fmt.Println("JJH registerWithDescriptor")
-
 	// Create new roLayer
 	layer := &roLayer{
 		parent:         p,
@@ -279,9 +277,7 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		descriptor:     descriptor,
 	}
 
-	fmt.Println("JJH calling ls.driver.Create")
 	if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
-		fmt.Println("JJH error from ls.Driver.Create", err)
 		return nil, err
 	}
 
@@ -302,9 +298,7 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		}
 	}()
 
-	fmt.Println("JJH calling ls.applyTar")
-	if err = ls.applyTar(tx, ts, pid, layer); err != nil {
-		fmt.Println("JJH error from ls.applyTar", err)
+	if err = ls.applyTar(tx, ts, pid, layer, imagePlatform); err != nil {
 		return nil, err
 	}
 
@@ -314,9 +308,7 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		layer.chainID = createChainIDFromParent(layer.parent.chainID, layer.diffID)
 	}
 
-	fmt.Println("JJH calling storeLayer")
 	if err = storeLayer(tx, layer); err != nil {
-		fmt.Println("JJH error from storeLayer", err)
 		return nil, err
 	}
 
@@ -329,9 +321,7 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		return existingLayer.getReference(), nil
 	}
 
-	fmt.Println("JJH calling tx.Commit")
 	if err = tx.Commit(layer.chainID); err != nil {
-		fmt.Println("JJH error from tx.Commit", err)
 		return nil, err
 	}
 

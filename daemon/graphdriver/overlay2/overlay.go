@@ -591,9 +591,9 @@ func (d *Driver) isParent(id, parent string) bool {
 }
 
 // ApplyDiff applies the new layer into a root
-func (d *Driver) ApplyDiff(id string, parent string, diff io.Reader) (size int64, err error) {
+func (d *Driver) ApplyDiff(id string, parent string, diff io.Reader, imagePlatform string) (size int64, err error) {
 	if !d.isParent(id, parent) {
-		return d.naiveDiff.ApplyDiff(id, parent, diff)
+		return d.naiveDiff.ApplyDiff(id, parent, diff, imagePlatform)
 	}
 
 	applyDir := d.getDiffPath(id)

@@ -327,11 +327,9 @@ func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor,
 			if ds, ok := d.layerStore.(layer.DescribableStore); ok {
 				d.layer, err = ds.RegisterWithDescriptor(inflatedLayerData, parentLayer, src, layer.ImagePlatform(imagePlatform))
 			} else {
-				fmt.Println("JJH Calling layerStore.Register")
 				d.layer, err = d.layerStore.Register(inflatedLayerData, parentLayer, layer.ImagePlatform(imagePlatform))
 			}
 			if err != nil {
-				fmt.Println("JJH error in the register stuff", err)
 				select {
 				case <-d.Transfer.Context().Done():
 					d.err = errors.New("layer registration cancelled")

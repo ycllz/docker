@@ -162,6 +162,7 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 	rootFS := image.NewRootFS()
 	osVersion := ""
 	var osFeatures []string
+	os := ""
 
 	if container.ImageID != "" {
 		img, err := daemon.imageStore.Get(container.ImageID)
@@ -172,11 +173,10 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 		rootFS = img.RootFS
 		osVersion = img.OSVersion
 		osFeatures = img.OSFeatures
+		os = img.OS
 	}
 
-	// TODO @jhowardmsft - Currently passing "" for the imagePlatform
-	fmt.Println("JJH - TODO in commit calling register with no imagePlatform")
-	l, err := daemon.layerStore.Register(rwTar, rootFS.ChainID(), "")
+	l, err := daemon.layerStore.Register(rwTar, rootFS.ChainID(), layer.ImagePlatform(os))
 	if err != nil {
 		return "", err
 	}
