@@ -749,9 +749,15 @@ func writeLayer(layerData io.Reader, home string, id string, imagePlatform strin
 		return 0, err
 	}
 
+	// @jhowardmsft HACK HACK TODO: Temporary while the filesystem stuff is being
+	// thought through. If !windows, then don't write anything.
+	if imagePlatform == "linux" {
+		return 0, nil
+	}
+
 	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id))
 	if err != nil {
-		// JJH eg pulling Linux image and file has a colon in it  eg docker pull -e node
+		// @jhowardmsft HACK HACK comment eg pulling Linux image and file has a colon in it  eg docker pull -e node
 		// ailed to register layer: Failed to OpenForBackup failed in Win32:
 		// open \\?\C:\control\windowsfilter\d257cf78997b7c876c95e3a009f8a5fe5611de76042779dafd193d0948f3f246\usr\share\man\man3\Locale::gettext.3pm.gz:
 		// The filename, directory name, or volume label syntax is incorrect. (0x1f)
@@ -762,7 +768,7 @@ func writeLayer(layerData io.Reader, home string, id string, imagePlatform strin
 
 	err = w.Close()
 	if err != nil {
-		// JJH eg docker pull -e cirros. Why fail here and not in the writeLayerFromTar?
+		// @jhowardmsft HACK HACK comment eg docker pull -e cirros. Why fail here and not in the writeLayerFromTar?
 		fmt.Println("JJH writeLayer failed to close the writer", err)
 		return 0, err
 	}

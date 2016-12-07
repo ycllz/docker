@@ -570,6 +570,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 
 		knownPlatform = unmarshalledConfig.OS
 		if !enableNonNative && unmarshalledConfig.OS == "linux" {
+			panic("Should not hit this!!! Why are we??")
 			return "", "", fmt.Errorf("image operating system %q cannot be used on this platform", unmarshalledConfig.OS)
 		}
 	}
