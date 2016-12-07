@@ -236,11 +236,11 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 	return nil
 }
 
-func (ls *layerStore) Register(ts io.Reader, parent ChainID) (Layer, error) {
-	return ls.registerWithDescriptor(ts, parent, distribution.Descriptor{})
+func (ls *layerStore) Register(ts io.Reader, parent ChainID, imagePlatform ImagePlatform) (Layer, error) {
+	return ls.registerWithDescriptor(ts, parent, distribution.Descriptor{}, imagePlatform)
 }
 
-func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descriptor distribution.Descriptor) (Layer, error) {
+func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descriptor distribution.Descriptor, imagePlatform ImagePlatform) (Layer, error) {
 	// err is used to hold the error which will always trigger
 	// cleanup of creates sources but may not be an error returned
 	// to the caller (already exists).
@@ -267,6 +267,8 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		}
 	}
 
+	fmt.Println("JJH registerWithDescriptor")
+
 	// Create new roLayer
 	layer := &roLayer{
 		parent:         p,
@@ -277,7 +279,9 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		descriptor:     descriptor,
 	}
 
+	fmt.Println("JJH calling ls.driver.Create")
 	if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
+		fmt.Println("JJH error from ls.Driver.Create", err)
 		return nil, err
 	}
 
@@ -298,7 +302,9 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		}
 	}()
 
+	fmt.Println("JJH calling ls.applyTar")
 	if err = ls.applyTar(tx, ts, pid, layer); err != nil {
+		fmt.Println("JJH error from ls.applyTar", err)
 		return nil, err
 	}
 
@@ -308,7 +314,9 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		layer.chainID = createChainIDFromParent(layer.parent.chainID, layer.diffID)
 	}
 
+	fmt.Println("JJH calling storeLayer")
 	if err = storeLayer(tx, layer); err != nil {
+		fmt.Println("JJH error from storeLayer", err)
 		return nil, err
 	}
 
@@ -321,7 +329,9 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		return existingLayer.getReference(), nil
 	}
 
+	fmt.Println("JJH calling tx.Commit")
 	if err = tx.Commit(layer.chainID); err != nil {
+		fmt.Println("JJH error from tx.Commit", err)
 		return nil, err
 	}
 

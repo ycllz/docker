@@ -88,7 +88,7 @@ type DownloadDescriptorWithRegistered interface {
 // Download method is called to get the layer tar data. Layers are then
 // registered in the appropriate order.  The caller must call the returned
 // release function once it is is done with the returned RootFS object.
-func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS image.RootFS, layers []DownloadDescriptor, progressOutput progress.Output) (image.RootFS, func(), error) {
+func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS image.RootFS, layers []DownloadDescriptor, progressOutput progress.Output, imagePlatform string) (image.RootFS, func(), error) {
 	var (
 		topLayer       layer.Layer
 		topDownload    *downloadTransfer
@@ -129,7 +129,7 @@ func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS ima
 		// the stack? If so, avoid downloading it more than once.
 		var topDownloadUncasted Transfer
 		if existingDownload, ok := downloadsByKey[key]; ok {
-			xferFunc := ldm.makeDownloadFuncFromDownload(descriptor, existingDownload, topDownload)
+			xferFunc := ldm.makeDownloadFuncFromDownload(descriptor, existingDownload, topDownload, imagePlatform)
 			defer topDownload.Transfer.Release(watcher)
 			topDownloadUncasted, watcher = ldm.tm.Transfer(transferKey, xferFunc, progressOutput)
 			topDownload = topDownloadUncasted.(*downloadTransfer)
@@ -141,10 +141,10 @@ func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS ima
 
 		var xferFunc DoFunc
 		if topDownload != nil {
-			xferFunc = ldm.makeDownloadFunc(descriptor, "", topDownload)
+			xferFunc = ldm.makeDownloadFunc(descriptor, "", topDownload, imagePlatform)
 			defer topDownload.Transfer.Release(watcher)
 		} else {
-			xferFunc = ldm.makeDownloadFunc(descriptor, rootFS.ChainID(), nil)
+			xferFunc = ldm.makeDownloadFunc(descriptor, rootFS.ChainID(), nil, imagePlatform)
 		}
 		topDownloadUncasted, watcher = ldm.tm.Transfer(transferKey, xferFunc, progressOutput)
 		topDownload = topDownloadUncasted.(*downloadTransfer)
@@ -201,7 +201,7 @@ func (ldm *LayerDownloadManager) Download(ctx context.Context, initialRootFS ima
 // complete before the registration step, and registers the downloaded data
 // on top of parentDownload's resulting layer. Otherwise, it registers the
 // layer on top of the ChainID given by parentLayer.
-func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor, parentLayer layer.ChainID, parentDownload *downloadTransfer) DoFunc {
+func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor, parentLayer layer.ChainID, parentDownload *downloadTransfer, imagePlatform string) DoFunc {
 	return func(progressChan chan<- progress.Progress, start <-chan struct{}, inactive chan<- struct{}) Transfer {
 		d := &downloadTransfer{
 			Transfer:   NewTransfer(),
@@ -323,12 +323,15 @@ func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor,
 			if fs, ok := descriptor.(distribution.Describable); ok {
 				src = fs.Descriptor()
 			}
+
 			if ds, ok := d.layerStore.(layer.DescribableStore); ok {
-				d.layer, err = ds.RegisterWithDescriptor(inflatedLayerData, parentLayer, src)
+				d.layer, err = ds.RegisterWithDescriptor(inflatedLayerData, parentLayer, src, layer.ImagePlatform(imagePlatform))
 			} else {
-				d.layer, err = d.layerStore.Register(inflatedLayerData, parentLayer)
+				fmt.Println("JJH Calling layerStore.Register")
+				d.layer, err = d.layerStore.Register(inflatedLayerData, parentLayer, layer.ImagePlatform(imagePlatform))
 			}
 			if err != nil {
+				fmt.Println("JJH error in the register stuff", err)
 				select {
 				case <-d.Transfer.Context().Done():
 					d.err = errors.New("layer registration cancelled")
@@ -365,7 +368,7 @@ func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor,
 // parentDownload. This function does not log progress output because it would
 // interfere with the progress reporting for sourceDownload, which has the same
 // Key.
-func (ldm *LayerDownloadManager) makeDownloadFuncFromDownload(descriptor DownloadDescriptor, sourceDownload *downloadTransfer, parentDownload *downloadTransfer) DoFunc {
+func (ldm *LayerDownloadManager) makeDownloadFuncFromDownload(descriptor DownloadDescriptor, sourceDownload *downloadTransfer, parentDownload *downloadTransfer, imagePlatform string) DoFunc {
 	return func(progressChan chan<- progress.Progress, start <-chan struct{}, inactive chan<- struct{}) Transfer {
 		d := &downloadTransfer{
 			Transfer:   NewTransfer(),
@@ -423,9 +426,9 @@ func (ldm *LayerDownloadManager) makeDownloadFuncFromDownload(descriptor Downloa
 				src = fs.Descriptor()
 			}
 			if ds, ok := d.layerStore.(layer.DescribableStore); ok {
-				d.layer, err = ds.RegisterWithDescriptor(layerReader, parentLayer, src)
+				d.layer, err = ds.RegisterWithDescriptor(layerReader, parentLayer, src, layer.ImagePlatform(imagePlatform))
 			} else {
-				d.layer, err = d.layerStore.Register(layerReader, parentLayer)
+				d.layer, err = d.layerStore.Register(layerReader, parentLayer, layer.ImagePlatform(imagePlatform))
 			}
 			if err != nil {
 				d.err = fmt.Errorf("failed to register layer: %v", err)

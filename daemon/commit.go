@@ -174,7 +174,9 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 		osFeatures = img.OSFeatures
 	}
 
-	l, err := daemon.layerStore.Register(rwTar, rootFS.ChainID())
+	// TODO @jhowardmsft - Currently passing "" for the imagePlatform
+	fmt.Println("JJH - TODO in commit calling register with no imagePlatform")
+	l, err := daemon.layerStore.Register(rwTar, rootFS.ChainID(), "")
 	if err != nil {
 		return "", err
 	}

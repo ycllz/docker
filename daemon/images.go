@@ -270,7 +270,8 @@ func (daemon *Daemon) SquashImage(id, parent string) (string, error) {
 	}
 	defer ts.Close()
 
-	newL, err := daemon.layerStore.Register(ts, parentChainID)
+	// TODO @jhowardmsft - For now passing "" for imagePlatform. Need to pass this through somehow.
+	newL, err := daemon.layerStore.Register(ts, parentChainID, "")
 	if err != nil {
 		return "", errors.Wrap(err, "error registering layer")
 	}

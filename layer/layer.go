@@ -179,7 +179,7 @@ type CreateRWLayerOpts struct {
 // Store represents a backend for managing both
 // read-only and read-write layers.
 type Store interface {
-	Register(io.Reader, ChainID) (Layer, error)
+	Register(io.Reader, ChainID, ImagePlatform) (Layer, error)
 	Get(ChainID) (Layer, error)
 	Map() map[ChainID]Layer
 	Release(Layer) ([]Metadata, error)
@@ -194,10 +194,13 @@ type Store interface {
 	DriverName() string
 }
 
+// ImagePlatform describes the platform for an image
+type ImagePlatform string
+
 // DescribableStore represents a layer store capable of storing
 // descriptors for layers.
 type DescribableStore interface {
-	RegisterWithDescriptor(io.Reader, ChainID, distribution.Descriptor) (Layer, error)
+	RegisterWithDescriptor(io.Reader, ChainID, distribution.Descriptor, ImagePlatform) (Layer, error)
 }
 
 // MetadataTransaction represents functions for setting layer metadata

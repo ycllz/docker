@@ -476,7 +476,8 @@ func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Named, unverif
 		descriptors = append(descriptors, layerDescriptor)
 	}
 
-	resultRootFS, release, err := p.config.DownloadManager.Download(ctx, *rootFS, descriptors, p.config.ProgressOutput)
+	// TODO @jhowardmsft - Do we need to plumb through EnableNonNative/imagePlatform here (for v1 schema)? Hard code to blank currently.
+	resultRootFS, release, err := p.config.DownloadManager.Download(ctx, *rootFS, descriptors, p.config.ProgressOutput, "")
 	if err != nil {
 		return "", "", err
 	}
@@ -556,6 +557,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 	// which aren't suitable for NTFS. At some point in the future, if a similar
 	// check to block Windows images being pulled on Linux is implemented, it
 	// may be necessary to perform the same type of serialisation.
+	knownPlatform := ""
 	if runtime.GOOS == "windows" {
 		configJSON, unmarshalledConfig, err = receiveConfig(configChan, errChan)
 		if err != nil {
@@ -566,6 +568,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 			return "", "", errRootFSInvalid
 		}
 
+		knownPlatform = unmarshalledConfig.OS
 		if !enableNonNative && unmarshalledConfig.OS == "linux" {
 			return "", "", fmt.Errorf("image operating system %q cannot be used on this platform", unmarshalledConfig.OS)
 		}
@@ -573,7 +576,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 
 	downloadRootFS = *image.NewRootFS()
 
-	rootFS, release, err := p.config.DownloadManager.Download(ctx, downloadRootFS, descriptors, p.config.ProgressOutput)
+	rootFS, release, err := p.config.DownloadManager.Download(ctx, downloadRootFS, descriptors, p.config.ProgressOutput, knownPlatform)
 	if err != nil {
 		if configJSON != nil {
 			// Already received the config
