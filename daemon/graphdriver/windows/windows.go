@@ -725,6 +725,12 @@ func writeLayerReexec() {
 
 // writeLayer writes a layer from a tar file.
 func writeLayer(layerData io.Reader, home string, id string, imagePlatform string, parentLayerPaths ...string) (int64, error) {
+	// @jhowardmsft HACK HACK TODO: Temporary while the filesystem stuff is being
+	// thought through. If !windows, then don't write anything.
+	if imagePlatform == "linux" {
+		return 0, nil
+	}
+
 	err := winio.EnableProcessPrivileges([]string{winio.SeBackupPrivilege, winio.SeRestorePrivilege})
 	if err != nil {
 		return 0, err
@@ -749,12 +755,6 @@ func writeLayer(layerData io.Reader, home string, id string, imagePlatform strin
 		return 0, err
 	}
 
-	// @jhowardmsft HACK HACK TODO: Temporary while the filesystem stuff is being
-	// thought through. If !windows, then don't write anything.
-	if imagePlatform == "linux" {
-		return 0, nil
-	}
-
 	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id))
 	if err != nil {
 		// @jhowardmsft HACK HACK comment eg pulling Linux image and file has a colon in it  eg docker pull -e node
@@ -773,7 +773,6 @@ func writeLayer(layerData io.Reader, home string, id string, imagePlatform strin
 		return 0, err
 	}
 
-	fmt.Println("JJH windows graphdriver writeLayer() returning success with size", size)
 	return size, nil
 }
 
