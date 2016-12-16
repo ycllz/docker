@@ -677,6 +677,26 @@ func fixPath(path string, isWindows bool) string {
 	return winlx.FixUnixPath(path)
 }
 
+func writeLinuxFromTarStream(r *tar.Reader, h *tar.Header, w hcsshim.LayerWriter) (*tar.Header, int64, error) {
+	var size int
+	var err error
+
+	if h.Typeflag == tar.TypeSymlink {
+		size, err = w.Write([]byte(h.Linkname))
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		size64, err := io.Copy(w, r)
+		if err != nil {
+			return nil, 0, err
+		}
+		size = int(size64)
+	}
+	hNext, err := r.Next()
+	return hNext, int64(size), err
+}
+
 func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string, osType string) (int64, error) {
 	t := tar.NewReader(r)
 	hdr, err := t.Next()
@@ -688,6 +708,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string, osType s
 
 	for err == nil {
 		base := path.Base(hdr.Name)
+		fmt.Println(hdr.Name)
 
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
@@ -719,13 +740,19 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string, osType s
 				return 0, err
 			}
 			name = fixPath(name, isWindows)
+
 			err = w.Add(name, fileInfo)
 
 			if err != nil {
 				logrus.Debugln("XXX: ERROR OTHER 2")
 				return 0, err
 			}
-			hdr, err = writeBackupStreamFromTarAndSaveMutatedFiles(buf, w, t, hdr, root)
+
+			if isWindows {
+				hdr, err = writeBackupStreamFromTarAndSaveMutatedFiles(buf, w, t, hdr, root)
+			} else {
+				hdr, size, err = writeLinuxFromTarStream(t, hdr, w)
+			}
 			totalSize += size
 		}
 	}

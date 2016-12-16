@@ -21,10 +21,12 @@ type FileBasicInfo struct {
 }
 
 // FileLinuxInfo contains the uid, gid, and mode for linux containers
+// TODO: Flesh this structure out more.
+// Right now has some bare minimum.
 type FileLinuxInfo struct {
-	UID  int
-	GID  int
-	Mode int64
+	UID      int
+	GID      int
+	Mode     int64
 }
 
 // FileFullInfo contains the information file information for muliple OSes.

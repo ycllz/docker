@@ -10,11 +10,10 @@ import (
 const FILE_FLAG_POSIX_SEMANTICS = 0x01000000
 
 // Contains all the illegal Windows char, but not Unix
-// Note that the # and ! are actually legal, but we encode
+// Note that # is actually legal, but we encode
 //since it's used as special chars for our encoding.
-const legalUnixChars = "<>:\"\\|?*#!"
+const legalUnixChars = "#:\n\\"
 const encodingPrefix = "#"
-const encodingCapPrefix = "!"
 const osSplit = "-"
 
 func toHex(x rune) rune {
@@ -46,8 +45,6 @@ func FixUnixPath(unixPath string) string {
 	for _, c := range unixPath {
 		if strings.ContainsRune(legalUnixChars, c) {
 			newString = append(newString, encodeChar(c)...)
-		} else if c >= 'A' && c <= 'Z' {
-			newString = append(newString, '!', c)
 		} else {
 			newString = append(newString, c)
 		}
