@@ -31,8 +31,8 @@ type ServiceVMHeader struct {
 
 const connTimeOut = 10
 const waitTimeOut = 120
-const serviceVMName = "UbuntuNormalEXT3"
-const serviceVMAddress = "172.17.0.1:7834"
+const serviceVMName = "Ubuntu1604-v4"
+const serviceVMAddress = "10.123.175.141:5931"
 const layerVHDName = "layer.vhd"
 
 func unpackLUN(lun uint8) (uint8, uint8) {
