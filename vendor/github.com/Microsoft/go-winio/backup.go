@@ -10,8 +10,6 @@ import (
 	"runtime"
 	"syscall"
 	"unicode/utf16"
-
-	winlx "github.com/Microsoft/go-winlx"
 )
 
 //sys backupRead(h syscall.Handle, b []byte, bytesRead *uint32, abort bool, processSecurity bool, context *uintptr) (err error) = BackupRead
@@ -259,7 +257,7 @@ func OpenForBackup(path string, access uint32, share uint32, createmode uint32) 
 	if err != nil {
 		return nil, err
 	}
-	h, err := syscall.CreateFile(&winPath[0], access, share, nil, createmode, syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OPEN_REPARSE_POINT|winlx.FILE_FLAG_POSIX_SEMANTICS, 0)
+	h, err := syscall.CreateFile(&winPath[0], access, share, nil, createmode, syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		err = &os.PathError{Op: "open", Path: path, Err: err}
 		return nil, err

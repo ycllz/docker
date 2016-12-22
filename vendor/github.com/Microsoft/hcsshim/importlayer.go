@@ -129,14 +129,6 @@ type legacyLayerWriterWrapper struct {
 	parentLayerPaths []string
 }
 
-type linuxLayerWriterWrapper struct {
-	*linuxLayerWriter
-	info             DriverInfo
-	layerID          string
-	path             string
-	parentLayerPaths []string
-}
-
 func (r *legacyLayerWriterWrapper) Close() error {
 	defer os.RemoveAll(r.root)
 	err := r.legacyLayerWriter.Close()
@@ -176,50 +168,12 @@ func (r *legacyLayerWriterWrapper) Close() error {
 	return nil
 }
 
-// TODO: combine the original + linux one later.
-func (r *linuxLayerWriterWrapper) Close() error {
-	defer os.RemoveAll(r.root)
-	err := r.linuxLayerWriter.Close()
-	if err != nil {
-		return err
-	}
-
-	// Use the original path here because ImportLayer does not support long paths for the source in TP5.
-	// But do use a long path for the destination to work around another bug with directories
-	// with MAX_PATH - 12 < length < MAX_PATH.
-	info := r.info
-	fullPath, err := makeLongAbsPath(filepath.Join(info.HomeDir, r.layerID))
-	if err != nil {
-		return err
-	}
-
-	// Throw away the error for linux
-	info.HomeDir = ""
-	ImportLayer(info, fullPath, r.path, r.parentLayerPaths)
-
-	// Add any hard links that were collected.
-	for _, lnk := range r.PendingLinks {
-		if err = os.Remove(lnk.Path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if err = os.Link(lnk.Target, lnk.Path); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // NewLayerWriter returns a new layer writer for creating a layer on disk.
 // The caller must have taken the SeBackupPrivilege and SeRestorePrivilege privileges
 // to call this and any methods on the resulting LayerWriter.
-func NewLayerWriter(info DriverInfo, layerID string, osType string, parentLayerPaths []string) (LayerWriter, error) {
+func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) (LayerWriter, error) {
 	if len(parentLayerPaths) == 0 {
 		// This is a base layer. It gets imported differently.
-		if osType == "linux" {
-			return &baseLinuxLayerWriter{
-				root: filepath.Join(info.HomeDir, layerID),
-			}, nil
-		}
 		return &baseWindowsLayerWriter{
 			root: filepath.Join(info.HomeDir, layerID),
 		}, nil
@@ -231,15 +185,6 @@ func NewLayerWriter(info DriverInfo, layerID string, osType string, parentLayerP
 		path, err := ioutil.TempDir("", "hcs")
 		if err != nil {
 			return nil, err
-		}
-		if osType == "linux" {
-			return &linuxLayerWriterWrapper{
-				linuxLayerWriter: newLinuxLayerWriter(path, parentLayerPaths, filepath.Join(info.HomeDir, layerID)),
-				info:             info,
-				layerID:          layerID,
-				path:             path,
-				parentLayerPaths: parentLayerPaths,
-			}, nil
 		}
 		return &legacyLayerWriterWrapper{
 			legacyLayerWriter: newLegacyLayerWriter(path, parentLayerPaths, filepath.Join(info.HomeDir, layerID)),

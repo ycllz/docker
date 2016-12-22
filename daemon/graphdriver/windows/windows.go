@@ -20,8 +20,6 @@ import (
 	"time"
 	"unsafe"
 
-	"reflect"
-
 	winio "github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/archive/tar"
 	"github.com/Microsoft/go-winio/backuptar"
@@ -670,64 +668,30 @@ func writeBackupStreamFromTarAndSaveMutatedFiles(buf *bufio.Writer, w io.Writer,
 	return backuptar.WriteBackupStreamFromTarFile(buf, t, hdr)
 }
 
-func fixPath(path string, isWindows bool) string {
-	if isWindows {
-		return filepath.FromSlash(path)
-	}
-	return winlx.FixUnixPath(path)
-}
-
-func writeLinuxFromTarStream(r *tar.Reader, h *tar.Header, w hcsshim.LayerWriter) (*tar.Header, int64, error) {
-	var size int
-	var err error
-
-	if h.Typeflag == tar.TypeSymlink {
-		size, err = w.Write([]byte(h.Linkname))
-		if err != nil {
-			return nil, 0, err
-		}
-	} else {
-		size64, err := io.Copy(w, r)
-		if err != nil {
-			return nil, 0, err
-		}
-		size = int(size64)
-	}
-	hNext, err := r.Next()
-	return hNext, int64(size), err
-}
-
-func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string, osType string) (int64, error) {
+func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, error) {
 	t := tar.NewReader(r)
 	hdr, err := t.Next()
 	totalSize := int64(0)
 	buf := bufio.NewWriter(nil)
-	isWindows := osType == "windows"
-
-	fmt.Printf("TYPE OF WRITER: %v\n", reflect.TypeOf(w))
 
 	for err == nil {
 		base := path.Base(hdr.Name)
-		fmt.Println(hdr.Name)
 
 		if strings.HasPrefix(base, archive.WhiteoutPrefix) {
 			name := path.Join(path.Dir(hdr.Name), base[len(archive.WhiteoutPrefix):])
-			err = w.Remove(fixPath(name, isWindows))
+			err = w.Remove(filepath.FromSlash(name))
 			if err != nil {
-				logrus.Debugln("XXX: ERRROR WHITEOUT")
 				return 0, err
 			}
 			hdr, err = t.Next()
 		} else if hdr.Typeflag == tar.TypeLink {
-			hdrLinkname := fixPath(hdr.Linkname, isWindows)
-			err = w.AddLink(fixPath(hdr.Name, isWindows), hdrLinkname)
+			hdrLinkname := filepath.FromSlash(hdr.Linkname)
+			err = w.AddLink(filepath.FromSlash(hdr.Name), filepath.FromSlash(hdrLinkname))
 			if err != nil {
-				logrus.Debugln("XXX: ERRROR LINK")
 				return 0, err
 			}
 			hdr, err = t.Next()
 		} else {
-			// ANDY this is where we'd write EA
 			var (
 				name     string
 				size     int64
@@ -736,28 +700,20 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string, osType s
 
 			name, size, fileInfo, err = backuptar.FileInfoFromHeader(hdr)
 			if err != nil {
-				logrus.Debugln("XXX: ERROR OTHER 1")
 				return 0, err
 			}
-			name = fixPath(name, isWindows)
 
+			name = filepath.FromSlash(name)
 			err = w.Add(name, fileInfo)
-
 			if err != nil {
-				logrus.Debugln("XXX: ERROR OTHER 2")
 				return 0, err
 			}
 
-			if isWindows {
-				hdr, err = writeBackupStreamFromTarAndSaveMutatedFiles(buf, w, t, hdr, root)
-			} else {
-				hdr, size, err = writeLinuxFromTarStream(t, hdr, w)
-			}
+			hdr, err = writeBackupStreamFromTarAndSaveMutatedFiles(buf, w, t, hdr, root)
 			totalSize += size
 		}
 	}
 	if err != io.EOF {
-		logrus.Debugln("XXX: ERROR TRUNCATE")
 		return 0, err
 	}
 	return totalSize, nil
@@ -819,12 +775,17 @@ func writeLayer(layerData io.Reader, home string, id string, osType string, pare
 	logrus.Printf("XXX: PARENT LAYERS: %v", parentLayerPaths)
 	logrus.Printf("XXX: OS: %s", osType)
 	logrus.Printf("XXX: ID: %s", id)
-	w, err := hcsshim.NewLayerWriter(info, id, osType, parentLayerPaths)
+
+	if osType == "linux" {
+		return winlx.ServiceVMImportLayer(filepath.Join(home, id), layerData)
+	}
+
+	w, err := hcsshim.NewLayerWriter(info, id, parentLayerPaths)
 	if err != nil {
 		return 0, err
 	}
 
-	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id), osType)
+	size, err := writeLayerFromTar(layerData, w, filepath.Join(home, id))
 	if err != nil {
 		return 0, err
 	}
