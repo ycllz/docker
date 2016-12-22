@@ -9,7 +9,7 @@ devname=$(ls -l /sys/block/sd* | grep -o "$id/block/sd.*" | sed "s-$id/block-/de
 mkfs.ext4 "$devname"
 
 # mount the device to a new folder
-foldername="mnt-$1-$2"
+foldername="$3"
 mkdir "$foldername"
 mount "$devname" "$foldername"
 
