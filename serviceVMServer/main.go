@@ -9,6 +9,7 @@ import (
     "time"
     "os/exec"
     "encoding/binary"
+    "os"
 )
 
 func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
@@ -16,7 +17,7 @@ func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
     cnS, clS := strconv.Itoa(int(cn)), strconv.Itoa(int(cl))
     folderStr := "/mnt-" + cnS + "-" + clS
 
-    dev, err := exec.Command("createlayer.sh", cnS, clS, folderStr).Output()
+    err := exec.Command("./createlayer.sh", cnS, clS, folderStr).Run()
     if err != nil {
         fmt.Println("os error: failed to create layer")
         return err
@@ -31,14 +32,21 @@ func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
     }
 
     // Unmount
-    devStr := string(dev)
-    err = exec.Command("umount", devStr).Run();
+    err = exec.Command("umount", folderStr).Run();
     if err != nil {
         fmt.Println("os error: failed to unmount layer")
         return err
     }
 
+    err = os.RemoveAll(folderStr)
+    if err != nil {
+        fmt.Println("os error: failed to remove mounted folder")
+        return err
+    }
+
+
     // Send the return
+    // TODO: Actually handle the failure case properly
     hdr := [4]byte{ResponseOKCmd, 0, 0, 0}
     buf := [8]byte{}
     binary.BigEndian.PutUint64(buf[:], size)
