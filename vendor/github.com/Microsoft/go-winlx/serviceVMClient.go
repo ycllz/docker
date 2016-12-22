@@ -88,25 +88,19 @@ func waitForResponse(c *net.TCPConn) (int64, error) {
 	c.SetReadDeadline(time.Now().Add(time.Duration(waitTimeOut * time.Second)))
 
 	// Read header
-	hdr := [4]byte{}
-	_, err := io.ReadFull(c, hdr[:])
+	// TODO: Handle error case
+	buf := [12]byte{}
+	_, err := io.ReadFull(c, buf[:])
 	if err != nil {
 		return 0, err
 	}
+	fmt.Println("got server response")
 
-	if hdr[0] != ResponseOKCmd {
+	if buf[0] != ResponseOKCmd {
+		fmt.Println("service VM failed")
 		return 0, fmt.Errorf("Service VM failed")
 	}
-
-	// If service VM succeeded, read the size
-	size := [8]byte{}
-	c.SetReadDeadline(time.Now().Add(time.Duration(waitTimeOut * time.Second)))
-	_, err = io.ReadFull(c, size[:])
-	if err != nil {
-		return 0, err
-	}
-
-	return int64(binary.BigEndian.Uint64(size[:])), nil
+	return int64(binary.BigEndian.Uint64(buf[4:])), nil
 }
 
 func detachedLayerVHD(layerPath string, id uint8) error {
