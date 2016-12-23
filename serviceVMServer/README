@@ -1,0 +1,2 @@
+Contains the files and folders for the server and the test client
+Note that all of the files in the winlx directories are hardlinked to the ones in <docker_root>/vendor/github.com/Microsoft/go-winlx/ directory.
