@@ -1,1 +1,1 @@
-Run go build -o <EXE_NAME> main
+Run go build -o <EXE_NAME> main/main.go

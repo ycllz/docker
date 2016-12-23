@@ -127,10 +127,10 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 	}
 
 	conn, err := connectToServer(findServerIP())
-	defer conn.Close()
 	if err != nil {
 		return 0, err
 	}
+	defer conn.Close()
 
 	err = sendImportLayer(conn, id, reader)
 	if err != nil {
