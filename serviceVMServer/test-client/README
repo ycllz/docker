@@ -1,1 +1,2 @@
-Run go build -o <EXE_NAME> main/main.go
+This runs on Windows
+Run go build main/main.go

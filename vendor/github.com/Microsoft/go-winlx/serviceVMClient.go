@@ -94,30 +94,29 @@ func waitForResponse(c *net.TCPConn) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println("got server response")
 
 	if buf[0] != ResponseOKCmd {
-		fmt.Println("service VM failed")
 		return 0, fmt.Errorf("Service VM failed")
 	}
 	return int64(binary.BigEndian.Uint64(buf[4:])), nil
 }
 
-func detachedLayerVHD(layerPath string, id uint8) error {
+func detachedLayerVHD(id uint8) error {
 	cNum, cLoc := UnpackLUN(id)
+	cns, cls := strconv.Itoa(int(cNum)), strconv.Itoa(int(cLoc))
 
+	fmt.Println(cns, cls)
 	return exec.Command(
 		"powershell",
 		"Remove-VMHardDiskDrive",
 		"-VMName",
-		LayerVHDName,
+		ServiceVMName,
 		"-ControllerType",
 		"SCSI",
 		"-ControllerNumber",
-		string(cNum),
+		cns,
 		"-ControllerLocation",
-		string(cLoc),
-	).Run()
+		cls).Run()
 }
 
 func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
@@ -142,7 +141,7 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 		return 0, err
 	}
 
-	err = detachedLayerVHD(path.Join(layerPath, LayerVHDName), id)
+	err = detachedLayerVHD(id)
 	if err != nil {
 		return 0, err
 	}

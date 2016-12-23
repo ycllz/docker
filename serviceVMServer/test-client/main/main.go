@@ -12,17 +12,16 @@ func main() {
 
 	file, err := os.Open(os.Args[1])
 	if err != nil {
-		fmt.Println("os error: opening tar file")
+		fmt.Printf("error opening tar file: %s\n", err.Error())
 		return
 	}
 	defer file.Close()
 
 	size, err := winlx.ServiceVMImportLayer(os.Args[2], file)
 	if err != nil {
-		fmt.Println("import error: couldn't import layer")
+		fmt.Printf("couldn't import layer: %s\n", err.Error())
 		return
 	}
-
 	fmt.Printf("Success! Got size: %d\n", size)
 }
 
