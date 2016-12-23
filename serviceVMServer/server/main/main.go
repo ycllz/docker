@@ -10,6 +10,8 @@ import (
     "os/exec"
     "encoding/binary"
     "os"
+    "winlx"
+    "tarlib"
 )
 
 func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
@@ -24,14 +26,15 @@ func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
     }
 
     // Write the tar file to it.
-    fmt.Println("Writing to folder: %s\n", folderStr)
-    size, err := Unpack(conn, folderStr)
+    fmt.Printf("Writing to folder: %s\n", folderStr)
+    size, err := tarlib.Unpack(conn, folderStr)
     if err != nil {
         fmt.Println("tar error: failed to unpack tar")
-        return err
+        // don't return now, still need to clean up + umount
     }
 
     // Unmount
+    fmt.Println("Cleaning up mounts")
     err = exec.Command("umount", folderStr).Run();
     if err != nil {
         fmt.Println("os error: failed to unmount layer")
@@ -47,12 +50,15 @@ func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
 
     // Send the return
     // TODO: Actually handle the failure case properly
-    hdr := [4]byte{ResponseOKCmd, 0, 0, 0}
+    fmt.Printf("Sending response with size: %d\n", size)
+    hdr := [4]byte{winlx.ResponseOKCmd, 0, 0, 0}
     buf := [8]byte{}
     binary.BigEndian.PutUint64(buf[:], size)
 
     packet := append(hdr[:], buf[:]...)
-    conn.SetWriteDeadline(time.Now().Add(time.Duration(time.Second * connTimeOut)))
+    fmt.Println(packet, len(packet))
+
+    conn.SetWriteDeadline(time.Now().Add(time.Duration(time.Second * winlx.ConnTimeOut)))
     _, err = conn.Write(packet)
     return err
 }
@@ -60,14 +66,14 @@ func handleImport(conn *net.TCPConn, cn byte, cl byte) error {
 func handleSingleClient(conn *net.TCPConn) error {
     hdr := [4]byte{}
 
-    conn.SetReadDeadline(time.Now().Add(time.Duration(time.Second * connTimeOut)))
+    conn.SetReadDeadline(time.Now().Add(time.Duration(time.Second * winlx.ConnTimeOut)))
     _, err := io.ReadFull(conn, hdr[:])
     if err != nil {
         fmt.Println("timeout: closing connection with client")
         return err
     }
 
-    if hdr[0] == ImportCmd {
+    if hdr[0] == winlx.ImportCmd {
         return handleImport(conn, hdr[1], hdr[2])
     }
 
@@ -76,7 +82,7 @@ func handleSingleClient(conn *net.TCPConn) error {
 }
 
 func ServiceVMAcceptClients() {
-    addr, err := net.ResolveTCPAddr("tcp", serviceVMAddress)
+    addr, err := net.ResolveTCPAddr("tcp", winlx.ServiceVMAddress)
     if err != nil {
         return
     }
@@ -97,6 +103,7 @@ func ServiceVMAcceptClients() {
         wg.Add(1)
         go func() {
             handleSingleClient(conn)
+            fmt.Println("done with client")
             conn.Close()
             wg.Done()
         }()
@@ -108,6 +115,6 @@ func ServiceVMAcceptClients() {
 }
 
 func main() {
-    fmt.Printf("waiting for clients on %s...\n", serviceVMAddress)
+    fmt.Printf("waiting for clients on %s...\n", winlx.ServiceVMAddress)
     ServiceVMAcceptClients()
 }

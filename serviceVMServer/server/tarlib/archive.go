@@ -1,4 +1,4 @@
-package main
+package tarlib
 
 import (
 	"archive/tar"
@@ -219,6 +219,8 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
 		if err != nil {
 		    return 0, err
 		}
+
+        fmt.Println(hdr.Name)
 
 		// Normalize name, for safety and for a simple is-root check
 		// This keeps "../" as-is, but normalizes "/../" to "/". Or Windows:

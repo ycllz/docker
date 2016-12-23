@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 	"os"
+	"../winlx"
 )
 
 type tcpDialResult struct {
@@ -32,29 +33,29 @@ func connectToServer(ip string) (*net.TCPConn, error) {
 	select {
 	case res := <-c:
 		return res.conn, res.err
-	case <-time.After(time.Second * connTimeOut):
+	case <-time.After(time.Second * winlx.ConnTimeOut):
 		return nil, fmt.Errorf("timeout on dialTCP")
 	}
 }
 
 func sendImportLayer(c *net.TCPConn, id uint8, r io.Reader) error {
-	header := createHeader(ImportCmd, id)
+	header := winlx.CreateHeader(winlx.ImportCmd, id)
 	buf := []byte{header.Command, header.SCSIControllerNum, header.SCSIDiskNum, 0}
 
 	// First send the header, then the payload, then EOF
-	c.SetWriteDeadline(time.Now().Add(time.Duration(connTimeOut * time.Second)))
+	c.SetWriteDeadline(time.Now().Add(time.Duration(winlx.ConnTimeOut * time.Second)))
 	_, err := c.Write(buf)
 	if err != nil {
 		return err
 	}
 
-	c.SetWriteDeadline(time.Now().Add(time.Duration(waitTimeOut * time.Second)))
+	c.SetWriteDeadline(time.Now().Add(time.Duration(winlx.WaitTimeOut * time.Second)))
 	_, err = io.Copy(c, r)
 	if err != nil {
 		return err
 	}
 
-	c.SetWriteDeadline(time.Now().Add(time.Duration(connTimeOut * time.Second)))
+	c.SetWriteDeadline(time.Now().Add(time.Duration(winlx.ConnTimeOut * time.Second)))
 	err = c.CloseWrite()
 	if err != nil {
 		return err
@@ -63,7 +64,7 @@ func sendImportLayer(c *net.TCPConn, id uint8, r io.Reader) error {
 }
 
 func waitForResponse(c *net.TCPConn) (int64, error) {
-	c.SetReadDeadline(time.Now().Add(time.Duration(waitTimeOut * time.Second)))
+	c.SetReadDeadline(time.Now().Add(time.Duration(winlx.WaitTimeOut * time.Second)))
 
 	// Read header
 	// TODO: Handle error case
@@ -74,7 +75,7 @@ func waitForResponse(c *net.TCPConn) (int64, error) {
 	}
 	fmt.Println("got server response")
 
-	if buf[0] != ResponseOKCmd {
+	if buf[0] != winlx.ResponseOKCmd {
 		fmt.Println("service VM failed")
 		return 0, fmt.Errorf("Service VM failed")
 	}
