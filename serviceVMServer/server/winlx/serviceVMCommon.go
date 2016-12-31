@@ -22,11 +22,16 @@ const (
 	ResponseFailCmd
 )
 
+const (
+	Version1 = iota
+	Version2
+)
+
 type ServiceVMHeader struct {
 	Command           uint8
 	SCSIControllerNum uint8
 	SCSIDiskNum       uint8
-	Reserved          uint8
+	Version           uint8
 }
 
 const ConnTimeOut = 10
@@ -43,12 +48,13 @@ func PackLUN(cNum, dNum uint8) uint8 {
 	return (cNum << 6) | (dNum & 0x3F)
 }
 
-func CreateHeader(c uint8, lun uint8) ServiceVMHeader {
+func CreateHeader(c uint8, lun uint8, version uint8) ServiceVMHeader {
 	cNum, dNum := UnpackLUN(lun)
 	return ServiceVMHeader{
 		Command:           c,
 		SCSIControllerNum: cNum,
 		SCSIDiskNum:       dNum,
+		Version:           version,
 		// Go automatically sets Reserved to 0
 	}
 }

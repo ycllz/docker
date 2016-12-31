@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"path"
 	"strconv"
@@ -59,13 +60,10 @@ func connectToServer(ip string) (*net.TCPConn, error) {
 	}
 }
 
-func sendImportLayer(c *net.TCPConn, id uint8, r io.Reader) error {
-	header := CreateHeader(ImportCmd, id)
-	buf := []byte{header.Command, header.SCSIControllerNum, header.SCSIDiskNum, 0}
-
+func sendImportLayer(c *net.TCPConn, hdr []byte, r io.Reader) error {
 	// First send the header, then the payload, then EOF
 	c.SetWriteDeadline(time.Now().Add(time.Duration(ConnTimeOut * time.Second)))
-	_, err := c.Write(buf)
+	_, err := c.Write(hdr)
 	if err != nil {
 		return err
 	}
@@ -119,10 +117,26 @@ func detachedLayerVHD(id uint8) error {
 		cls).Run()
 }
 
-func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
-	id, err := attachLayerVHD(path.Join(layerPath, LayerVHDName))
+func writeVHDFile(path string, r io.Reader) error {
+	f, err := os.Create(path)
 	if err != nil {
-		return 0, err
+		return err
+	}
+
+	_, err = io.Copy(f, r)
+	f.Close()
+	return err
+}
+
+func ServiceVMImportLayer(layerPath string, reader io.Reader, version uint8) (int64, error) {
+	var id uint8
+	var err error
+
+	if version == Version1 {
+		id, err = attachLayerVHD(path.Join(layerPath, LayerVHDName))
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	conn, err := connectToServer(findServerIP())
@@ -131,7 +145,10 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 	}
 	defer conn.Close()
 
-	err = sendImportLayer(conn, id, reader)
+	header := CreateHeader(ImportCmd, id, version)
+	buf := []byte{header.Command, header.SCSIControllerNum, header.SCSIDiskNum, 0}
+
+	err = sendImportLayer(conn, buf, reader)
 	if err != nil {
 		return 0, err
 	}
@@ -141,9 +158,16 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 		return 0, err
 	}
 
-	err = detachedLayerVHD(id)
+	if version == Version1 {
+		// We are done so detach the VHD
+		err = detachedLayerVHD(id)
+	} else {
+		// We are getting the VHD stream, so write it to file
+		err = writeVHDFile(path.Join(layerPath, LayerVHDName), conn)
+	}
+
 	if err != nil {
-		return 0, err
+		size = 0
 	}
 	return size, err
 }

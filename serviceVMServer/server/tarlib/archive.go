@@ -203,10 +203,12 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader) (
 }
 
 // Unpack unpacks the decompressedArchive to dest with options.
-func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
+func Unpack(decompressedArchive io.Reader, dest string) (uint64, uint64, error) {
 	tr := tar.NewReader(decompressedArchive)
 
 	var dirs []*tar.Header
+
+    var numInodes uint64 = 0
 
 	// Iterate through the files in the archive.
 	var size uint64 = 0
@@ -217,7 +219,7 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
 			break
 		}
 		if err != nil {
-		    return 0, err
+		    return 0, 0, err
 		}
 
         fmt.Println(hdr.Name)
@@ -237,7 +239,7 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
 			if _, err := os.Lstat(parentPath); err != nil && os.IsNotExist(err) {
                 err = os.MkdirAll(parentPath, os.FileMode(0777))
                 if err != nil {
-                    return 0, err
+                    return 0, 0, err
                 }
 			}
 		}
@@ -245,10 +247,10 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
 		path := filepath.Join(dest, hdr.Name)
 		rel, err := filepath.Rel(dest, path)
 		if err != nil {
-            return 0, err
+            return 0, 0, err
 		}
 		if strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return 0, fmt.Errorf("%q is outside of %q", hdr.Name, dest)
+			return 0, 0, fmt.Errorf("%q is outside of %q", hdr.Name, dest)
 		}
 
 		// If path exits we almost always just want to remove and replace it
@@ -262,16 +264,21 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
 
 			if !(fi.IsDir() && hdr.Typeflag == tar.TypeDir) {
 				if err := os.RemoveAll(path); err != nil {
-			        return 0, err
+			        return 0, 0, err
 				}
 			}
 		}
 
         written, err := createTarFile(path, dest, hdr, tr)
         if err != nil {
-            return 0, err
+            return 0, 0, err
 		}
         size += written
+
+        // Everything aside from a hard link needs an inode
+        if hdr.Typeflag != tar.TypeLink {
+            numInodes++
+        }
 
 		// Directory mtimes must be handled at the end to avoid further
 		// file creation in them to modify the directory mtime
@@ -284,8 +291,8 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, error) {
 		path := filepath.Join(dest, hdr.Name)
 
 		if err := Chtimes(path, hdr.AccessTime, hdr.ModTime); err != nil {
-            return 0, err
+            return 0, 0, err
 		}
 	}
-	return size, nil
+	return size, numInodes, nil
 }
