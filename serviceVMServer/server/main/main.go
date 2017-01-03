@@ -15,6 +15,7 @@ import (
     "io/ioutil"
     "bytes"
     "vhd"
+    "strings"
 )
 
 func handleImportV1(conn *net.TCPConn, cn byte, cl byte) error {
@@ -67,6 +68,7 @@ func handleImportV1(conn *net.TCPConn, cn byte, cl byte) error {
     return err
 }
 
+/*
 func roundpow2(i uint64) uint64 {
     if i == 0 {
         return uint64(1)
@@ -113,15 +115,42 @@ func fixSize(size uint64, inode uint64) (uint64, uint64) {
         size += 8192 - size % 8192
     }
     return size, inode
+} */
+
+func split_script_output(buf []byte) (uint64, uint64, error) {
+    str := strings.Split(string(buf), "\n")
+    if len(str) != 2 {
+        return 0, 0, fmt.Errorf("invalid create vhd script output\n")
+    }
+
+    size, err := strconv.ParseUint(str[0], 10, 64)
+    if err != nil {
+        return 0, 0, err
+    }
+
+    new_size, err := strconv.ParseUint(str[1], 10, 64)
+    if err != nil {
+        return 0, 0, err
+    }
+    return size, new_size, nil
 }
 
+
 func handleImportV2(conn *net.TCPConn) error {
-    // First, create a temp folder to extract to
-    srcFolder, err := ioutil.TempDir("", "src-files")
+    // First, create the temp tar file.
+    srcFile, err := ioutil.TempFile("", "tar")
     if err != nil {
-        fmt.Printf("Failed to create temp dir for extraction %s\n", err.Error())
+        fmt.Printf("Failed to create temp tar file: %s\n", err.Error())
     }
-    defer os.RemoveAll(srcFolder)
+
+    _, err = io.Copy(srcFile, conn)
+    if err != nil {
+        fmt.Printf("failed to copy contents of tar file: %s\n", err.Error())
+    }
+
+    defer os.Remove(srcFile.Name())
+    srcFileName := srcFile.Name()
+    srcFile.Close()
 
     // Now, a create mount directory
     mntFolder, err := ioutil.TempDir("", "mnt")
@@ -139,24 +168,19 @@ func handleImportV2(conn *net.TCPConn) error {
     vhdFileName := vhdFile.Name()
     vhdFile.Close()
 
-    // Now, we unpack the tar file.
-    size, num, err := tarlib.Unpack(conn, srcFolder)
-    if err != nil {
-        fmt.Printf("tar error: failed to unpack tar. %s\n", err.Error())
-        // don't return now, still need to clean up + umount
-    }
-
-    // Adjust the size to account for file system overhead
-    fmt.Printf("Fixing size, num: %d, %d\n", size, num)
-    new_size, new_num := fixSize(size, num)
-
     // Copy data to vhd file.
-    fmt.Printf("Copying %s -> %s (dev %s)\n", srcFolder, mntFolder, vhdFile.Name())
-    ssize, snum := strconv.Itoa(int(new_size)), strconv.Itoa(int(new_num))
-    err = exec.Command("./create_fixed_vhd.sh", ssize, snum, vhdFile.Name(), mntFolder, srcFolder).Run()
+    fmt.Printf("Copying %s -> %s (dev %s)\n", srcFileName, mntFolder, vhdFileName)
+    out_buf, err := exec.Command("./create_fixed_vhd.sh", srcFileName, mntFolder, vhdFileName).Output()
     if err != nil {
         fmt.Printf("error in create vhd script: %s\n", err.Error())
     }
+
+    size, new_size, err := split_script_output(out_buf)
+    if err != nil {
+        fmt.Printf("error in splitting scipt: %s\n", err.Error())
+    }
+
+    fmt.Println(size, new_size)
 
     // Now send back to the client
     fmt.Printf("Sending response with size: %d\n", size)
@@ -213,7 +237,8 @@ func handleImportV2(conn *net.TCPConn) error {
         return err
     }
 
-    conn.WriteClose()
+    // Send EOF
+    conn.CloseWrite()
     return nil
 }
 
