@@ -118,8 +118,10 @@ func detachedLayerVHD(id uint8) error {
 }
 
 func writeVHDFile(path string, r io.Reader) error {
+	fmt.Println(path)
 	f, err := os.Create(path)
 	if err != nil {
+		fmt.Println(err.Error())
 		return err
 	}
 
@@ -146,7 +148,8 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader, version uint8) (in
 	defer conn.Close()
 
 	header := CreateHeader(ImportCmd, id, version)
-	buf := []byte{header.Command, header.SCSIControllerNum, header.SCSIDiskNum, 0}
+
+	buf := []byte{header.Command, header.SCSIControllerNum, header.SCSIDiskNum, version}
 
 	err = sendImportLayer(conn, buf, reader)
 	if err != nil {
@@ -163,6 +166,7 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader, version uint8) (in
 		err = detachedLayerVHD(id)
 	} else {
 		// We are getting the VHD stream, so write it to file
+		fmt.Println("writing vhd stream")
 		err = writeVHDFile(path.Join(layerPath, LayerVHDName), conn)
 	}
 

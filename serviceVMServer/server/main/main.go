@@ -34,6 +34,7 @@ func handleImportV1(conn *net.TCPConn, cn byte, cl byte) error {
     if err != nil {
         fmt.Println("tar error: failed to unpack tar")
         // don't return now, still need to clean up + umount
+        fmt.Println(err.Error())
     }
 
     // Unmount
@@ -109,7 +110,7 @@ func fixSize(size uint64, inode uint64) (uint64, uint64) {
 
     // Finally, align to 8k
     if size % 8192 != 0 {
-        size = 8192 - size % 8096
+        size += 8192 - size % 8192
     }
     return size, inode
 }
@@ -146,9 +147,11 @@ func handleImportV2(conn *net.TCPConn) error {
     }
 
     // Adjust the size to account for file system overhead
+    fmt.Printf("Fixing size, num: %d, %d\n", size, num)
     new_size, new_num := fixSize(size, num)
 
     // Copy data to vhd file.
+    fmt.Printf("Copying %s -> %s (dev %s)\n", srcFolder, mntFolder, vhdFile.Name())
     ssize, snum := strconv.Itoa(int(new_size)), strconv.Itoa(int(new_num))
     err = exec.Command("./create_fixed_vhd.sh", ssize, snum, vhdFile.Name(), mntFolder, srcFolder).Run()
     if err != nil {
@@ -172,12 +175,14 @@ func handleImportV2(conn *net.TCPConn) error {
     }
 
     // Send VHD file
+    fmt.Println("Opending VHD file")
     vhdFile2, err := os.Open(vhdFileName)
     if err != nil {
         fmt.Printf("error in opening vhd file\n")
     }
     defer vhdFile2.Close()
 
+    fmt.Println("Sending VHD File")
     conn.SetWriteDeadline(time.Now().Add(time.Duration(time.Second * winlx.WaitTimeOut)))
     _, err = io.Copy(conn, vhdFile2)
     if err != nil {
@@ -186,6 +191,7 @@ func handleImportV2(conn *net.TCPConn) error {
     }
 
     // Send VHD footer
+    fmt.Println("Creating VHD footer")
     vhdr, err := vhd.NewVHDHeaderFixed(new_size)
     if err != nil {
         fmt.Printf("error in creating fixed vhd header: %s\n", err.Error())
@@ -199,6 +205,7 @@ func handleImportV2(conn *net.TCPConn) error {
         return err
     }
 
+    fmt.Println("sending vhd footer")
     conn.SetWriteDeadline(time.Now().Add(time.Duration(time.Second * winlx.ConnTimeOut)))
     _, err = conn.Write(vhdrb.Bytes())
     if err != nil {

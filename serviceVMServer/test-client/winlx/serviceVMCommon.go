@@ -35,7 +35,7 @@ type ServiceVMHeader struct {
 }
 
 const ConnTimeOut = 10
-const WaitTimeOut = 120
+const WaitTimeOut = 600
 const ServiceVMName = "Ubuntu1604-v4"
 const ServiceVMAddress = "10.123.175.141:5931"
 const LayerVHDName = "layer.vhd"

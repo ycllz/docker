@@ -17,7 +17,7 @@ func main() {
 	}
 	defer file.Close()
 
-	size, err := winlx.ServiceVMImportLayer(os.Args[2], file)
+	size, err := winlx.ServiceVMImportLayer(os.Args[2], file, winlx.Version2)
 	if err != nil {
 		fmt.Printf("couldn't import layer: %s\n", err.Error())
 		return
