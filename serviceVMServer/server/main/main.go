@@ -213,6 +213,7 @@ func handleImportV2(conn *net.TCPConn) error {
         return err
     }
 
+    conn.WriteClose()
     return nil
 }
 
