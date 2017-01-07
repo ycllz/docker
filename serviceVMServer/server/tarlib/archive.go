@@ -222,7 +222,7 @@ func Unpack(decompressedArchive io.Reader, dest string) (uint64, uint64, error) 
 		    return 0, 0, err
 		}
 
-        fmt.Println(hdr.Name)
+        //fmt.Println(hdr.Name)
 
 		// Normalize name, for safety and for a simple is-root check
 		// This keeps "../" as-is, but normalizes "/../" to "/". Or Windows:

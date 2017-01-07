@@ -777,6 +777,9 @@ func writeLayer(layerData io.Reader, home string, id string, osType string, pare
 	logrus.Printf("XXX: ID: %s", id)
 
 	if osType == "linux" {
+		if _, err := os.Stat("C:\\v2"); os.IsNotExist(err) {
+			return winlx.ServiceVMImportLayer(filepath.Join(home, id), layerData, winlx.Version2)
+		}
 		return winlx.ServiceVMImportLayer(filepath.Join(home, id), layerData, winlx.Version1)
 	}
 
