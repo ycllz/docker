@@ -19,6 +19,23 @@ import (
     "archive/tar"
 )
 
+func parseConfig(f string) (string, error) {
+    buf, err := ioutil.ReadFile(f)
+    if err != nil {
+        return "", err
+    }
+
+    strBuf := string(buf)
+    fields := strings.Split(strBuf, "\n")
+
+    for i := 0; i < len(fields); i++ {
+        if strings.HasPrefix(fields[i], "IP=") {
+            return fields[i][len("IP="):], nil
+        }
+    }
+    return "", fmt.Errorf("no ip found")
+}
+
 func handleImportV1(conn *net.TCPConn, cn byte, cl byte) error {
     // Set up the mount
     cnS, clS := strconv.Itoa(int(cn)), strconv.Itoa(int(cl))
@@ -313,8 +330,8 @@ func handleSingleClient(conn *net.TCPConn) error {
     return nil
 }
 
-func ServiceVMAcceptClients() {
-    addr, err := net.ResolveTCPAddr("tcp", winlx.ServiceVMAddress)
+func ServiceVMAcceptClients(ip string) {
+    addr, err := net.ResolveTCPAddr("tcp", ip)
     if err != nil {
         return
     }
@@ -347,6 +364,17 @@ func ServiceVMAcceptClients() {
 }
 
 func main() {
-    fmt.Printf("waiting for clients on %s...\n", winlx.ServiceVMAddress)
-    ServiceVMAcceptClients()
+    if len(os.Args) != 2 {
+        fmt.Printf("Usage: %s <config_path>\n", os.Args[0])
+        return
+    }
+
+    ip, err := parseConfig(os.Args[1])
+    if err != nil {
+        fmt.Printf("Error in parsing config: %s\n", err.Error())
+        return
+    }
+
+    fmt.Printf("waiting for clients on %s...\n", ip)
+    ServiceVMAcceptClients(ip)
 }
