@@ -18,9 +18,9 @@ type tcpDialResult struct {
 	err  error
 }
 
-func attachLayerVHD(layerPath string) (uint8, error) {
+func attachLayerVHD(layerPath string, serviceVMName string) (uint8, error) {
 	// TODO: Change this into go code / some dll.
-	out, err := exec.Command("powershell", "C:\\gopath\\bin\\ATTACH_VHD.ps1", ServiceVMName, layerPath).Output()
+	out, err := exec.Command("powershell", "C:\\gopath\\bin\\ATTACH_VHD.ps1", serviceVMName, layerPath).Output()
 	if err != nil {
 		return 0, err
 	}
@@ -31,11 +31,6 @@ func attachLayerVHD(layerPath string) (uint8, error) {
 		return 0, err
 	}
 	return uint8(n), err
-}
-
-func findServerIP() string {
-	// TODO: Find this more programmatically. assume its hardcoded for now.
-	return ServiceVMAddress
 }
 
 func connectToServer(ip string) (*net.TCPConn, error) {
@@ -99,7 +94,7 @@ func waitForResponse(c *net.TCPConn) (int64, error) {
 	return int64(binary.BigEndian.Uint64(buf[4:])), nil
 }
 
-func detachedLayerVHD(id uint8) error {
+func detachedLayerVHD(id uint8, serviceVMName string) error {
 	cNum, cLoc := UnpackLUN(id)
 	cns, cls := strconv.Itoa(int(cNum)), strconv.Itoa(int(cLoc))
 
@@ -108,7 +103,7 @@ func detachedLayerVHD(id uint8) error {
 		"powershell",
 		"Remove-VMHardDiskDrive",
 		"-VMName",
-		ServiceVMName,
+		serviceVMName,
 		"-ControllerType",
 		"SCSI",
 		"-ControllerNumber",
@@ -130,18 +125,19 @@ func writeVHDFile(path string, r io.Reader) error {
 	return err
 }
 
-func ServiceVMImportLayer(layerPath string, reader io.Reader, version uint8) (int64, error) {
+func ServiceVMImportLayer(layerPath string, reader io.Reader, scfg ServiceVMConfig) (int64, error) {
 	var id uint8
 	var err error
 
+	version := scfg.Version
 	if version == Version1 {
-		id, err = attachLayerVHD(path.Join(layerPath, LayerVHDName))
+		id, err = attachLayerVHD(path.Join(layerPath, LayerVHDName), scfg.Name)
 		if err != nil {
 			return 0, err
 		}
 	}
 
-	conn, err := connectToServer(findServerIP())
+	conn, err := connectToServer(scfg.Address)
 	if err != nil {
 		return 0, err
 	}
@@ -163,7 +159,7 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader, version uint8) (in
 
 	if version == Version1 {
 		// We are done so detach the VHD
-		err = detachedLayerVHD(id)
+		err = detachedLayerVHD(id, scfg.Name)
 	} else {
 		// We are getting the VHD stream, so write it to file
 		fmt.Println("writing vhd stream")
