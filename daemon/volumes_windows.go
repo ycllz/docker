@@ -3,8 +3,11 @@
 package daemon
 
 import (
+	"errors"
+	"fmt"
 	"sort"
 
+	mounttypes "github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/volume"
 )
@@ -20,7 +23,32 @@ import (
 
 func (daemon *Daemon) setupMounts(c *container.Container) ([]container.Mount, error) {
 	var mnts []container.Mount
+	foundIntrospection := false
 	for _, mount := range c.MountPoints { // type is volume.MountPoint
+
+		if mount.Type == mounttypes.TypeIntrospection {
+			if !daemon.HasExperimental() {
+				return nil, errors.New("introspection mount is only supported in experimental mode")
+			}
+			if foundIntrospection {
+				return nil, fmt.Errorf("too many introspection mounts: %+v", mount)
+			}
+			if mount.RW {
+				return nil, fmt.Errorf("introspection mount must be read-only: %+v", mount)
+			}
+			if err := daemon.updateIntrospection(c, introspectionOptions{}); err != nil {
+				return nil, err
+			}
+			mnt := container.Mount{
+				Source:      c.IntrospectionDir(),
+				Destination: mount.Destination,
+				Writable:    false,
+			}
+			mnts = append(mnts, mnt)
+			foundIntrospection = true
+			continue
+		}
+
 		if err := daemon.lazyInitializeVolume(c.ID, mount); err != nil {
 			return nil, err
 		}
