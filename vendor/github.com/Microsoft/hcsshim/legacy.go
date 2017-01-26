@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	winio "github.com/Microsoft/go-winio"
+	"github.com/Microsoft/go-winio"
 )
 
 var errorIterationCanceled = errors.New("")
@@ -483,9 +483,7 @@ func cloneTree(srcPath, destPath string, mutatedFiles map[string]bool) error {
 	return reapplyDirectoryTimes(di)
 }
 
-func (w *legacyLayerWriter) Add(name string, fileFullInfo *winio.FileFullInfo) error {
-	fileInfo := &fileFullInfo.BasicInfo
-
+func (w *legacyLayerWriter) Add(name string, fileInfo *winio.FileBasicInfo) error {
 	w.reset()
 	err := w.init()
 	if err != nil {
@@ -610,7 +608,6 @@ func (w *legacyLayerWriter) AddLink(name string, target string) error {
 		return err
 	}
 
-	// Look for the this layer and all parent layers.
 	var requiredPrefix string
 	var roots []string
 	if prefix := `Files\`; strings.HasPrefix(name, prefix) {
@@ -681,6 +678,7 @@ func (w *legacyLayerWriter) Remove(name string) error {
 	} else {
 		return fmt.Errorf("invalid tombstone %s", name)
 	}
+
 	return nil
 }
 
@@ -711,6 +709,12 @@ func (w *legacyLayerWriter) Close() error {
 	}
 	for _, t := range w.tombstones {
 		_, err = tf.Write([]byte(filepath.Join(`\`, t) + "\n"))
+		if err != nil {
+			return err
+		}
+	}
+	if w.HasUtilityVM {
+		err = reapplyDirectoryTimes(w.uvmDi)
 		if err != nil {
 			return err
 		}
