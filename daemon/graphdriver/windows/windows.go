@@ -79,7 +79,6 @@ type Driver struct {
 	// restoring containers when the daemon dies.
 	cacheMu sync.Mutex
 	cache   map[string]string
-	scfg    winlx.ServiceVMConfig
 }
 
 // InitFilter returns a new Windows storage filter driver.
@@ -106,35 +105,6 @@ func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap)
 		cache: make(map[string]string),
 		ctr:   graphdriver.NewRefCounter(&checker{}),
 	}
-
-	// Get the service VM information
-	c := winlx.ServiceVMConfig{}
-	f, err := ioutil.ReadFile(home + "\\" + winlx.ServiceVMConfigFile)
-	if err != nil {
-		return nil, err
-	}
-
-	fields := strings.Split(string(f), "\n")
-	for i := 0; i < len(fields); i++ {
-		fld := strings.TrimSpace(fields[i])
-		if strings.HasPrefix(fld, "IP=") {
-			c.Address = fld[len("IP="):] + ":" + winlx.ServiceVMPort
-		} else if strings.HasPrefix(fld, "NAME=") {
-			c.Name = fld[len("NAME="):]
-		} else if strings.HasPrefix(fld, "VERSION=") {
-			u, err := strconv.ParseUint(fld[len("VERSION="):], 10, 8)
-			if err != nil {
-				return nil, err
-			}
-			c.Version = uint8(u)
-		}
-	}
-
-	if c.Address == "" || c.Name == "" || c.Version == 0 {
-		return nil, fmt.Errorf("Invalid config file for service VM")
-	}
-	d.scfg = c
-	fmt.Printf("%v\n", c)
 	return d, nil
 }
 
@@ -772,7 +742,7 @@ func (d *Driver) importLayer(id string, layerData io.Reader, osType string, pare
 	}
 
 	// Linux Case
-	return winlx.ServiceVMImportLayer(filepath.Join(d.info.HomeDir, id), layerData, d.scfg)
+	return winlx.ServiceVMImportLayer(filepath.Join(d.info.HomeDir, id), layerData)
 }
 
 // writeLayerReexec is the re-exec entry point for writing a layer from a tar file

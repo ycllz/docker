@@ -1,5 +1,12 @@
 package winlx
 
+import (
+	"bytes"
+	"encoding/binary"
+
+	"github.com/Microsoft/hvsock"
+)
+
 // The protocol between the service VM and docker is very simple:
 // All numbers are in network order.
 // Import Layer:
@@ -29,38 +36,31 @@ const (
 
 type ServiceVMHeader struct {
 	Command           uint8
-	SCSIControllerNum uint8
-	SCSIDiskNum       uint8
 	Version           uint8
-}
-
-type ServiceVMConfig struct {
-	Name    string
-	Address string
-	Version uint8
+	SCSIControllerNum uint8 // Used for Version 1, but not used anymore.
+	SCSIDiskNum       uint8 // Used for Version 1, but not used anymore.
 }
 
 const ConnTimeOut = 300
-const WaitTimeOut = 300
 const LayerVHDName = "layer.vhd"
-const ServiceVMConfigFile = "serviceVM.cfg"
-const ServiceVMPort = "5931"
+const ServiceVMName = "ZUbuntu1604-Dev"
 
-func UnpackLUN(lun uint8) (uint8, uint8) {
-	return (lun >> 6), lun & 0x3F
-}
+var ServiceVMId hvsock.GUID
+var ServiceVMSocketId, _ = hvsock.GUIDFromString("E9447876-BA98-444F-8C14-6A2FFF773E87")
 
-func PackLUN(cNum, dNum uint8) uint8 {
-	return (cNum << 6) | (dNum & 0x3F)
-}
-
-func CreateHeader(c uint8, lun uint8, version uint8) ServiceVMHeader {
-	cNum, dNum := UnpackLUN(lun)
-	return ServiceVMHeader{
-		Command:           c,
-		SCSIControllerNum: cNum,
-		SCSIDiskNum:       dNum,
-		Version:           version,
-		// Go automatically sets Reserved to 0
+func SerializeHeader(hdr *ServiceVMHeader) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
+		return nil, err
 	}
+	return buf.Bytes(), nil
+}
+
+func DeserializeHeader(hdr []byte) (*ServiceVMHeader, error) {
+	buf := bytes.NewBuffer(hdr)
+	hdrPtr := &ServiceVMHeader{}
+	if err := binary.Read(buf, binary.BigEndian, hdrPtr); err != nil {
+		return nil, err
+	}
+	return hdrPtr, nil
 }

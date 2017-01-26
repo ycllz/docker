@@ -1,6 +1,0 @@
-1. This program only runs in Linux. So you just first copy the files over to a Linux machine. 
-2. Get Go and set $GOPATH to whatever directory you want.
-3. Move this directory over to your $GOPATH
-4. Run go build -o <EXECUTABLE_NAME> main. Note that the executable assumes that that createlayer script is in the same directory as the executable, so if you move the executable, you need to move the script as well.
-
-
