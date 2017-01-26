@@ -1,15 +1,17 @@
 package registry
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"strings"
 
+	"github.com/Sirupsen/logrus"
+	"github.com/docker/distribution/reference"
 	registrytypes "github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/opts"
-	"github.com/docker/docker/reference"
+	forkedref "github.com/docker/docker/reference"
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 )
 
@@ -36,19 +38,15 @@ var (
 	// that carries Registry version info
 	DefaultRegistryVersionHeader = "Docker-Distribution-Api-Version"
 
-	// IndexServer is the v1 registry server used for user auth + account creation
-	IndexServer = DefaultV1Registry.String() + "/v1/"
+	// IndexHostname is the index hostname
+	IndexHostname = "index.docker.io"
+	// IndexServer is used for user auth and image search
+	IndexServer = "https://" + IndexHostname + "/v1/"
 	// IndexName is the name of the index
 	IndexName = "docker.io"
 
 	// NotaryServer is the endpoint serving the Notary trust server
 	NotaryServer = "https://notary.docker.io"
-
-	// DefaultV1Registry is the URI of the default v1 registry
-	DefaultV1Registry = &url.URL{
-		Scheme: "https",
-		Host:   "index.docker.io",
-	}
 
 	// DefaultV2Registry is the URI of the default v2 registry
 	DefaultV2Registry = &url.URL{
@@ -88,14 +86,44 @@ func newServiceConfig(options ServiceOptions) *serviceConfig {
 			IndexConfigs:          make(map[string]*registrytypes.IndexInfo, 0),
 			// Hack: Bypass setting the mirrors to IndexConfigs since they are going away
 			// and Mirrors are only for the official registry anyways.
-			Mirrors: options.Mirrors,
 		},
 		V2Only: options.V2Only,
 	}
 
+	config.LoadMirrors(options.Mirrors)
 	config.LoadInsecureRegistries(options.InsecureRegistries)
 
 	return config
+}
+
+// LoadMirrors loads mirrors to config, after removing duplicates.
+// Returns an error if mirrors contains an invalid mirror.
+func (config *serviceConfig) LoadMirrors(mirrors []string) error {
+	mMap := map[string]struct{}{}
+	unique := []string{}
+
+	for _, mirror := range mirrors {
+		m, err := ValidateMirror(mirror)
+		if err != nil {
+			return err
+		}
+		if _, exist := mMap[m]; !exist {
+			mMap[m] = struct{}{}
+			unique = append(unique, m)
+		}
+	}
+
+	config.Mirrors = unique
+
+	// Configure public registry since mirrors may have changed.
+	config.IndexConfigs[IndexName] = &registrytypes.IndexInfo{
+		Name:     IndexName,
+		Mirrors:  config.Mirrors,
+		Secure:   true,
+		Official: true,
+	}
+
+	return nil
 }
 
 // LoadInsecureRegistries loads insecure registries to config
@@ -123,6 +151,19 @@ skip:
 			config.ServiceConfig.InsecureRegistryCIDRs = originalCIDRs
 			config.ServiceConfig.IndexConfigs = originalIndexInfos
 			return err
+		}
+		if strings.HasPrefix(strings.ToLower(r), "http://") {
+			logrus.Warnf("insecure registry %s should not contain 'http://' and 'http://' has been removed from the insecure registry config", r)
+			r = r[7:]
+		} else if strings.HasPrefix(strings.ToLower(r), "https://") {
+			logrus.Warnf("insecure registry %s should not contain 'https://' and 'https://' has been removed from the insecure registry config", r)
+			r = r[8:]
+		} else if validateNoScheme(r) != nil {
+			// Insecure registry should not contain '://'
+			// before returning err, roll back to original data
+			config.ServiceConfig.InsecureRegistryCIDRs = originalCIDRs
+			config.ServiceConfig.IndexConfigs = originalIndexInfos
+			return fmt.Errorf("insecure registry %s should not contain '://'", r)
 		}
 		// Check if CIDR was passed to --insecure-registry
 		_, ipnet, err := net.ParseCIDR(r)
@@ -212,24 +253,26 @@ func isSecureIndex(config *serviceConfig, indexName string) bool {
 func ValidateMirror(val string) (string, error) {
 	uri, err := url.Parse(val)
 	if err != nil {
-		return "", fmt.Errorf("%s is not a valid URI", val)
+		return "", fmt.Errorf("invalid mirror: %q is not a valid URI", val)
 	}
-
 	if uri.Scheme != "http" && uri.Scheme != "https" {
-		return "", fmt.Errorf("Unsupported scheme %s", uri.Scheme)
+		return "", fmt.Errorf("invalid mirror: unsupported scheme %q in %q", uri.Scheme, uri)
 	}
-
-	if uri.Path != "" || uri.RawQuery != "" || uri.Fragment != "" {
-		return "", fmt.Errorf("Unsupported path/query/fragment at end of the URI")
+	if (uri.Path != "" && uri.Path != "/") || uri.RawQuery != "" || uri.Fragment != "" {
+		return "", fmt.Errorf("invalid mirror: path, query, or fragment at end of the URI %q", uri)
 	}
-
-	return fmt.Sprintf("%s://%s/", uri.Scheme, uri.Host), nil
+	if uri.User != nil {
+		// strip password from output
+		uri.User = url.UserPassword(uri.User.Username(), "xxxxx")
+		return "", fmt.Errorf("invalid mirror: username/password not allowed in URI %q", uri)
+	}
+	return strings.TrimSuffix(val, "/") + "/", nil
 }
 
 // ValidateIndexName validates an index name.
 func ValidateIndexName(val string) (string, error) {
-	if val == reference.LegacyDefaultHostname {
-		val = reference.DefaultHostname
+	if val == forkedref.LegacyDefaultHostname {
+		val = forkedref.DefaultHostname
 	}
 	if strings.HasPrefix(val, "-") || strings.HasSuffix(val, "-") {
 		return "", fmt.Errorf("Invalid index name (%s). Cannot begin or end with a hyphen.", val)
@@ -279,12 +322,22 @@ func GetAuthConfigKey(index *registrytypes.IndexInfo) string {
 
 // newRepositoryInfo validates and breaks down a repository name into a RepositoryInfo
 func newRepositoryInfo(config *serviceConfig, name reference.Named) (*RepositoryInfo, error) {
-	index, err := newIndexInfo(config, name.Hostname())
+	index, err := newIndexInfo(config, reference.Domain(name))
 	if err != nil {
 		return nil, err
 	}
-	official := !strings.ContainsRune(name.Name(), '/')
-	return &RepositoryInfo{name, index, official}, nil
+	official := !strings.ContainsRune(reference.FamiliarName(name), '/')
+
+	// TODO: remove used of forked reference package
+	nameref, err := forkedref.ParseNamed(name.String())
+	if err != nil {
+		return nil, err
+	}
+	return &RepositoryInfo{
+		Named:    nameref,
+		Index:    index,
+		Official: official,
+	}, nil
 }
 
 // ParseRepositoryInfo performs the breakdown of a repository name into a RepositoryInfo, but

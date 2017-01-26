@@ -28,7 +28,9 @@ Service Mode:
 {{- if .HasUpdateStatus }}
 UpdateStatus:
  State:		{{ .UpdateStatusState }}
+{{- if .HasUpdateStatusStarted }}
  Started:	{{ .UpdateStatusStarted }}
+{{- end }}
 {{- if .UpdateIsCompleted }}
  Completed:	{{ .UpdateStatusCompleted }}
 {{- end }}
@@ -101,6 +103,7 @@ Ports:
  PublishedPort {{ $port.PublishedPort }}
   Protocol = {{ $port.Protocol }}
   TargetPort = {{ $port.TargetPort }}
+  PublishMode = {{ $port.PublishMode }}
 {{- end }} {{ end -}}
 `
 
@@ -172,23 +175,27 @@ func (ctx *serviceInspectContext) ModeReplicatedReplicas() *uint64 {
 }
 
 func (ctx *serviceInspectContext) HasUpdateStatus() bool {
-	return ctx.Service.UpdateStatus.State != ""
+	return ctx.Service.UpdateStatus != nil && ctx.Service.UpdateStatus.State != ""
 }
 
 func (ctx *serviceInspectContext) UpdateStatusState() swarm.UpdateState {
 	return ctx.Service.UpdateStatus.State
 }
 
+func (ctx *serviceInspectContext) HasUpdateStatusStarted() bool {
+	return ctx.Service.UpdateStatus.StartedAt != nil
+}
+
 func (ctx *serviceInspectContext) UpdateStatusStarted() string {
-	return units.HumanDuration(time.Since(ctx.Service.UpdateStatus.StartedAt))
+	return units.HumanDuration(time.Since(*ctx.Service.UpdateStatus.StartedAt))
 }
 
 func (ctx *serviceInspectContext) UpdateIsCompleted() bool {
-	return ctx.Service.UpdateStatus.State == swarm.UpdateStateCompleted
+	return ctx.Service.UpdateStatus.State == swarm.UpdateStateCompleted && ctx.Service.UpdateStatus.CompletedAt != nil
 }
 
 func (ctx *serviceInspectContext) UpdateStatusCompleted() string {
-	return units.HumanDuration(time.Since(ctx.Service.UpdateStatus.CompletedAt))
+	return units.HumanDuration(time.Since(*ctx.Service.UpdateStatus.CompletedAt))
 }
 
 func (ctx *serviceInspectContext) UpdateStatusMessage() string {
@@ -263,6 +270,9 @@ func (ctx *serviceInspectContext) HasResources() bool {
 }
 
 func (ctx *serviceInspectContext) HasResourceReservations() bool {
+	if ctx.Service.Spec.TaskTemplate.Resources == nil || ctx.Service.Spec.TaskTemplate.Resources.Reservations == nil {
+		return false
+	}
 	return ctx.Service.Spec.TaskTemplate.Resources.Reservations.NanoCPUs > 0 || ctx.Service.Spec.TaskTemplate.Resources.Reservations.MemoryBytes > 0
 }
 
@@ -281,6 +291,9 @@ func (ctx *serviceInspectContext) ResourceReservationMemory() string {
 }
 
 func (ctx *serviceInspectContext) HasResourceLimits() bool {
+	if ctx.Service.Spec.TaskTemplate.Resources == nil || ctx.Service.Spec.TaskTemplate.Resources.Limits == nil {
+		return false
+	}
 	return ctx.Service.Spec.TaskTemplate.Resources.Limits.NanoCPUs > 0 || ctx.Service.Spec.TaskTemplate.Resources.Limits.MemoryBytes > 0
 }
 

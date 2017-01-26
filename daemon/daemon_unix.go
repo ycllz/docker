@@ -4,7 +4,6 @@ package daemon
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -24,12 +23,13 @@ import (
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/image"
+	"github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/parsers"
 	"github.com/docker/docker/pkg/parsers/kernel"
 	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/runconfig"
-	runconfigopts "github.com/docker/docker/runconfig/opts"
+	"github.com/docker/docker/volume"
 	"github.com/docker/libnetwork"
 	nwconfig "github.com/docker/libnetwork/config"
 	"github.com/docker/libnetwork/drivers/bridge"
@@ -112,9 +112,7 @@ func getCPUResources(config containertypes.Resources) *specs.CPU {
 	}
 
 	if config.NanoCPUs > 0 {
-		// Use the default setting of 100ms, as is specified in:
 		// https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt
-		//    	cpu.cfs_period_us=100ms
 		period := uint64(100 * time.Millisecond / time.Microsecond)
 		quota := uint64(config.NanoCPUs) * period / 1e9
 		cpu.Period = &period
@@ -361,8 +359,15 @@ func verifyContainerResources(resources *containertypes.Resources, sysInfo *sysi
 	if resources.NanoCPUs > 0 && (!sysInfo.CPUCfsPeriod || !sysInfo.CPUCfsQuota) {
 		return warnings, fmt.Errorf("NanoCPUs can not be set, as your kernel does not support CPU cfs period/quota or the cgroup is not mounted")
 	}
+	// The highest precision we could get on Linux is 0.001, by setting
+	//   cpu.cfs_period_us=1000ms
+	//   cpu.cfs_quota=1ms
+	// See the following link for details:
+	// https://www.kernel.org/doc/Documentation/scheduler/sched-bwc.txt
+	// Here we don't set the lower limit and it is up to the underlying platform (e.g., Linux) to return an error.
+	// The error message is 0.01 so that this is consistent with Windows
 	if resources.NanoCPUs < 0 || resources.NanoCPUs > int64(sysinfo.NumCPU())*1e9 {
-		return warnings, fmt.Errorf("Range of Nano CPUs is from 1 to %d", int64(sysinfo.NumCPU())*1e9)
+		return warnings, fmt.Errorf("Range of CPUs is from 0.01 to %d.00, as there are only %d CPUs available", sysinfo.NumCPU(), sysinfo.NumCPU())
 	}
 
 	if resources.CPUShares > 0 && !sysInfo.CPUShares {
@@ -493,7 +498,7 @@ func UsingSystemd(config *Config) bool {
 // verifyPlatformContainerSettings performs platform-specific validation of the
 // hostconfig and config structures.
 func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.HostConfig, config *containertypes.Config, update bool) ([]string, error) {
-	warnings := []string{}
+	var warnings []string
 	sysInfo := sysinfo.New(true)
 
 	warnings, err := daemon.verifyExperimentalContainerSettings(hostConfig, config)
@@ -549,10 +554,16 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.
 		return warnings, fmt.Errorf("Unknown runtime specified %s", hostConfig.Runtime)
 	}
 
+	for dest := range hostConfig.Tmpfs {
+		if err := volume.ValidateTmpfsMountDestination(dest); err != nil {
+			return warnings, err
+		}
+	}
+
 	return warnings, nil
 }
 
-// platformReload update configuration with platform specific options
+// platformReload updates configuration with platform specific options
 func (daemon *Daemon) platformReload(config *Config) map[string]string {
 	if config.IsValueSet("runtimes") {
 		daemon.configStore.Runtimes = config.Runtimes
@@ -854,63 +865,6 @@ func (daemon *Daemon) getLayerInit() func(string) error {
 	return daemon.setupInitLayer
 }
 
-// setupInitLayer populates a directory with mountpoints suitable
-// for bind-mounting things into the container.
-//
-// This extra layer is used by all containers as the top-most ro layer. It protects
-// the container from unwanted side-effects on the rw layer.
-func setupInitLayer(initLayer string, rootUID, rootGID int) error {
-	for pth, typ := range map[string]string{
-		"/dev/pts":         "dir",
-		"/dev/shm":         "dir",
-		"/proc":            "dir",
-		"/sys":             "dir",
-		"/.dockerenv":      "file",
-		"/etc/resolv.conf": "file",
-		"/etc/hosts":       "file",
-		"/etc/hostname":    "file",
-		"/dev/console":     "file",
-		"/etc/mtab":        "/proc/mounts",
-	} {
-		parts := strings.Split(pth, "/")
-		prev := "/"
-		for _, p := range parts[1:] {
-			prev = filepath.Join(prev, p)
-			syscall.Unlink(filepath.Join(initLayer, prev))
-		}
-
-		if _, err := os.Stat(filepath.Join(initLayer, pth)); err != nil {
-			if os.IsNotExist(err) {
-				if err := idtools.MkdirAllNewAs(filepath.Join(initLayer, filepath.Dir(pth)), 0755, rootUID, rootGID); err != nil {
-					return err
-				}
-				switch typ {
-				case "dir":
-					if err := idtools.MkdirAllNewAs(filepath.Join(initLayer, pth), 0755, rootUID, rootGID); err != nil {
-						return err
-					}
-				case "file":
-					f, err := os.OpenFile(filepath.Join(initLayer, pth), os.O_CREATE, 0755)
-					if err != nil {
-						return err
-					}
-					f.Chown(rootUID, rootGID)
-					f.Close()
-				default:
-					if err := os.Symlink(typ, filepath.Join(initLayer, pth)); err != nil {
-						return err
-					}
-				}
-			} else {
-				return err
-			}
-		}
-	}
-
-	// Layer is ready to use, if it wasn't before.
-	return nil
-}
-
 // Parse the remapped root (user namespace) option, which can be one of:
 //   username            - valid username from /etc/passwd
 //   username:groupname  - valid username; valid groupname from /etc/group
@@ -978,7 +932,6 @@ func parseRemappedRoot(usergrp string) (string, string, error) {
 			if err != nil {
 				return "", "", fmt.Errorf("Error during gid lookup for %q: %v", lookupName, err)
 			}
-			groupID = group.Gid
 			groupname = group.Name
 		}
 	}
@@ -1094,7 +1047,7 @@ func (daemon *Daemon) registerLinks(container *container.Container, hostConfig *
 	}
 
 	for _, l := range hostConfig.Links {
-		name, alias, err := runconfigopts.ParseLink(l)
+		name, alias, err := opts.ParseLink(l)
 		if err != nil {
 			return err
 		}
@@ -1222,7 +1175,7 @@ func setupOOMScoreAdj(score int) error {
 	if err != nil {
 		return err
 	}
-
+	defer f.Close()
 	stringScore := strconv.Itoa(score)
 	_, err = f.WriteString(stringScore)
 	if os.IsPermission(err) {
@@ -1234,7 +1187,7 @@ func setupOOMScoreAdj(score int) error {
 		}
 		return nil
 	}
-	f.Close()
+
 	return err
 }
 
@@ -1243,6 +1196,12 @@ func (daemon *Daemon) initCgroupsPath(path string) error {
 		return nil
 	}
 
+	if daemon.configStore.CPURealtimePeriod == 0 && daemon.configStore.CPURealtimeRuntime == 0 {
+		return nil
+	}
+
+	// Recursively create cgroup to ensure that the system and all parent cgroups have values set
+	// for the period and runtime as this limits what the children can be set to.
 	daemon.initCgroupsPath(filepath.Dir(path))
 
 	_, root, err := cgroups.FindCgroupMountpointAndRoot("cpu")
@@ -1251,16 +1210,19 @@ func (daemon *Daemon) initCgroupsPath(path string) error {
 	}
 
 	path = filepath.Join(root, path)
-	sysinfo := sysinfo.New(false)
-	if err := os.MkdirAll(path, 0755); err != nil && !os.IsExist(err) {
-		return err
-	}
+	sysinfo := sysinfo.New(true)
 	if sysinfo.CPURealtimePeriod && daemon.configStore.CPURealtimePeriod != 0 {
+		if err := os.MkdirAll(path, 0755); err != nil && !os.IsExist(err) {
+			return err
+		}
 		if err := ioutil.WriteFile(filepath.Join(path, "cpu.rt_period_us"), []byte(strconv.FormatInt(daemon.configStore.CPURealtimePeriod, 10)), 0700); err != nil {
 			return err
 		}
 	}
 	if sysinfo.CPURealtimeRuntime && daemon.configStore.CPURealtimeRuntime != 0 {
+		if err := os.MkdirAll(path, 0755); err != nil && !os.IsExist(err) {
+			return err
+		}
 		if err := ioutil.WriteFile(filepath.Join(path, "cpu.rt_runtime_us"), []byte(strconv.FormatInt(daemon.configStore.CPURealtimeRuntime, 10)), 0700); err != nil {
 			return err
 		}
@@ -1276,12 +1238,6 @@ func (daemon *Daemon) setupSeccompProfile() error {
 			return fmt.Errorf("opening seccomp profile (%s) failed: %v", daemon.configStore.SeccompProfile, err)
 		}
 		daemon.seccompProfile = b
-		p := struct {
-			DefaultAction string `json:"defaultAction"`
-		}{}
-		if err := json.Unmarshal(daemon.seccompProfile, &p); err != nil {
-			return err
-		}
 	}
 	return nil
 }

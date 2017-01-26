@@ -24,6 +24,7 @@ import (
 	"github.com/docker/libnetwork/netlabel"
 	"github.com/docker/libnetwork/options"
 	blkiodev "github.com/opencontainers/runc/libcontainer/configs"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -58,10 +59,6 @@ func getBlkioReadBpsDevices(config *containertypes.HostConfig) ([]blkiodev.Throt
 
 func getBlkioWriteBpsDevices(config *containertypes.HostConfig) ([]blkiodev.ThrottleDevice, error) {
 	return nil, nil
-}
-
-func setupInitLayer(initLayer string, rootUID, rootGID int) error {
-	return nil
 }
 
 func (daemon *Daemon) getLayerInit() func(string) error {
@@ -129,8 +126,10 @@ func verifyContainerResources(resources *containertypes.Resources, isHyperv bool
 	if resources.NanoCPUs > 0 && resources.CPUShares > 0 {
 		return warnings, fmt.Errorf("conflicting options: Nano CPUs and CPU Shares cannot both be set")
 	}
+	// The precision we could get is 0.01, because on Windows we have to convert to CPUPercent.
+	// We don't set the lower limit here and it is up to the underlying platform (e.g., Windows) to return an error.
 	if resources.NanoCPUs < 0 || resources.NanoCPUs > int64(sysinfo.NumCPU())*1e9 {
-		return warnings, fmt.Errorf("range of Nano CPUs is from 1 to %d", int64(sysinfo.NumCPU())*1e9)
+		return warnings, fmt.Errorf("range of CPUs is from 0.01 to %d.00, as there are only %d CPUs available", sysinfo.NumCPU(), sysinfo.NumCPU())
 	}
 
 	if len(resources.BlkioDeviceReadBps) > 0 {
@@ -201,13 +200,10 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.
 
 	w, err := verifyContainerResources(&hostConfig.Resources, hyperv)
 	warnings = append(warnings, w...)
-	if err != nil {
-		return warnings, err
-	}
-	return warnings, nil
+	return warnings, err
 }
 
-// platformReload update configuration with platform specific options
+// platformReload updates configuration with platform specific options
 func (daemon *Daemon) platformReload(config *Config) map[string]string {
 	return map[string]string{}
 }
@@ -227,6 +223,11 @@ func checkSystem() error {
 	}
 	if osv.Build < 14393 {
 		return fmt.Errorf("The docker daemon requires build 14393 or later of Windows Server 2016 or Windows 10")
+	}
+
+	vmcompute := windows.NewLazySystemDLL("vmcompute.dll")
+	if vmcompute.Load() != nil {
+		return fmt.Errorf("Failed to load vmcompute.dll. Ensure that the Containers role is installed.")
 	}
 	return nil
 }

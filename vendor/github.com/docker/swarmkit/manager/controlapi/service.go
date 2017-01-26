@@ -4,7 +4,6 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -13,8 +12,8 @@ import (
 	"github.com/docker/swarmkit/identity"
 	"github.com/docker/swarmkit/manager/constraint"
 	"github.com/docker/swarmkit/manager/state/store"
-	"github.com/docker/swarmkit/protobuf/ptypes"
 	"github.com/docker/swarmkit/template"
+	gogotypes "github.com/gogo/protobuf/types"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,9 +24,6 @@ var (
 	errRenameNotSupported        = errors.New("renaming services is not supported")
 	errModeChangeNotAllowed      = errors.New("service mode change is not allowed")
 )
-
-// Regexp pattern for hostname to conform RFC 1123
-var hostnamePattern = regexp.MustCompile("^(([[:alnum:]]|[[:alnum:]][[:alnum:]\\-]*[[:alnum:]])\\.)*([[:alnum:]]|[[:alnum:]][[:alnum:]\\-]*[[:alnum:]])$")
 
 func validateResources(r *api.Resources) error {
 	if r == nil {
@@ -63,7 +59,7 @@ func validateRestartPolicy(rp *api.RestartPolicy) error {
 	}
 
 	if rp.Delay != nil {
-		delay, err := ptypes.Duration(rp.Delay)
+		delay, err := gogotypes.DurationFromProto(rp.Delay)
 		if err != nil {
 			return err
 		}
@@ -73,7 +69,7 @@ func validateRestartPolicy(rp *api.RestartPolicy) error {
 	}
 
 	if rp.Window != nil {
-		win, err := ptypes.Duration(rp.Window)
+		win, err := gogotypes.DurationFromProto(rp.Window)
 		if err != nil {
 			return err
 		}
@@ -98,12 +94,7 @@ func validateUpdate(uc *api.UpdateConfig) error {
 		return nil
 	}
 
-	delay, err := ptypes.Duration(&uc.Delay)
-	if err != nil {
-		return err
-	}
-
-	if delay < 0 {
+	if uc.Delay < 0 {
 		return grpc.Errorf(codes.InvalidArgument, "TaskSpec: update-delay cannot be negative")
 	}
 
@@ -113,10 +104,6 @@ func validateUpdate(uc *api.UpdateConfig) error {
 func validateContainerSpec(container *api.ContainerSpec) error {
 	if container == nil {
 		return grpc.Errorf(codes.InvalidArgument, "ContainerSpec: missing in service spec")
-	}
-
-	if err := validateHostname(container.Hostname); err != nil {
-		return err
 	}
 
 	if container.Image == "" {
@@ -135,15 +122,6 @@ func validateContainerSpec(container *api.ContainerSpec) error {
 		mountMap[mount.Target] = true
 	}
 
-	return nil
-}
-
-func validateHostname(hostname string) error {
-	if hostname != "" {
-		if len(hostname) > 63 || !hostnamePattern.MatchString(hostname) {
-			return grpc.Errorf(codes.InvalidArgument, "ContainerSpec: %s is not valid hostname", hostname)
-		}
-	}
 	return nil
 }
 
@@ -203,10 +181,6 @@ func validateEndpointSpec(epSpec *api.EndpointSpec) error {
 		return nil
 	}
 
-	if len(epSpec.Ports) > 0 && epSpec.Mode == api.ResolutionModeDNSRoundRobin {
-		return grpc.Errorf(codes.InvalidArgument, "EndpointSpec: ports can't be used with dnsrr mode")
-	}
-
 	type portSpec struct {
 		publishedPort uint32
 		protocol      api.PortConfig_Protocol
@@ -214,6 +188,17 @@ func validateEndpointSpec(epSpec *api.EndpointSpec) error {
 
 	portSet := make(map[portSpec]struct{})
 	for _, port := range epSpec.Ports {
+		// Publish mode = "ingress" represents Routing-Mesh and current implementation
+		// of routing-mesh relies on IPVS based load-balancing with input=published-port.
+		// But Endpoint-Spec mode of DNSRR relies on multiple A records and cannot be used
+		// with routing-mesh (PublishMode="ingress") which cannot rely on DNSRR.
+		// But PublishMode="host" doesn't provide Routing-Mesh and the DNSRR is applicable
+		// for the backend network and hence we accept that configuration.
+
+		if epSpec.Mode == api.ResolutionModeDNSRoundRobin && port.PublishMode == api.PublishModeIngress {
+			return grpc.Errorf(codes.InvalidArgument, "EndpointSpec: port published with ingress mode can't be used with dnsrr mode")
+		}
+
 		// If published port is not specified, it does not conflict
 		// with any others.
 		if port.PublishedPort == 0 {
@@ -248,7 +233,7 @@ func validateSecretRefsSpec(spec *api.ServiceSpec) error {
 			return grpc.Errorf(codes.InvalidArgument, "malformed secret reference")
 		}
 
-		// Every secret referece requires a Target
+		// Every secret reference requires a Target
 		if secretRef.GetTarget() == nil {
 			return grpc.Errorf(codes.InvalidArgument, "malformed secret reference, no target provided")
 		}
@@ -498,7 +483,7 @@ func (s *Server) UpdateService(ctx context.Context, request *api.UpdateServiceRe
 	err := s.store.Update(func(tx store.Tx) error {
 		service = store.GetService(tx, request.ServiceID)
 		if service == nil {
-			return nil
+			return grpc.Errorf(codes.NotFound, "service %s not found", request.ServiceID)
 		}
 		// temporary disable network update
 		requestSpecNetworks := request.Spec.Task.Networks
@@ -512,7 +497,7 @@ func (s *Server) UpdateService(ctx context.Context, request *api.UpdateServiceRe
 		}
 
 		if !reflect.DeepEqual(requestSpecNetworks, specNetworks) {
-			return errNetworkUpdateNotSupported
+			return grpc.Errorf(codes.Unimplemented, errNetworkUpdateNotSupported.Error())
 		}
 
 		// Check to see if all the secrets being added exist as objects
@@ -526,11 +511,11 @@ func (s *Server) UpdateService(ctx context.Context, request *api.UpdateServiceRe
 		// with service mode change (comparing current config with previous config).
 		// proper way to change service mode is to delete and re-add.
 		if reflect.TypeOf(service.Spec.Mode) != reflect.TypeOf(request.Spec.Mode) {
-			return errModeChangeNotAllowed
+			return grpc.Errorf(codes.Unimplemented, errModeChangeNotAllowed.Error())
 		}
 
 		if service.Spec.Annotations.Name != request.Spec.Annotations.Name {
-			return errRenameNotSupported
+			return grpc.Errorf(codes.Unimplemented, errRenameNotSupported.Error())
 		}
 
 		service.Meta.Version = *request.ServiceVersion
@@ -545,9 +530,7 @@ func (s *Server) UpdateService(ctx context.Context, request *api.UpdateServiceRe
 	if err != nil {
 		return nil, err
 	}
-	if service == nil {
-		return nil, grpc.Errorf(codes.NotFound, "service %s not found", request.ServiceID)
-	}
+
 	return &api.UpdateServiceResponse{
 		Service: service,
 	}, nil

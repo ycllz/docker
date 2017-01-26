@@ -21,7 +21,7 @@ Usage:  docker push [OPTIONS] NAME[:TAG]
 Push an image or a repository to a registry
 
 Options:
-      --disable-content-trust   Skip image verification (default true)
+      --disable-content-trust   Skip image signing (default true)
       --help                    Print usage
 ```
 
@@ -35,6 +35,13 @@ Killing the `docker push` process, for example by pressing `CTRL-c` while it is
 running in a terminal, terminates the push operation.
 
 Registry credentials are managed by [docker login](login.md).
+
+## Concurrent uploads
+
+By default the Docker daemon will push five layers of an image at a time.
+If you are on a low bandwidth connection this may cause timeout issues and you may want to lower
+this via the `--max-concurrent-uploads` daemon option. See the
+[daemon documentation](dockerd.md) for more details.
 
 ## Examples
 
