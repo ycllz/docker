@@ -9,7 +9,7 @@ import (
 
 	"github.com/docker/distribution/context"
 	"github.com/docker/distribution/reference"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 )
 
 var (

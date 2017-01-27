@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	winio "github.com/Microsoft/go-winio"
+	"github.com/Microsoft/go-winio"
 	"github.com/Sirupsen/logrus"
 )
 
@@ -46,7 +46,7 @@ func ImportLayer(info DriverInfo, layerID string, importFolderPath string, paren
 // LayerWriter is an interface that supports writing a new container image layer.
 type LayerWriter interface {
 	// Add adds a file to the layer with given metadata.
-	Add(name string, fileInfo *winio.FileFullInfo) error
+	Add(name string, fileInfo *winio.FileBasicInfo) error
 	// AddLink adds a hard link to the layer. The target must already have been added.
 	AddLink(name string, target string) error
 	// Remove removes a file that was present in a parent layer from the layer.
@@ -68,11 +68,11 @@ type FilterLayerWriter struct {
 // name contains the file's relative path. fileInfo contains file times and file attributes; the rest
 // of the file metadata and the file data must be written as a Win32 backup stream to the Write() method.
 // winio.BackupStreamWriter can be used to facilitate this.
-func (w *FilterLayerWriter) Add(name string, fileInfo *winio.FileFullInfo) error {
+func (w *FilterLayerWriter) Add(name string, fileInfo *winio.FileBasicInfo) error {
 	if name[0] != '\\' {
 		name = `\` + name
 	}
-	err := importLayerNext(w.context, name, &fileInfo.BasicInfo)
+	err := importLayerNext(w.context, name, fileInfo)
 	if err != nil {
 		return makeError(err, "ImportLayerNext", "")
 	}
@@ -174,7 +174,7 @@ func (r *legacyLayerWriterWrapper) Close() error {
 func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) (LayerWriter, error) {
 	if len(parentLayerPaths) == 0 {
 		// This is a base layer. It gets imported differently.
-		return &baseWindowsLayerWriter{
+		return &baseLayerWriter{
 			root: filepath.Join(info.HomeDir, layerID),
 		}, nil
 	}
@@ -194,7 +194,6 @@ func NewLayerWriter(info DriverInfo, layerID string, parentLayerPaths []string) 
 			parentLayerPaths:  parentLayerPaths,
 		}, nil
 	}
-
 	layers, err := layerPathsToDescriptors(parentLayerPaths)
 	if err != nil {
 		return nil, err

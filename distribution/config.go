@@ -2,9 +2,7 @@ package distribution
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
-	"runtime"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
@@ -17,7 +15,7 @@ import (
 	"github.com/docker/docker/reference"
 	"github.com/docker/docker/registry"
 	"github.com/docker/libtrust"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 	"golang.org/x/net/context"
 )
 
@@ -143,9 +141,9 @@ func (s *imageConfigStore) RootFSFromConfig(c []byte) (*image.RootFS, error) {
 	}
 
 	// fail immediately on windows
-	if runtime.GOOS == "windows" && unmarshalledConfig.OS == "linux" {
+	/*if runtime.GOOS == "windows" && unmarshalledConfig.OS == "linux" {
 		return nil, fmt.Errorf("image operating system %q cannot be used on this platform", unmarshalledConfig.OS)
-	}
+	}*/
 
 	return unmarshalledConfig.RootFS, nil
 }

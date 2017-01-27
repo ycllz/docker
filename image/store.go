@@ -128,7 +128,6 @@ func (is *store) Create(config []byte) (ID, error) {
 		return "", errors.New("too many non-empty layers in History section")
 	}
 
-	fmt.Println("XXX: CONFIG FILE HERE.")
 	dgst, err := is.fs.Set(config)
 	if err != nil {
 		return "", err

@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"syscall"
 
-	winio "github.com/Microsoft/go-winio"
+	"github.com/Microsoft/go-winio"
 )
 
-type baseWindowsLayerWriter struct {
+type baseLayerWriter struct {
 	root         string
 	f            *os.File
 	bw           *winio.BackupFileWriter
@@ -43,7 +43,7 @@ func reapplyDirectoryTimes(dis []dirInfo) error {
 	return nil
 }
 
-func (w *baseWindowsLayerWriter) closeCurrentFile() error {
+func (w *baseLayerWriter) closeCurrentFile() error {
 	if w.f != nil {
 		err := w.bw.Close()
 		err2 := w.f.Close()
@@ -59,8 +59,7 @@ func (w *baseWindowsLayerWriter) closeCurrentFile() error {
 	return nil
 }
 
-func (w *baseWindowsLayerWriter) Add(name string, fileFullInfo *winio.FileFullInfo) (err error) {
-	fileInfo := &fileFullInfo.BasicInfo
+func (w *baseLayerWriter) Add(name string, fileInfo *winio.FileBasicInfo) (err error) {
 	defer func() {
 		if err != nil {
 			w.err = err
@@ -118,7 +117,7 @@ func (w *baseWindowsLayerWriter) Add(name string, fileFullInfo *winio.FileFullIn
 	return nil
 }
 
-func (w *baseWindowsLayerWriter) AddLink(name string, target string) (err error) {
+func (w *baseLayerWriter) AddLink(name string, target string) (err error) {
 	defer func() {
 		if err != nil {
 			w.err = err
@@ -143,11 +142,11 @@ func (w *baseWindowsLayerWriter) AddLink(name string, target string) (err error)
 	return os.Link(linktarget, linkpath)
 }
 
-func (w *baseWindowsLayerWriter) Remove(name string) error {
+func (w *baseLayerWriter) Remove(name string) error {
 	return errors.New("base layer cannot have tombstones")
 }
 
-func (w *baseWindowsLayerWriter) Write(b []byte) (int, error) {
+func (w *baseLayerWriter) Write(b []byte) (int, error) {
 	n, err := w.bw.Write(b)
 	if err != nil {
 		w.err = err
@@ -155,7 +154,7 @@ func (w *baseWindowsLayerWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-func (w *baseWindowsLayerWriter) Close() error {
+func (w *baseLayerWriter) Close() error {
 	err := w.closeCurrentFile()
 	if err != nil {
 		return err

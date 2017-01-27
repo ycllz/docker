@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"sync"
-
 	"runtime"
+	"sync"
 
 	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Sirupsen/logrus"
@@ -16,7 +15,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/stringid"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/vbatts/tar-split/tar/asm"
 	"github.com/vbatts/tar-split/tar/storage"
 )
@@ -225,9 +224,11 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 	}
 
 	// Lets do this hack to distinguish between linux and windows
+	// Linux images only suppported on windowsfilter.
 	layerID := layer.cacheID
-	if runtime.GOOS == "windows" && layer.descriptor.OS != "" {
+	if runtime.GOOS == "windows" && ls.driver.String() == "windowsfilter" {
 		// Append the OS information infront of the string.
+		fmt.Println(layer.descriptor.OS)
 		layerID = winlx.EncodeOS(layerID, layer.descriptor.OS)
 	}
 	applySize, err := ls.driver.ApplyDiff(layerID, parent, rdr)
