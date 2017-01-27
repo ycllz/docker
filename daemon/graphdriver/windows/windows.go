@@ -506,6 +506,7 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // The layer should not be mounted when calling this function
 func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	var layerChain []string
+	fmt.Println(id)
 
 	// First have to split the OS part of the id
 	osType, id2 := winlx.DecodeOS(id)
@@ -694,7 +695,7 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 			var (
 				name     string
 				size     int64
-				fileInfo *winio.FileFullInfo
+				fileInfo *winio.FileBasicInfo
 			)
 
 			name, size, fileInfo, err = backuptar.FileInfoFromHeader(hdr)

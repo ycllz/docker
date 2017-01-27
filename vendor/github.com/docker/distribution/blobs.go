@@ -9,7 +9,7 @@ import (
 
 	"github.com/docker/distribution/context"
 	"github.com/docker/distribution/reference"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 )
 
 var (
@@ -75,6 +75,7 @@ type Descriptor struct {
 	// NOTE: Before adding a field here, please ensure that all
 	// other options have been exhausted. Much of the type relationships
 	// depend on the simplicity of this type.
+	OS string `json:"-"`
 }
 
 // Descriptor returns the descriptor, to make it satisfy the Describable

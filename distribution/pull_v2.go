@@ -28,7 +28,7 @@ import (
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/reference"
 	"github.com/docker/docker/registry"
-	"github.com/opencontainers/go-digest"
+	digest "github.com/opencontainers/go-digest"
 	"golang.org/x/net/context"
 )
 
@@ -516,22 +516,6 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		return target.Digest, manifestDigest, nil
 	}
 
-	var descriptors []xfer.DownloadDescriptor
-
-	// Note that the order of this loop is in the direction of bottom-most
-	// to top-most, so that the downloads slice gets ordered correctly.
-	for _, d := range mfst.Layers {
-		layerDescriptor := &v2LayerDescriptor{
-			digest:            d.Digest,
-			repo:              p.repo,
-			repoInfo:          p.repoInfo,
-			V2MetadataService: p.V2MetadataService,
-			src:               d,
-		}
-
-		descriptors = append(descriptors, layerDescriptor)
-	}
-
 	configChan := make(chan []byte, 1)
 	errChan := make(chan error, 1)
 	var cancel func()
@@ -562,6 +546,7 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 	// which aren't suitable for NTFS. At some point in the future, if a similar
 	// check to block Windows images being pulled on Linux is implemented, it
 	// may be necessary to perform the same type of serialisation.
+	osType := runtime.GOOS
 	if runtime.GOOS == "windows" {
 		configJSON, configRootFS, err = receiveConfig(p.config.ImageStore, configChan, errChan)
 		if err != nil {
@@ -571,6 +556,25 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 		if configRootFS == nil {
 			return "", "", errRootFSInvalid
 		}
+		osType, err = getOS(configJSON)
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	var descriptors []xfer.DownloadDescriptor
+	// Note that the order of this loop is in the direction of bottom-most
+	// to top-most, so that the downloads slice gets ordered correctly.
+	for _, d := range mfst.Layers {
+		layerDescriptor := &v2LayerDescriptor{
+			digest:            d.Digest,
+			repo:              p.repo,
+			repoInfo:          p.repoInfo,
+			V2MetadataService: p.V2MetadataService,
+			src:               d,
+		}
+		layerDescriptor.src.OS = osType
+		descriptors = append(descriptors, layerDescriptor)
 	}
 
 	if p.config.DownloadManager != nil {
@@ -647,6 +651,14 @@ func receiveConfig(s ImageConfigStore, configChan <-chan []byte, errChan <-chan 
 		// Don't need a case for ctx.Done in the select because cancellation
 		// will trigger an error in p.pullSchema2ImageConfig.
 	}
+}
+
+func getOS(configJSON []byte) (string, error) {
+	var unmarshalledConfig image.Image
+	if err := json.Unmarshal(configJSON, &unmarshalledConfig); err != nil {
+		return "", err
+	}
+	return unmarshalledConfig.OS, nil
 }
 
 // pullManifestList handles "manifest lists" which point to various
