@@ -67,7 +67,9 @@ func (cli *DaemonCli) setupConfigReloadTrap() {
 }
 
 func (cli *DaemonCli) getPlatformRemoteOptions() []libcontainerd.RemoteOption {
-	return nil
+	return []libcontainerd.RemoteOption{
+		libcontainerd.WithContainerDPipe(cli.Config.ContainerDPipe),
+	}
 }
 
 // getLibcontainerdRoot gets the root directory for libcontainerd to store its

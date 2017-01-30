@@ -25,8 +25,10 @@ type bridgeConfig struct {
 type Config struct {
 	CommonConfig
 
-	// Fields below here are platform specific. (There are none presently
-	// for the Windows daemon.)
+	// Fields below here are platform specific.
+
+	// ContainerDPipe contains the named pipe address of the containerD service.
+	ContainerDPipe string
 }
 
 // InstallFlags adds flags to the pflag.FlagSet to configure the daemon
@@ -38,6 +40,7 @@ func (config *Config) InstallFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&config.bridgeConfig.FixedCIDR, "fixed-cidr", "", "IPv4 subnet for fixed IPs")
 	flags.StringVarP(&config.bridgeConfig.Iface, "bridge", "b", "", "Attach containers to a virtual switch")
 	flags.StringVarP(&config.SocketGroup, "group", "G", "", "Users or groups that can access the named pipe")
+	flags.StringVarP(&config.ContainerDPipe, "containerd-pipe", "P", "//./pipe/containerd", "Address of the containerd named pipe")
 }
 
 // GetRuntime returns the runtime path and arguments for a given
