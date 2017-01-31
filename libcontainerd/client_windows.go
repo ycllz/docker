@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
-	"path/filepath"
+	//"os"
+	//"path/filepath"
 	"strings"
 	"syscall"
 
@@ -14,8 +14,8 @@ import (
 
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
-	"github.com/docker/docker/pkg/sysinfo"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
+	//"github.com/docker/docker/pkg/sysinfo"
+	//specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type client struct {
@@ -95,186 +95,189 @@ const defaultOwner = "docker"
 //	},
 //	"Servicing": false
 //}
-func (clnt *client) Create(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
-	clnt.lock(containerID)
-	defer clnt.unlock(containerID)
-	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
 
-	configuration := &hcsshim.ContainerConfig{
-		SystemType: "Container",
-		Name:       containerID,
-		Owner:      defaultOwner,
-		IgnoreFlushesDuringBoot: false,
-		HostName:                spec.Hostname,
-		HvPartition:             false,
-	}
+// PROTOTYPE - COMMENTING OUT - MOVING TO A COMMON CREATE SHARED BETWEEN UNIX AND WINDOWS
 
-	if spec.Windows.Resources != nil {
-		if spec.Windows.Resources.CPU != nil {
-			if spec.Windows.Resources.CPU.Count != nil {
-				// This check is being done here rather than in adaptContainerSettings
-				// because we don't want to update the HostConfig in case this container
-				// is moved to a host with more CPUs than this one.
-				cpuCount := *spec.Windows.Resources.CPU.Count
-				hostCPUCount := uint64(sysinfo.NumCPU())
-				if cpuCount > hostCPUCount {
-					logrus.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
-					cpuCount = hostCPUCount
-				}
-				configuration.ProcessorCount = uint32(cpuCount)
-			}
-			if spec.Windows.Resources.CPU.Shares != nil {
-				configuration.ProcessorWeight = uint64(*spec.Windows.Resources.CPU.Shares)
-			}
-			if spec.Windows.Resources.CPU.Percent != nil {
-				configuration.ProcessorMaximum = int64(*spec.Windows.Resources.CPU.Percent) * 100 // ProcessorMaximum is a value between 1 and 10000
-			}
-		}
-		if spec.Windows.Resources.Memory != nil {
-			if spec.Windows.Resources.Memory.Limit != nil {
-				configuration.MemoryMaximumInMB = int64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
-			}
-		}
-		if spec.Windows.Resources.Storage != nil {
-			if spec.Windows.Resources.Storage.Bps != nil {
-				configuration.StorageBandwidthMaximum = *spec.Windows.Resources.Storage.Bps
-			}
-			if spec.Windows.Resources.Storage.Iops != nil {
-				configuration.StorageIOPSMaximum = *spec.Windows.Resources.Storage.Iops
-			}
-		}
-	}
+//func (clnt *client) Create(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
+//	clnt.lock(containerID)
+//	defer clnt.unlock(containerID)
+//	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
 
-	var layerOpt *LayerOption
-	for _, option := range options {
-		if s, ok := option.(*ServicingOption); ok {
-			configuration.Servicing = s.IsServicing
-			continue
-		}
-		if f, ok := option.(*FlushOption); ok {
-			configuration.IgnoreFlushesDuringBoot = f.IgnoreFlushesDuringBoot
-			continue
-		}
-		if h, ok := option.(*HyperVIsolationOption); ok {
-			configuration.HvPartition = h.IsHyperV
-			configuration.SandboxPath = h.SandboxPath
-			continue
-		}
-		if l, ok := option.(*LayerOption); ok {
-			layerOpt = l
-		}
-		if n, ok := option.(*NetworkEndpointsOption); ok {
-			configuration.EndpointList = n.Endpoints
-			configuration.AllowUnqualifiedDNSQuery = n.AllowUnqualifiedDNSQuery
-			continue
-		}
-		if c, ok := option.(*CredentialsOption); ok {
-			configuration.Credentials = c.Credentials
-			continue
-		}
-	}
+//	configuration := &hcsshim.ContainerConfig{
+//		SystemType: "Container",
+//		Name:       containerID,
+//		Owner:      defaultOwner,
+//		IgnoreFlushesDuringBoot: false,
+//		HostName:                spec.Hostname,
+//		HvPartition:             false,
+//	}
 
-	// We must have a layer option with at least one path
-	if layerOpt == nil || layerOpt.LayerPaths == nil {
-		return fmt.Errorf("no layer option or paths were supplied to the runtime")
-	}
+//	if spec.Windows.Resources != nil {
+//		if spec.Windows.Resources.CPU != nil {
+//			if spec.Windows.Resources.CPU.Count != nil {
+//				// This check is being done here rather than in adaptContainerSettings
+//				// because we don't want to update the HostConfig in case this container
+//				// is moved to a host with more CPUs than this one.
+//				cpuCount := *spec.Windows.Resources.CPU.Count
+//				hostCPUCount := uint64(sysinfo.NumCPU())
+//				if cpuCount > hostCPUCount {
+//					logrus.Warnf("Changing requested CPUCount of %d to current number of processors, %d", cpuCount, hostCPUCount)
+//					cpuCount = hostCPUCount
+//				}
+//				configuration.ProcessorCount = uint32(cpuCount)
+//			}
+//			if spec.Windows.Resources.CPU.Shares != nil {
+//				configuration.ProcessorWeight = uint64(*spec.Windows.Resources.CPU.Shares)
+//			}
+//			if spec.Windows.Resources.CPU.Percent != nil {
+//				configuration.ProcessorMaximum = int64(*spec.Windows.Resources.CPU.Percent) * 100 // ProcessorMaximum is a value between 1 and 10000
+//			}
+//		}
+//		if spec.Windows.Resources.Memory != nil {
+//			if spec.Windows.Resources.Memory.Limit != nil {
+//				configuration.MemoryMaximumInMB = int64(*spec.Windows.Resources.Memory.Limit) / 1024 / 1024
+//			}
+//		}
+//		if spec.Windows.Resources.Storage != nil {
+//			if spec.Windows.Resources.Storage.Bps != nil {
+//				configuration.StorageBandwidthMaximum = *spec.Windows.Resources.Storage.Bps
+//			}
+//			if spec.Windows.Resources.Storage.Iops != nil {
+//				configuration.StorageIOPSMaximum = *spec.Windows.Resources.Storage.Iops
+//			}
+//		}
+//	}
 
-	if configuration.HvPartition {
-		// Find the upper-most utility VM image, since the utility VM does not
-		// use layering in RS1.
-		// TODO @swernli/jhowardmsft at some point post RS1 this may be re-locatable.
-		var uvmImagePath string
-		for _, path := range layerOpt.LayerPaths {
-			fullPath := filepath.Join(path, "UtilityVM")
-			_, err := os.Stat(fullPath)
-			if err == nil {
-				uvmImagePath = fullPath
-				break
-			}
-			if !os.IsNotExist(err) {
-				return err
-			}
-		}
-		if uvmImagePath == "" {
-			return errors.New("utility VM image could not be found")
-		}
-		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
-	} else {
-		configuration.VolumePath = spec.Root.Path
-	}
+//	var layerOpt *LayerOption
+//	for _, option := range options {
+//		if s, ok := option.(*ServicingOption); ok {
+//			configuration.Servicing = s.IsServicing
+//			continue
+//		}
+//		if f, ok := option.(*FlushOption); ok {
+//			configuration.IgnoreFlushesDuringBoot = f.IgnoreFlushesDuringBoot
+//			continue
+//		}
+//		if h, ok := option.(*HyperVIsolationOption); ok {
+//			configuration.HvPartition = h.IsHyperV
+//			configuration.SandboxPath = h.SandboxPath
+//			continue
+//		}
+//		if l, ok := option.(*LayerOption); ok {
+//			layerOpt = l
+//		}
+//		if n, ok := option.(*NetworkEndpointsOption); ok {
+//			configuration.EndpointList = n.Endpoints
+//			configuration.AllowUnqualifiedDNSQuery = n.AllowUnqualifiedDNSQuery
+//			continue
+//		}
+//		if c, ok := option.(*CredentialsOption); ok {
+//			configuration.Credentials = c.Credentials
+//			continue
+//		}
+//	}
 
-	configuration.LayerFolderPath = layerOpt.LayerFolderPath
+//	// We must have a layer option with at least one path
+//	if layerOpt == nil || layerOpt.LayerPaths == nil {
+//		return fmt.Errorf("no layer option or paths were supplied to the runtime")
+//	}
 
-	for _, layerPath := range layerOpt.LayerPaths {
-		_, filename := filepath.Split(layerPath)
-		g, err := hcsshim.NameToGuid(filename)
-		if err != nil {
-			return err
-		}
-		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-			ID:   g.ToString(),
-			Path: layerPath,
-		})
-	}
+//	if configuration.HvPartition {
+//		// Find the upper-most utility VM image, since the utility VM does not
+//		// use layering in RS1.
+//		// TODO @swernli/jhowardmsft at some point post RS1 this may be re-locatable.
+//		var uvmImagePath string
+//		for _, path := range layerOpt.LayerPaths {
+//			fullPath := filepath.Join(path, "UtilityVM")
+//			_, err := os.Stat(fullPath)
+//			if err == nil {
+//				uvmImagePath = fullPath
+//				break
+//			}
+//			if !os.IsNotExist(err) {
+//				return err
+//			}
+//		}
+//		if uvmImagePath == "" {
+//			return errors.New("utility VM image could not be found")
+//		}
+//		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
+//	} else {
+//		configuration.VolumePath = spec.Root.Path
+//	}
 
-	// Add the mounts (volumes, bind mounts etc) to the structure
-	mds := make([]hcsshim.MappedDir, len(spec.Mounts))
-	for i, mount := range spec.Mounts {
-		mds[i] = hcsshim.MappedDir{
-			HostPath:      mount.Source,
-			ContainerPath: mount.Destination,
-			ReadOnly:      false,
-		}
-		for _, o := range mount.Options {
-			if strings.ToLower(o) == "ro" {
-				mds[i].ReadOnly = true
-			}
-		}
-	}
-	configuration.MappedDirectories = mds
+//	configuration.LayerFolderPath = layerOpt.LayerFolderPath
 
-	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
-	if err != nil {
-		return err
-	}
+//	for _, layerPath := range layerOpt.LayerPaths {
+//		_, filename := filepath.Split(layerPath)
+//		g, err := hcsshim.NameToGuid(filename)
+//		if err != nil {
+//			return err
+//		}
+//		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+//			ID:   g.ToString(),
+//			Path: layerPath,
+//		})
+//	}
 
-	// Construct a container object for calling start on it.
-	container := &container{
-		containerCommon: containerCommon{
-			process: process{
-				processCommon: processCommon{
-					containerID:  containerID,
-					client:       clnt,
-					friendlyName: InitFriendlyName,
-				},
-				commandLine: strings.Join(spec.Process.Args, " "),
-			},
-			processes: make(map[string]*process),
-		},
-		ociSpec:      spec,
-		hcsContainer: hcsContainer,
-	}
+//	// Add the mounts (volumes, bind mounts etc) to the structure
+//	mds := make([]hcsshim.MappedDir, len(spec.Mounts))
+//	for i, mount := range spec.Mounts {
+//		mds[i] = hcsshim.MappedDir{
+//			HostPath:      mount.Source,
+//			ContainerPath: mount.Destination,
+//			ReadOnly:      false,
+//		}
+//		for _, o := range mount.Options {
+//			if strings.ToLower(o) == "ro" {
+//				mds[i].ReadOnly = true
+//			}
+//		}
+//	}
+//	configuration.MappedDirectories = mds
 
-	container.options = options
-	for _, option := range options {
-		if err := option.Apply(container); err != nil {
-			logrus.Errorf("libcontainerd: %v", err)
-		}
-	}
+//	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
+//	if err != nil {
+//		return err
+//	}
 
-	// Call start, and if it fails, delete the container from our
-	// internal structure, start will keep HCS in sync by deleting the
-	// container there.
-	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
-	if err := container.start(attachStdio); err != nil {
-		clnt.deleteContainer(containerID)
-		return err
-	}
+//	// Construct a container object for calling start on it.
+//	container := &container{
+//		containerCommon: containerCommon{
+//			process: process{
+//				processCommon: processCommon{
+//					containerID:  containerID,
+//					client:       clnt,
+//					friendlyName: InitFriendlyName,
+//				},
+//				commandLine: strings.Join(spec.Process.Args, " "),
+//			},
+//			processes: make(map[string]*process),
+//		},
+//		ociSpec:      spec,
+//		hcsContainer: hcsContainer,
+//	}
 
-	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
-	return nil
+//	container.options = options
+//	for _, option := range options {
+//		if err := option.Apply(container); err != nil {
+//			logrus.Errorf("libcontainerd: %v", err)
+//		}
+//	}
 
-}
+//	// Call start, and if it fails, delete the container from our
+//	// internal structure, start will keep HCS in sync by deleting the
+//	// container there.
+//	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
+//	if err := container.start(attachStdio); err != nil {
+//		clnt.deleteContainer(containerID)
+//		return err
+//	}
+
+//	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
+//	return nil
+
+//}
 
 // AddProcess is the handler for adding a process to an already running
 // container. It's called through docker exec. It returns the system pid of the

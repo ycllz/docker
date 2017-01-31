@@ -209,8 +209,8 @@ func (r *remote) Client(b Backend) (Client, error) {
 			backend:    b,
 			containers: make(map[string]*container),
 			locker:     locker.New(),
+			remote:     r,
 		},
-		remote:        r,
 		exitNotifiers: make(map[string]*exitNotifier),
 		liveRestore:   r.liveRestore,
 	}

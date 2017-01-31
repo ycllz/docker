@@ -33,10 +33,12 @@ import (
 //    reparenting (which doesn't make sense for Hyper-V containers anyway),
 //    and/or other Unix-specific functionality.
 
+// TODO - SPLIT THIS STRUCTURE INTO PLATFORM COMMON AND AGNOSTIC
 type remote struct {
 	useContainerD bool             // Are we using containerD ?
 	rpcAddr       string           // Named pipe of containerd
 	rpcConn       *grpc.ClientConn // Connection to containerd
+	stateDir      string
 }
 
 func init() {

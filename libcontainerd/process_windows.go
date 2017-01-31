@@ -14,6 +14,10 @@ type process struct {
 
 	// Platform specific fields are below here.
 
+	// TODO: TEMPORARY PROTOTYPE HACK - NOT SURE IF NEEDED ON WINDOWS. PURELY FOR COMPILATION
+	// PURPOSES AT THE MOMENT @jhowardmsft
+	dir string
+
 	// commandLine is to support returning summary information for docker top
 	commandLine string
 	hcsProcess  hcsshim.Process

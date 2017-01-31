@@ -1,10 +1,10 @@
 package libcontainerd
 
 import (
-	"fmt"
-	"io"
-	"io/ioutil"
-	"strings"
+	//	"fmt"
+	//	"io"
+	//	"io/ioutil"
+	//	"strings"
 	"syscall"
 	"time"
 
@@ -16,7 +16,7 @@ import (
 type container struct {
 	containerCommon
 
-	// Platform specific fields are below here. There are none presently on Windows.
+	// Platform specific fields are below here.
 	options []CreateOption
 
 	// The ociSpec is required, as client.Create() needs a spec,
@@ -38,131 +38,132 @@ func (ctr *container) newProcess(friendlyName string) *process {
 	}
 }
 
+// TEMPORARY PROTOTYPE - COMMENTED OUT
 // start starts a created container.
 // Caller needs to lock container ID before calling this method.
-func (ctr *container) start(attachStdio StdioCallback) error {
-	var err error
-	isServicing := false
+//func (ctr *container) start(attachStdio StdioCallback) error {
+//	var err error
+//	isServicing := false
 
-	for _, option := range ctr.options {
-		if s, ok := option.(*ServicingOption); ok && s.IsServicing {
-			isServicing = true
-		}
-	}
+//	for _, option := range ctr.options {
+//		if s, ok := option.(*ServicingOption); ok && s.IsServicing {
+//			isServicing = true
+//		}
+//	}
 
-	// Start the container.  If this is a servicing container, this call will block
-	// until the container is done with the servicing execution.
-	logrus.Debugln("libcontainerd: starting container ", ctr.containerID)
-	if err = ctr.hcsContainer.Start(); err != nil {
-		logrus.Errorf("libcontainerd: failed to start container: %s", err)
-		if err := ctr.terminate(); err != nil {
-			logrus.Errorf("libcontainerd: failed to cleanup after a failed Start. %s", err)
-		} else {
-			logrus.Debugln("libcontainerd: cleaned up after failed Start by calling Terminate")
-		}
-		return err
-	}
+//	// Start the container.  If this is a servicing container, this call will block
+//	// until the container is done with the servicing execution.
+//	logrus.Debugln("libcontainerd: starting container ", ctr.containerID)
+//	if err = ctr.hcsContainer.Start(); err != nil {
+//		logrus.Errorf("libcontainerd: failed to start container: %s", err)
+//		if err := ctr.terminate(); err != nil {
+//			logrus.Errorf("libcontainerd: failed to cleanup after a failed Start. %s", err)
+//		} else {
+//			logrus.Debugln("libcontainerd: cleaned up after failed Start by calling Terminate")
+//		}
+//		return err
+//	}
 
-	// Note we always tell HCS to
-	// create stdout as it's required regardless of '-i' or '-t' options, so that
-	// docker can always grab the output through logs. We also tell HCS to always
-	// create stdin, even if it's not used - it will be closed shortly. Stderr
-	// is only created if it we're not -t.
-	createProcessParms := &hcsshim.ProcessConfig{
-		EmulateConsole:   ctr.ociSpec.Process.Terminal,
-		WorkingDirectory: ctr.ociSpec.Process.Cwd,
-		CreateStdInPipe:  !isServicing,
-		CreateStdOutPipe: !isServicing,
-		CreateStdErrPipe: !ctr.ociSpec.Process.Terminal && !isServicing,
-	}
-	createProcessParms.ConsoleSize[0] = uint(ctr.ociSpec.Process.ConsoleSize.Height)
-	createProcessParms.ConsoleSize[1] = uint(ctr.ociSpec.Process.ConsoleSize.Width)
+//	// Note we always tell HCS to
+//	// create stdout as it's required regardless of '-i' or '-t' options, so that
+//	// docker can always grab the output through logs. We also tell HCS to always
+//	// create stdin, even if it's not used - it will be closed shortly. Stderr
+//	// is only created if it we're not -t.
+//	createProcessParms := &hcsshim.ProcessConfig{
+//		EmulateConsole:   ctr.ociSpec.Process.Terminal,
+//		WorkingDirectory: ctr.ociSpec.Process.Cwd,
+//		CreateStdInPipe:  !isServicing,
+//		CreateStdOutPipe: !isServicing,
+//		CreateStdErrPipe: !ctr.ociSpec.Process.Terminal && !isServicing,
+//	}
+//	createProcessParms.ConsoleSize[0] = uint(ctr.ociSpec.Process.ConsoleSize.Height)
+//	createProcessParms.ConsoleSize[1] = uint(ctr.ociSpec.Process.ConsoleSize.Width)
 
-	// Configure the environment for the process
-	createProcessParms.Environment = setupEnvironmentVariables(ctr.ociSpec.Process.Env)
-	createProcessParms.CommandLine = strings.Join(ctr.ociSpec.Process.Args, " ")
-	createProcessParms.User = ctr.ociSpec.Process.User.Username
+//	// Configure the environment for the process
+//	createProcessParms.Environment = setupEnvironmentVariables(ctr.ociSpec.Process.Env)
+//	createProcessParms.CommandLine = strings.Join(ctr.ociSpec.Process.Args, " ")
+//	createProcessParms.User = ctr.ociSpec.Process.User.Username
 
-	// Start the command running in the container.
-	newProcess, err := ctr.hcsContainer.CreateProcess(createProcessParms)
-	if err != nil {
-		logrus.Errorf("libcontainerd: CreateProcess() failed %s", err)
-		if err := ctr.terminate(); err != nil {
-			logrus.Errorf("libcontainerd: failed to cleanup after a failed CreateProcess. %s", err)
-		} else {
-			logrus.Debugln("libcontainerd: cleaned up after failed CreateProcess by calling Terminate")
-		}
-		return err
-	}
+//	// Start the command running in the container.
+//	newProcess, err := ctr.hcsContainer.CreateProcess(createProcessParms)
+//	if err != nil {
+//		logrus.Errorf("libcontainerd: CreateProcess() failed %s", err)
+//		if err := ctr.terminate(); err != nil {
+//			logrus.Errorf("libcontainerd: failed to cleanup after a failed CreateProcess. %s", err)
+//		} else {
+//			logrus.Debugln("libcontainerd: cleaned up after failed CreateProcess by calling Terminate")
+//		}
+//		return err
+//	}
 
-	pid := newProcess.Pid()
+//	pid := newProcess.Pid()
 
-	// Save the hcs Process and PID
-	ctr.process.friendlyName = InitFriendlyName
-	ctr.process.hcsProcess = newProcess
+//	// Save the hcs Process and PID
+//	ctr.process.friendlyName = InitFriendlyName
+//	ctr.process.hcsProcess = newProcess
 
-	// If this is a servicing container, wait on the process synchronously here and
-	// if it succeeds, wait for it cleanly shutdown and merge into the parent container.
-	if isServicing {
-		exitCode := ctr.waitProcessExitCode(&ctr.process)
+//	// If this is a servicing container, wait on the process synchronously here and
+//	// if it succeeds, wait for it cleanly shutdown and merge into the parent container.
+//	if isServicing {
+//		exitCode := ctr.waitProcessExitCode(&ctr.process)
 
-		if exitCode != 0 {
-			if err := ctr.terminate(); err != nil {
-				logrus.Warnf("libcontainerd: terminating servicing container %s failed: %s", ctr.containerID, err)
-			}
-			return fmt.Errorf("libcontainerd: servicing container %s returned non-zero exit code %d", ctr.containerID, exitCode)
-		}
+//		if exitCode != 0 {
+//			if err := ctr.terminate(); err != nil {
+//				logrus.Warnf("libcontainerd: terminating servicing container %s failed: %s", ctr.containerID, err)
+//			}
+//			return fmt.Errorf("libcontainerd: servicing container %s returned non-zero exit code %d", ctr.containerID, exitCode)
+//		}
 
-		return ctr.hcsContainer.WaitTimeout(time.Minute * 5)
-	}
+//		return ctr.hcsContainer.WaitTimeout(time.Minute * 5)
+//	}
 
-	var stdout, stderr io.ReadCloser
-	var stdin io.WriteCloser
-	stdin, stdout, stderr, err = newProcess.Stdio()
-	if err != nil {
-		logrus.Errorf("libcontainerd: failed to get stdio pipes: %s", err)
-		if err := ctr.terminate(); err != nil {
-			logrus.Errorf("libcontainerd: failed to cleanup after a failed Stdio. %s", err)
-		}
-		return err
-	}
+//	var stdout, stderr io.ReadCloser
+//	var stdin io.WriteCloser
+//	stdin, stdout, stderr, err = newProcess.Stdio()
+//	if err != nil {
+//		logrus.Errorf("libcontainerd: failed to get stdio pipes: %s", err)
+//		if err := ctr.terminate(); err != nil {
+//			logrus.Errorf("libcontainerd: failed to cleanup after a failed Stdio. %s", err)
+//		}
+//		return err
+//	}
 
-	iopipe := &IOPipe{Terminal: ctr.ociSpec.Process.Terminal}
+//	iopipe := &IOPipe{Terminal: ctr.ociSpec.Process.Terminal}
 
-	iopipe.Stdin = createStdInCloser(stdin, newProcess)
+//	iopipe.Stdin = createStdInCloser(stdin, newProcess)
 
-	// Convert io.ReadClosers to io.Readers
-	if stdout != nil {
-		iopipe.Stdout = ioutil.NopCloser(&autoClosingReader{ReadCloser: stdout})
-	}
-	if stderr != nil {
-		iopipe.Stderr = ioutil.NopCloser(&autoClosingReader{ReadCloser: stderr})
-	}
+//	// Convert io.ReadClosers to io.Readers
+//	if stdout != nil {
+//		iopipe.Stdout = ioutil.NopCloser(&autoClosingReader{ReadCloser: stdout})
+//	}
+//	if stderr != nil {
+//		iopipe.Stderr = ioutil.NopCloser(&autoClosingReader{ReadCloser: stderr})
+//	}
 
-	// Save the PID
-	logrus.Debugf("libcontainerd: process started - PID %d", pid)
-	ctr.systemPid = uint32(pid)
+//	// Save the PID
+//	logrus.Debugf("libcontainerd: process started - PID %d", pid)
+//	ctr.systemPid = uint32(pid)
 
-	// Spin up a go routine waiting for exit to handle cleanup
-	go ctr.waitExit(&ctr.process, true)
+//	// Spin up a go routine waiting for exit to handle cleanup
+//	go ctr.waitExit(&ctr.process, true)
 
-	ctr.client.appendContainer(ctr)
+//	ctr.client.appendContainer(ctr)
 
-	if err := attachStdio(*iopipe); err != nil {
-		// OK to return the error here, as waitExit will handle tear-down in HCS
-		return err
-	}
+//	if err := attachStdio(*iopipe); err != nil {
+//		// OK to return the error here, as waitExit will handle tear-down in HCS
+//		return err
+//	}
 
-	// Tell the docker engine that the container has started.
-	si := StateInfo{
-		CommonStateInfo: CommonStateInfo{
-			State: StateStart,
-			Pid:   ctr.systemPid, // Not sure this is needed? Double-check monitor.go in daemon BUGBUG @jhowardmsft
-		}}
-	logrus.Debugf("libcontainerd: start() completed OK, %+v", si)
-	return ctr.client.backend.StateChanged(ctr.containerID, si)
+//	// Tell the docker engine that the container has started.
+//	si := StateInfo{
+//		CommonStateInfo: CommonStateInfo{
+//			State: StateStart,
+//			Pid:   ctr.systemPid, // Not sure this is needed? Double-check monitor.go in daemon BUGBUG @jhowardmsft
+//		}}
+//	logrus.Debugf("libcontainerd: start() completed OK, %+v", si)
+//	return ctr.client.backend.StateChanged(ctr.containerID, si)
 
-}
+//}
 
 // waitProcessExitCode will wait for the given process to exit and return its error code.
 func (ctr *container) waitProcessExitCode(process *process) int {

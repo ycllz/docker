@@ -22,7 +22,6 @@ type client struct {
 	clientCommon
 
 	// Platform specific properties below here.
-	remote        *remote
 	q             queue
 	exitNotifiers map[string]*exitNotifier
 	liveRestore   bool
