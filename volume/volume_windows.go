@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/docker/docker/pkyg/system"
 )
 
 // read-write modes
@@ -27,34 +29,46 @@ var platformRawValidationOpts = []func(*validateOpts){
 	func(o *validateOpts) { o.skipAbsolutePathCheck = true },
 }
 
-const (
-	// Spec should be in the format [source:]destination[:mode]
-	//
-	// Examples: c:\foo bar:d:rw
-	//           c:\foo:d:\bar
-	//           myname:d:
-	//           d:\
-	//
-	// Explanation of this regex! Thanks @thaJeztah on IRC and gist for help. See
-	// https://gist.github.com/thaJeztah/6185659e4978789fb2b2. A good place to
-	// test is https://regex-golang.appspot.com/assets/html/index.html
-	//
-	// Useful link for referencing named capturing groups:
-	// http://stackoverflow.com/questions/20750843/using-named-matches-from-go-regex
-	//
-	// There are three match groups: source, destination and mode.
-	//
+// Spec should be in the format [source:]destination[:mode]
+//
+// Examples: c:\foo bar:d:rw
+//           c:\foo:d:\bar
+//           myname:d:
+//           d:\
+//
+// Explanation of this regex! Thanks @thaJeztah on IRC and gist for help. See
+// https://gist.github.com/thaJeztah/6185659e4978789fb2b2. A good place to
+// test is https://regex-golang.appspot.com/assets/html/index.html
+//
+// Useful link for referencing named capturing groups:
+// http://stackoverflow.com/questions/20750843/using-named-matches-from-go-regex
+//
+// There are three match groups: source, destination and mode.
+//
 
-	// RXHostDir is the first option of a source
-	RXHostDir = `[a-z]:\\(?:[^\\/:*?"<>|\r\n]+\\?)*`
+// RXHostDir is the first option of a source
+// RS3 allows UNC paths as well as drive letters
+var RXHostDir string
+
+const RXHostDirPreRS3 = `[a-z]:\\(?:[^\\/:*?"<>|\r\n]+\\?)*`
+const RXHostDirRS3On = `([a-z]:|\\)\\(?:[^\\/:*?"<>|\r\n]+\\?)*`
+
+func init() {
+	RXHostDir = RXHostDirPreRS3
+	if system.GetOSVersion().Build >= 15021 {
+		RXHostDir = RXHostDirRS3On
+	}
+}
+
+const (
 	// RXName is the second option of a source
 	RXName = `[^\\/:*?"<>|\r\n]+`
 	// RXReservedNames are reserved names not possible on Windows
 	RXReservedNames = `(con)|(prn)|(nul)|(aux)|(com[1-9])|(lpt[1-9])`
+)
 
+var (
 	// RXSource is the combined possibilities for a source
-	RXSource = `((?P<source>((` + RXHostDir + `)|(` + RXName + `))):)?`
-
 	// Source. Can be either a host directory, a name, or omitted:
 	//  HostDir:
 	//    -  Essentially using the folder solution from
@@ -68,7 +82,10 @@ const (
 	//    -  Must not contain invalid NTFS filename characters (https://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx)
 	//    -  And then followed by a colon which is not in the capture group
 	//    -  And can be optional
+	RXSource = `((?P<source>((` + RXHostDir + `)|(` + RXName + `))):)?`
+)
 
+const (
 	// RXDestination is the regex expression for the mount destination
 	RXDestination = `(?P<destination>([a-z]):((?:\\[^\\/:*?"<>\r\n]+)*\\?))`
 	// Destination (aka container path):
