@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 
 	"github.com/docker/docker/api/types"
@@ -40,6 +41,7 @@ func (cli *Client) ImageList(ctx context.Context, options types.ImageListOptions
 	}
 
 	err = json.NewDecoder(serverResp.body).Decode(&images)
+	fmt.Println("JJH %+v", images)
 	ensureReaderClosed(serverResp)
 	return images, err
 }

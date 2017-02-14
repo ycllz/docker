@@ -232,6 +232,8 @@ func (c *imageContext) CreatedAt() string {
 
 func (c *imageContext) Size() string {
 	c.AddHeader(sizeHeader)
+	fmt.Println("JJH c.i.Size=", c.i.Size)
+	fmt.Println("JJH HSWP Size=", units.HumanSizeWithPrecision(float64(c.i.Size), 3))
 	return units.HumanSizeWithPrecision(float64(c.i.Size), 3)
 }
 
