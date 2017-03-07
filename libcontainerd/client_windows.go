@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -99,6 +100,7 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	clnt.lock(containerID)
 	defer clnt.unlock(containerID)
 	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
+	debug.PrintStack()
 
 	configuration := &hcsshim.ContainerConfig{
 		SystemType: "Container",
@@ -195,9 +197,9 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 				return err
 			}
 		}
-		if uvmImagePath == "" {
+		/*if uvmImagePath == "" {
 			return errors.New("utility VM image could not be found")
-		}
+		}*/
 		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
 	} else {
 		configuration.VolumePath = spec.Root.Path

@@ -4,7 +4,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/opencontainers/runtime-spec/specs-go"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func sPtr(s string) *string      { return &s }
@@ -12,12 +12,53 @@ func iPtr(i int64) *int64        { return &i }
 func u32Ptr(i int64) *uint32     { u := uint32(i); return &u }
 func fmPtr(i int64) *os.FileMode { fm := os.FileMode(i); return &fm }
 
-// DefaultSpec returns default oci spec used by docker.
+// DefaultSpec returns the default spec used by docker for the current Platform
 func DefaultSpec() specs.Spec {
+	return DefaultOSSpec(runtime.GOOS)
+}
+
+// DefaultOSSpec returns the spec for a given OS
+func DefaultOSSpec(osName string) specs.Spec {
+	if osName == "windows" {
+		return DefaultWindowsSpec()
+	} else if osName == "solaris" {
+		return DefaultSolarisSpec()
+	} else {
+		return DefaultLinuxSpec()
+	}
+}
+
+// DefaultWindowsSpec returns default spec used by docker for Windows
+func DefaultWindowsSpec() specs.Spec {
+	return specs.Spec{
+		Version: specs.Version,
+		Platform: specs.Platform{
+			OS:   "windows",
+			Arch: runtime.GOARCH,
+		},
+		Windows: &specs.Windows{},
+	}
+}
+
+// DefaultSolarisSpec returns default oci spec used by docker for Solaris
+func DefaultSolarisSpec() specs.Spec {
+	s := specs.Spec{
+		Version: "0.6.0",
+		Platform: specs.Platform{
+			OS:   "SunOS",
+			Arch: runtime.GOARCH,
+		},
+	}
+	s.Solaris = &specs.Solaris{}
+	return s
+}
+
+// DefaultLinuxSpec returns default oci spec used by docker for Linux
+func DefaultLinuxSpec() specs.Spec {
 	s := specs.Spec{
 		Version: specs.Version,
 		Platform: specs.Platform{
-			OS:   runtime.GOOS,
+			OS:   "linux",
 			Arch: runtime.GOARCH,
 		},
 	}

@@ -1,17 +1,24 @@
 package daemon
 
 import (
+	"fmt"
 	"syscall"
 
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/oci"
 	"github.com/docker/docker/pkg/sysinfo"
-	"github.com/opencontainers/runtime-spec/specs-go"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
-	s := oci.DefaultSpec()
+	img, err := daemon.imageStore.Get(c.ImageID)
+	if err != nil {
+		return nil, err
+	}
+
+	s := oci.DefaultOSSpec(img.OS)
+	fmt.Printf("Spec gotten: %+v\n", img.OS)
 
 	linkedEnv, err := daemon.setupLinkedContainers(c)
 	if err != nil {
