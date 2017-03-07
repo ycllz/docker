@@ -223,15 +223,7 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 		return err
 	}
 
-	// Lets do this hack to distinguish between linux and windows
-	// Linux images only suppported on windowsfilter.
-	layerID := layer.cacheID
-	if runtime.GOOS == "windows" && ls.driver.String() == "windowsfilter" {
-		// Append the OS information infront of the string.
-		fmt.Println(layer.descriptor.OS)
-		layerID = winlx.EncodeOS(layerID, layer.descriptor.OS)
-	}
-	applySize, err := ls.driver.ApplyDiff(layerID, parent, rdr)
+	applySize, err := ls.driver.ApplyDiff(layer.cacheID, parent, rdr)
 	if err != nil {
 		return err
 	}
@@ -288,7 +280,14 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		descriptor:     descriptor,
 	}
 
-	if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
+	// Lets do this hack to distinguish between linux and windows
+	// Linux images only suppported on windowsfilter.
+	layerID := layer.cacheID
+	if runtime.GOOS == "windows" && ls.driver.String() == "windowsfilter" {
+		// Append the OS information infront of the string.
+		layerID = winlx.EncodeOS(layerID, layer.descriptor.OS)
+	}
+	if err = ls.driver.Create(layerID, pid, nil); err != nil {
 		return nil, err
 	}
 

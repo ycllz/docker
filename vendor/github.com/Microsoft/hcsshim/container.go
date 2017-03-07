@@ -3,6 +3,7 @@ package hcsshim
 import (
 	"encoding/json"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -105,6 +106,7 @@ type ProcessListItem struct {
 
 // CreateContainer creates a new container with the given configuration but does not start it.
 func CreateContainer(id string, c *ContainerConfig) (Container, error) {
+	debug.PrintStack()
 	operation := "CreateContainer"
 	title := "HCSShim::" + operation
 

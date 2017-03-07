@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/graphdriver"
+	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
@@ -71,6 +73,11 @@ func (c *checker) IsMounted(path string) bool {
 	return false
 }
 
+type osCount struct {
+	count  int
+	osName string
+}
+
 // Driver represents a windows graph driver.
 type Driver struct {
 	// info stores the shim driver information
@@ -80,6 +87,10 @@ type Driver struct {
 	// restoring containers when the daemon dies.
 	cacheMu sync.Mutex
 	cache   map[string]string
+
+	// Cache for storing the OS for each image.
+	osCacheMu sync.Mutex
+	osCache   map[string]*osCount
 }
 
 // InitFilter returns a new Windows storage filter driver.
@@ -98,15 +109,116 @@ func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap)
 		return nil, fmt.Errorf("%s is on an ReFS volume - ReFS volumes are not supported", home)
 	}
 
+	// Rebuild the OS mappings.
+	mappings, err := rebuildOSMappings(home)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println(mappings)
+
 	d := &Driver{
 		info: hcsshim.DriverInfo{
 			HomeDir: home,
 			Flavour: filterDriver,
 		},
-		cache: make(map[string]string),
-		ctr:   graphdriver.NewRefCounter(&checker{}),
+		cache:   make(map[string]string),
+		ctr:     graphdriver.NewRefCounter(&checker{}),
+		osCache: mappings,
 	}
 	return d, nil
+}
+
+func rebuildOSMappings(home string) (map[string]*osCount, error) {
+	mappings := make(map[string]*osCount)
+
+	// First, search through the imagedb to get images
+	imgDB := filepath.Join(home, "..", "image\\windowsfilter\\imagedb\\content\\sha256")
+	files, err := ioutil.ReadDir(imgDB)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Probably the first time starting a daemon.
+			return mappings, nil
+		}
+		return nil, err
+	}
+
+	for _, f := range files {
+		// Now, parse the json file to get the diffIDs
+		data, err := ioutil.ReadFile(filepath.Join(imgDB, f.Name()))
+		if err != nil {
+			return nil, err
+		}
+
+		osName, ids, err := parseImageJSON(data)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println(osName, ids)
+
+		// We actually just only need the base diff ID, this has the nice property
+		// that it's a folder in the layerdb.
+		baseID := ids[0]
+
+		// Get the diff ID -> cache ID map and add to mappings.
+		cacheID, err := getCacheID(home, baseID)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// Seems like the layerdb got deleted but the image one did not.
+				// Not a fatal error, so just continue
+				logrus.Warnf("ImageDB and layerDB not in sync for image=%s, layer=%s", f.Name(), baseID)
+				continue
+			}
+			return nil, err
+		}
+		fmt.Println(osName, baseID, cacheID)
+
+		if _, ok := mappings[cacheID]; !ok {
+			mappings[cacheID] = &osCount{count: 0, osName: osName}
+		}
+		mappings[cacheID].count++
+	}
+	return mappings, nil
+}
+
+func parseImageJSON(data []byte) (string, []string, error) {
+	var jsonMap map[string]*json.RawMessage
+	err := json.Unmarshal(data, &jsonMap)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// First, get the OS from the json config.
+	osName, ok := jsonMap["os"]
+	if !ok {
+		return "", nil, fmt.Errorf("Invalid json config. No OS found")
+	}
+
+	// Second, get the diff IDs
+	rootfsRaw, ok := jsonMap["rootfs"]
+	if !ok {
+		return "", nil, fmt.Errorf("Invalid json config. No rootfs")
+	}
+
+	var img image.RootFS
+	err = json.Unmarshal(*rootfsRaw, &img)
+	if err != nil {
+		return "", nil, err
+	}
+
+	diffIds := make([]string, len(img.DiffIDs))
+	for i, id := range img.DiffIDs {
+		diffIds[i] = strings.TrimPrefix(id.String(), "sha256:")
+	}
+	return string(*osName), diffIds, nil
+}
+
+func getCacheID(home, baseID string) (string, error) {
+	layerPath := filepath.Join(home, "..", "image\\windowsfilter\\layerdb\\sha256", baseID, "cache-id")
+	data, err := ioutil.ReadFile(layerPath)
+	if err != nil {
+		return "", err
+	}
+	return string(data), err
 }
 
 // win32FromHresult is a helper function to get the win32 error code from an HRESULT
@@ -170,7 +282,8 @@ func (d *Driver) Exists(id string) bool {
 // CreateReadWrite creates a layer that is writable for use as a container
 // file system.
 func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts) error {
-	logrus.Println("XXX: CreateReadWrite")
+	debug.PrintStack()
+	fmt.Println(id, parent)
 	if opts != nil {
 		return d.create(id, parent, opts.MountLabel, false, opts.StorageOpt)
 	}
@@ -179,22 +292,56 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 
 // Create creates a new read-only layer with the given id.
 func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
-	logrus.Println("XXX: Create")
+	debug.PrintStack()
+	fmt.Println("Create:", id, parent)
+
+	// Resolve the OS type
+	osName, realID, err := winlx.DecodeOS(id)
+	if err != nil {
+		return err
+	}
+	id = realID
+
+	// Now, determine the ancestor & then add to ID-to-OS mappings.
+	root, err := d.getOldestAncestor(id, parent)
+	if err != nil {
+		return err
+	}
+	d.addOSToID(root, osName)
+	fmt.Printf("Caching: (%s) -> map[%s] = %s\n", id, root, osName)
+	fmt.Printf("OS MAP: %v\n", d.osCache)
+
 	if opts != nil {
 		return d.create(id, parent, opts.MountLabel, true, opts.StorageOpt)
 	}
 	return d.create(id, parent, "", true, nil)
 }
 
-func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt map[string]string) error {
+func (d *Driver) getOldestAncestor(id string, parent string) (string, error) {
+	root, err := d.resolveID(id)
+	if err != nil {
+		return "", err
+	}
+
+	_, layerChain, err := d.getLayerChainFromParent(parent)
+	if err != nil {
+		return "", err
+	}
+	if len(layerChain) != 0 {
+		root = getOldestFromLayerChain(layerChain)
+	}
+	return root, nil
+}
+
+func (d *Driver) getLayerChainFromParent(parent string) (string, []string, error) {
 	rPId, err := d.resolveID(parent)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
 	parentChain, err := d.getLayerChain(rPId)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
 	var layerChain []string
@@ -202,7 +349,7 @@ func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt
 	if rPId != "" {
 		parentPath, err := hcsshim.GetLayerMountPath(d.info, rPId)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
 		if _, err := os.Stat(filepath.Join(parentPath, "Files")); err == nil {
 			// This is a legitimate parent layer (not the empty "-init" layer),
@@ -212,32 +359,57 @@ func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt
 	}
 
 	layerChain = append(layerChain, parentChain...)
+	return rPId, layerChain, nil
+}
+
+func getOldestFromLayerChain(layerChain []string) string {
+	return filepath.Base(layerChain[len(layerChain)-1])
+}
+
+func (d *Driver) addOSToID(id, osName string) {
+	d.osCacheMu.Lock()
+	if _, ok := d.osCache[id]; !ok {
+		d.osCache[id] = &osCount{count: 0, osName: osName}
+	}
+	d.osCache[id].count++
+	d.osCacheMu.Unlock()
+}
+
+func (d *Driver) lookupOSFromID(id string) string {
+	d.osCacheMu.Lock()
+	osCountStruct := d.osCache[id]
+	d.osCacheMu.Unlock()
+	return osCountStruct.osName
+}
+
+func (d *Driver) deleteOSFromID(id string) {
+	d.osCacheMu.Lock()
+	if _, ok := d.osCache[id]; ok {
+		d.osCache[id].count--
+		if d.osCache[id].count <= 0 {
+			delete(d.osCache, id)
+		}
+	}
+	d.osCacheMu.Unlock()
+}
+
+func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt map[string]string) error {
+	rPId, layerChain, err := d.getLayerChainFromParent(parent)
+	if err != nil {
+		return err
+	}
 
 	if readOnly {
-		if err := hcsshim.CreateLayer(d.info, id, rPId); err != nil {
-			return err
-		}
-		logrus.Debugln("XXX: CREATED LAYER")
+		err = hcsshim.CreateLayer(d.info, id, rPId)
 	} else {
-		var parentPath string
-		if len(layerChain) != 0 {
-			parentPath = layerChain[0]
-		}
+		err = d.createRWLayer(id, rPId, layerChain, storageOpt)
+	}
 
-		if err := hcsshim.CreateSandboxLayer(d.info, id, parentPath, layerChain); err != nil {
-			return err
+	if err != nil {
+		if err2 := hcsshim.DestroyLayer(d.info, id); err2 != nil {
+			logrus.Warnf("Failed to DestroyLayer %s: %s", id, err2)
 		}
-
-		storageOptions, err := parseStorageOpt(storageOpt)
-		if err != nil {
-			return fmt.Errorf("Failed to parse storage options - %s", err)
-		}
-
-		if storageOptions.size != 0 {
-			if err := hcsshim.ExpandSandboxSize(d.info, id, storageOptions.size); err != nil {
-				return err
-			}
-		}
+		return err
 	}
 
 	if _, err := os.Lstat(d.dir(parent)); err != nil {
@@ -257,6 +429,55 @@ func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt
 	return nil
 }
 
+func (d *Driver) createRWLayer(id, rPId string, layerChain []string, storageOpt map[string]string) error {
+	// Write layer. First check for OS
+	var parentPath string
+	var rootID = id
+	if len(layerChain) != 0 {
+		parentPath = layerChain[0]
+		rootID = getOldestFromLayerChain(layerChain)
+	}
+
+	osName := d.lookupOSFromID(rootID)
+	if osName == "" {
+		return fmt.Errorf("Unknown OS. Layer ID: %s", id)
+	}
+
+	if osName == "windows" {
+		return d.createRWLayerWindows(id, parentPath, layerChain, storageOpt)
+	}
+
+	return d.createRWLayerLinux(id, rPId)
+}
+
+func (d *Driver) createRWLayerWindows(id, parentPath string, layerChain []string, storageOpt map[string]string) error {
+	if err := hcsshim.CreateSandboxLayer(d.info, id, parentPath, layerChain); err != nil {
+		return err
+	}
+
+	storageOptions, err := parseStorageOpt(storageOpt)
+	if err != nil {
+		return fmt.Errorf("Failed to parse storage options - %s", err)
+	}
+
+	if storageOptions.size != 0 {
+		if err := hcsshim.ExpandSandboxSize(d.info, id, storageOptions.size); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Driver) createRWLayerLinux(id, rPId string) error {
+	err := hcsshim.CreateLayer(d.info, id, rPId)
+	if err != nil {
+		return err
+	}
+
+	sandboxPath := filepath.Join(d.info.HomeDir, id)
+	return winlx.ServiceVMCreateSandbox(sandboxPath)
+}
+
 // dir returns the absolute path to the layer.
 func (d *Driver) dir(id string) string {
 	return filepath.Join(d.info.HomeDir, filepath.Base(id))
@@ -265,6 +486,12 @@ func (d *Driver) dir(id string) string {
 // Remove unmounts and removes the dir information.
 func (d *Driver) Remove(id string) error {
 	rID, err := d.resolveID(id)
+	if err != nil {
+		return err
+	}
+
+	// Get the cached driver OS entry.
+	rootCacheID, err := d.getOldestAncestor("", rID)
 	if err != nil {
 		return err
 	}
@@ -324,6 +551,9 @@ func (d *Driver) Remove(id string) error {
 		logrus.Errorf("Failed to DestroyLayer %s: %s", id, err)
 	}
 
+	// Remove the entry from the driver OS cache
+	fmt.Printf("Delete: %s from %v\n", rootCacheID, d.osCache)
+	d.deleteOSFromID(rootCacheID)
 	return nil
 }
 
@@ -340,6 +570,7 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 		return d.cache[rID], nil
 	}
 
+	logrus.Debugf("WindowsGraphDriver Get() Getting layer chain for id %s", id)
 	// Getting the layer paths must be done outside of the lock.
 	layerChain, err := d.getLayerChain(rID)
 	if err != nil {
@@ -379,6 +610,7 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 		dir = d.dir(id)
 	}
 
+	logrus.Debugf("WindowsGraphDriver Get() Success! Returning %s", dir)
 	return dir, nil
 }
 
@@ -506,14 +738,6 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // The layer should not be mounted when calling this function
 func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	var layerChain []string
-	fmt.Println(id)
-
-	// First have to split the OS part of the id
-	osType, id2 := winlx.DecodeOS(id)
-	if id2 == "" {
-		return 0, fmt.Errorf("Invalid ID: %s", id)
-	}
-	id = id2
 
 	if parent != "" {
 		rPId, err := d.resolveID(parent)
@@ -532,7 +756,20 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 		layerChain = append(layerChain, parentChain...)
 	}
 
-	size, err := d.importLayer(id, diff, osType, layerChain)
+	// Get the OS before importing layer.
+	root, err := d.getOldestAncestor(id, parent)
+	if err != nil {
+		return 0, err
+	}
+
+	fmt.Printf("ApplyDiff got: id=%s parent=%s root=%s layerChain=%v -> osCache=%v", id, parent, root, layerChain, d.osCache)
+	osName := d.lookupOSFromID(root)
+
+	if osName == "" {
+		return 0, fmt.Errorf("Unknown layer OS for: %s", id)
+	}
+
+	size, err := d.importLayer(id, diff, osName, layerChain)
 	if err != nil {
 		return 0, err
 	}
@@ -720,9 +957,9 @@ func writeLayerFromTar(r io.Reader, w hcsshim.LayerWriter, root string) (int64, 
 }
 
 // importLayer adds a new layer to the tag and graph store based on the given data.
-func (d *Driver) importLayer(id string, layerData io.Reader, osType string, parentLayerPaths []string) (size int64, err error) {
-	if !noreexec && osType == "windows" {
-		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id, osType}, parentLayerPaths...)...)
+func (d *Driver) importLayer(id string, layerData io.Reader, osName string, parentLayerPaths []string) (size int64, err error) {
+	if !noreexec && osName == "windows" {
+		cmd := reexec.Command(append([]string{"docker-windows-write-layer", d.info.HomeDir, id, osName}, parentLayerPaths...)...)
 		output := bytes.NewBuffer(nil)
 		cmd.Stdin = layerData
 		cmd.Stdout = output
@@ -737,7 +974,7 @@ func (d *Driver) importLayer(id string, layerData io.Reader, osType string, pare
 		}
 
 		return strconv.ParseInt(output.String(), 10, 64)
-	} else if osType == "windows" {
+	} else if osName == "windows" {
 		return writeLayer(layerData, d.info.HomeDir, id, parentLayerPaths...)
 	}
 

@@ -112,3 +112,15 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 	}
 	return size, err
 }
+
+func ServiceVMCreateSandbox(sandboxFolder string) error {
+	// Right now just use powershell and bypass the service VM
+	sandboxPath := path.Join(sandboxFolder, "sandbox.vhdx")
+	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+	return exec.Command("powershell",
+		"New-VHD",
+		"-Path", sandboxPath,
+		"-Dynamic",
+		"-BlockSizeBytes", "1MB",
+		"-SizeBytes", "16GB").Run()
+}
