@@ -351,7 +351,13 @@ func (d *Driver) getLayerChainFromParent(parent string) (string, []string, error
 		if err != nil {
 			return "", nil, err
 		}
-		if _, err := os.Stat(filepath.Join(parentPath, "Files")); err == nil {
+
+		files, err := ioutil.ReadDir(parentPath)
+		if err != nil {
+			return "", nil, err
+		}
+
+		if len(files) != 0 {
 			// This is a legitimate parent layer (not the empty "-init" layer),
 			// so include it in the layer chain.
 			layerChain = []string{parentPath}
@@ -375,11 +381,15 @@ func (d *Driver) addOSToID(id, osName string) {
 	d.osCacheMu.Unlock()
 }
 
-func (d *Driver) lookupOSFromID(id string) string {
+func (d *Driver) lookupOSFromID(id string) (string, bool) {
 	d.osCacheMu.Lock()
-	osCountStruct := d.osCache[id]
+	count, ok := d.osCache[id]
 	d.osCacheMu.Unlock()
-	return osCountStruct.osName
+
+	if !ok {
+		return "", ok
+	}
+	return count.osName, ok
 }
 
 func (d *Driver) deleteOSFromID(id string) {
@@ -433,13 +443,15 @@ func (d *Driver) createRWLayer(id, rPId string, layerChain []string, storageOpt 
 	// Write layer. First check for OS
 	var parentPath string
 	var rootID = id
+
+	fmt.Printf("CreateRWLayer: %s=id %s=parent %v=layerchain\n", id, rPId, layerChain)
 	if len(layerChain) != 0 {
 		parentPath = layerChain[0]
 		rootID = getOldestFromLayerChain(layerChain)
 	}
 
-	osName := d.lookupOSFromID(rootID)
-	if osName == "" {
+	osName, ok := d.lookupOSFromID(rootID)
+	if !ok {
 		return fmt.Errorf("Unknown OS. Layer ID: %s", id)
 	}
 
@@ -763,9 +775,9 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	}
 
 	fmt.Printf("ApplyDiff got: id=%s parent=%s root=%s layerChain=%v -> osCache=%v", id, parent, root, layerChain, d.osCache)
-	osName := d.lookupOSFromID(root)
+	osName, ok := d.lookupOSFromID(root)
 
-	if osName == "" {
+	if !ok {
 		return 0, fmt.Errorf("Unknown layer OS for: %s", id)
 	}
 

@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -104,20 +103,44 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 
 	osName := spec.Platform.OS
 	if osName == "windows" {
-		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio)
 	}
-	return clnt.createLinux(spec)
+	return clnt.createLinux(containerID, spec)
 }
 
-func (clnt *client) createLinux(spec specs.Spec) error {
-	// Right now, the manifest file is hardcoded and we just shell out to it
+func (clnt *client) createLinux(containerID string, spec specs.Spec) error {
+	// Normally, we would convert the oci spec to the interface used by the HCS
+	// However, for the test vmcompute.dll, the json spec is hard coded,
+	// So we just use that one.
 	specJSON, err := json.MarshalIndent(spec, "", "    ")
 	if err != nil {
 		return err
 	}
 	os.Stdout.Write(specJSON)
 
-	return exec.Command("powershell", ".\\launch.ps1").Run()
+	specFile := "C:\\hcstools\\linuxvm.json"
+	rawSpec, err := ioutil.ReadFile(specFile)
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugf("Creating compute system with: id=%s spec=%s", containerID, string(rawSpec))
+	hcsContainer, err := hcsshim.CreateContainerRaw(containerID, rawSpec)
+	if err != nil {
+		return err
+	}
+
+	// Call start, and if it fails, delete the container from our
+	// internal structure, start will keep HCS in sync by deleting the
+	// container there.
+	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
+	if err := hcsContainer.Start(); err != nil {
+		clnt.deleteContainer(containerID)
+		return err
+	}
+
+	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
+	return nil
 }
 
 func (clnt *client) createWindows(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
@@ -216,9 +239,9 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 				return err
 			}
 		}
-		/*if uvmImagePath == "" {
+		if uvmImagePath == "" {
 			return errors.New("utility VM image could not be found")
-		}*/
+		}
 		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
 	} else {
 		configuration.VolumePath = spec.Root.Path

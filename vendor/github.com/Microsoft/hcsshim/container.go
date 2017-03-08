@@ -3,7 +3,6 @@ package hcsshim
 import (
 	"encoding/json"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -104,9 +103,45 @@ type ProcessListItem struct {
 	UserTime100ns                uint64    `json:",omitempty"`
 }
 
+// CreateContainerRaw directly calls the hcsCreateComputeSystem and then
+// returns a container object
+func CreateContainerRaw(id string, c []byte) (Container, error) {
+	operation := "CreateContainerRaw"
+	title := "HCSShim::" + operation
+
+	container := &container{
+		id: id,
+	}
+
+	configuration := string(c)
+	logrus.Debugf(title+" id=%s config=%s", id, configuration)
+
+	var (
+		resultp  *uint16
+		identity syscall.Handle
+	)
+
+	gid := NewGUID(id)
+	createError := hcsCreateComputeSystem(gid.ToString(), configuration, identity, &container.handle, &resultp)
+
+	if createError == nil || IsPending(createError) {
+		if err := container.registerCallback(); err != nil {
+			return nil, makeContainerError(container, operation, "", err)
+		}
+	}
+
+	err := processAsyncHcsResult(createError, resultp, container.callbackNumber, hcsNotificationSystemCreateCompleted, &defaultTimeout)
+	if err != nil {
+		return nil, makeContainerError(container, operation, configuration, err)
+	}
+
+	logrus.Debugf(title+" succeeded id=%s handle=%d", id, container.handle)
+	runtime.SetFinalizer(container, closeContainer)
+	return container, nil
+}
+
 // CreateContainer creates a new container with the given configuration but does not start it.
 func CreateContainer(id string, c *ContainerConfig) (Container, error) {
-	debug.PrintStack()
 	operation := "CreateContainer"
 	title := "HCSShim::" + operation
 
