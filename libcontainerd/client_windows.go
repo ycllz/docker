@@ -1,13 +1,14 @@
 package libcontainerd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -100,8 +101,26 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	clnt.lock(containerID)
 	defer clnt.unlock(containerID)
 	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
-	debug.PrintStack()
 
+	osName := spec.Platform.OS
+	if osName == "windows" {
+		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+	}
+	return clnt.createLinux(spec)
+}
+
+func (clnt *client) createLinux(spec specs.Spec) error {
+	// Right now, the manifest file is hardcoded and we just shell out to it
+	specJSON, err := json.MarshalIndent(spec, "", "    ")
+	if err != nil {
+		return err
+	}
+	os.Stdout.Write(specJSON)
+
+	return exec.Command("powershell", ".\\launch.ps1").Run()
+}
+
+func (clnt *client) createWindows(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
 	configuration := &hcsshim.ContainerConfig{
 		SystemType: "Container",
 		Name:       containerID,
@@ -275,7 +294,6 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 
 	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
 	return nil
-
 }
 
 // AddProcess is the handler for adding a process to an already running
