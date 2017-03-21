@@ -114,7 +114,12 @@ func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(mappings)
+
+	fmt.Println("MAPPINGS")
+	for k, v := range mappings {
+		fmt.Printf("%s -> %v\n", k, *v)
+	}
+	fmt.Println()
 
 	d := &Driver{
 		info: hcsshim.DriverInfo{
@@ -209,7 +214,7 @@ func parseImageJSON(data []byte) (string, []string, error) {
 	for i, id := range img.DiffIDs {
 		diffIds[i] = strings.TrimPrefix(id.String(), "sha256:")
 	}
-	return string(*osName), diffIds, nil
+	return strings.Trim(string(*osName), "\""), diffIds, nil
 }
 
 func getCacheID(home, baseID string) (string, error) {
@@ -454,6 +459,7 @@ func (d *Driver) createRWLayer(id, rPId string, layerChain []string, storageOpt 
 	if !ok {
 		return fmt.Errorf("Unknown OS. Layer ID: %s", id)
 	}
+	fmt.Println("OS NAME", osName)
 
 	if osName == "windows" {
 		return d.createRWLayerWindows(id, parentPath, layerChain, storageOpt)

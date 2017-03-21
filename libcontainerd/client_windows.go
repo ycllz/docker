@@ -102,48 +102,6 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
 
 	osName := spec.Platform.OS
-	if osName == "windows" {
-		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio)
-	}
-	return clnt.createLinux(containerID, spec)
-}
-
-func (clnt *client) createLinux(containerID string, spec specs.Spec) error {
-	// Normally, we would convert the oci spec to the interface used by the HCS
-	// However, for the test vmcompute.dll, the json spec is hard coded,
-	// So we just use that one.
-	specJSON, err := json.MarshalIndent(spec, "", "    ")
-	if err != nil {
-		return err
-	}
-	os.Stdout.Write(specJSON)
-
-	specFile := "C:\\hcstools\\linuxvm.json"
-	rawSpec, err := ioutil.ReadFile(specFile)
-	if err != nil {
-		return err
-	}
-
-	logrus.Debugf("Creating compute system with: id=%s spec=%s", containerID, string(rawSpec))
-	hcsContainer, err := hcsshim.CreateContainerRaw(containerID, rawSpec)
-	if err != nil {
-		return err
-	}
-
-	// Call start, and if it fails, delete the container from our
-	// internal structure, start will keep HCS in sync by deleting the
-	// container there.
-	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
-	if err := hcsContainer.Start(); err != nil {
-		clnt.deleteContainer(containerID)
-		return err
-	}
-
-	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
-	return nil
-}
-
-func (clnt *client) createWindows(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
 	configuration := &hcsshim.ContainerConfig{
 		SystemType: "Container",
 		Name:       containerID,
@@ -223,7 +181,7 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 		return fmt.Errorf("no layer option or paths were supplied to the runtime")
 	}
 
-	if configuration.HvPartition {
+	if configuration.HvPartition && osName == "windows" {
 		// Find the upper-most utility VM image, since the utility VM does not
 		// use layering in RS1.
 		// TODO @swernli/jhowardmsft at some point post RS1 this may be re-locatable.
@@ -243,8 +201,12 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 			return errors.New("utility VM image could not be found")
 		}
 		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
-	} else {
+	} else if osName == "windows" {
 		configuration.VolumePath = spec.Root.Path
+	} else {
+		// ATTN: Some place holder for Linux to pass some internal Windows stuff
+		// This isn't actually needed for Linux
+		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\scratch.vhdx"}
 	}
 
 	configuration.LayerFolderPath = layerOpt.LayerFolderPath
@@ -276,6 +238,17 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 		}
 	}
 	configuration.MappedDirectories = mds
+
+	if osName == "linux" {
+		configuration.ContainerType = "Linux"
+		// Add the oci config spec.
+		ociSpecBytes, err := json.MarshalIndent(spec, "", "    ")
+		if err != nil {
+			return err
+		}
+		ociSpecRaw := json.RawMessage(ociSpecBytes)
+		configuration.LinuxContainerSpec = &ociSpecRaw
+	}
 
 	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
 	if err != nil {

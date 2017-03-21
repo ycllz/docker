@@ -57,6 +57,7 @@ func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Contain
 		}
 		// Reverse order, expecting parent most first
 		layerOpts.LayerPaths = append([]string{layerPath}, layerOpts.LayerPaths...)
+		fmt.Println("GOT LAYER PATH", layerPath)
 	}
 
 	// Get endpoints for the libnetwork allocated networks to the container
@@ -143,6 +144,8 @@ func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Contain
 			createOptions = append(createOptions, credentialsOpts)
 		}
 	}
+
+	fmt.Println("Layer Opts", layerOpts.LayerPaths)
 
 	// Now add the remaining options.
 	createOptions = append(createOptions, &libcontainerd.FlushOption{IgnoreFlushesDuringBoot: !container.HasBeenStartedBefore})
