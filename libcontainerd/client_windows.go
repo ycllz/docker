@@ -238,7 +238,7 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	}
 	configuration.MappedDirectories = mds
 
-	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
+	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration, "")
 	if err != nil {
 		return err
 	}
