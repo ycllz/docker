@@ -169,7 +169,6 @@ func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	header := ServiceVMHeader{
 		Command:           ExportCmd,
@@ -180,44 +179,30 @@ func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 
 	buf, err := SerializeHeader(&header)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 
 	fmt.Println("VHD PATH = ", vhdFile.Name())
 	err = sendLayer(conn, buf, vhdFile)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 
 	fmt.Println("Waiting for server response")
 	_, err = waitForResponse(conn)
 	if err != nil {
-		return nil, err
-	}
-
-	// copy to tmp file.
-	tmpFile, err := ioutil.TempFile("", "docker-tar")
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println("Copying tmpFile")
-	_, err = io.Copy(tmpFile, conn)
-	if err != nil && err != hvsock.ErrSocketClosed && err != hvsock.ErrSocketReadClosed {
-		os.Remove(tmpFile.Name())
-		tmpFile.Close()
+		conn.Close()
 		return nil, err
 	}
 
 	reader, writer := io.Pipe()
 	go func() {
-		defer os.Remove(tmpFile.Name())
-		defer tmpFile.Close()
 		defer writer.Close()
-
-		fmt.Println("Seeking to start of tmp file.")
-		tmpFile.Seek(0, 0)
-		io.Copy(writer, tmpFile)
+		defer conn.Close()
+		fmt.Println("Copying result over hvsock")
+		io.Copy(writer, conn)
 	}()
 	return reader, nil
 }

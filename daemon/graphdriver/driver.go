@@ -41,6 +41,7 @@ var (
 type CreateOpts struct {
 	MountLabel string
 	StorageOpt map[string]string
+	OS         string
 }
 
 // InitFunc initializes the storage driver.
