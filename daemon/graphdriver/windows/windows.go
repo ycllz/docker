@@ -301,11 +301,10 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
 	fmt.Println("Create:", id, parent)
 
 	// Resolve the OS type
-	osName, realID, err := winlx.DecodeOS(id)
-	if err != nil {
-		return err
+	if opts == nil || opts.OS == "" {
+		return fmt.Errorf("Cannot create Layer without OS type in layer")
 	}
-	id = realID
+	osName := opts.OS
 
 	// Now, determine the ancestor & then add to ID-to-OS mappings.
 	root, err := d.getOldestAncestor(id, parent)
@@ -457,7 +456,8 @@ func (d *Driver) createRWLayer(id, rPId string, layerChain []string, storageOpt 
 
 	osName, ok := d.lookupOSFromID(rootID)
 	if !ok {
-		return fmt.Errorf("Unknown OS. Layer ID: %s", id)
+		// Windows cannot have a RW layer without a parent, so assume its linux.
+		osName = "linux"
 	}
 	fmt.Println("OS NAME", osName)
 

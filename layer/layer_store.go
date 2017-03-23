@@ -284,10 +284,7 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		descriptor:     descriptor,
 	}
 
-	// Lets do this hack to distinguish between linux and windows
-	// Linux images only suppported on windowsfilter.
-	layerID := ls.encodeOS(descriptor.OS, layer.cacheID)
-	if err = ls.driver.Create(layerID, pid, nil); err != nil {
+	if err = ls.driver.Create(layer.cacheID, pid, &graphdriver.CreateOpts{OS: descriptor.OS}); err != nil {
 		return nil, err
 	}
 
