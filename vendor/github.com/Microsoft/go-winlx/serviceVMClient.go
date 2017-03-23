@@ -11,6 +11,8 @@ import (
 
 	"strings"
 
+	"io/ioutil"
+
 	"github.com/Microsoft/hvsock"
 )
 
@@ -22,12 +24,12 @@ func init() {
 	ServiceVMId, _ = hvsock.GUIDFromString(strings.TrimSpace(string(result)))
 }
 
-func connectToServer() (net.Conn, error) {
+func connectToServer() (hvsock.Conn, error) {
 	hvAddr := hvsock.HypervAddr{VMID: ServiceVMId, ServiceID: ServiceVMSocketId}
 	return hvsock.Dial(hvAddr)
 }
 
-func sendImportLayer(c net.Conn, hdr []byte, r io.Reader) error {
+func sendLayer(c hvsock.Conn, hdr []byte, r io.Reader) error {
 	// First send the header, then the payload, then EOF
 	_, err := c.Write(hdr)
 	if err != nil {
@@ -35,10 +37,11 @@ func sendImportLayer(c net.Conn, hdr []byte, r io.Reader) error {
 	}
 
 	_, err = io.Copy(c, r)
+	if err != nil {
+		return err
+	}
 
-	// I originally expected that c.CloseWrite() is required to send EOF, but
-	// it looks like io.Copy sends EOF without sending the shutdown write control code.
-	return err
+	return c.CloseWrite()
 }
 
 func waitForResponse(c net.Conn) (int64, error) {
@@ -77,6 +80,29 @@ func writeVHDFile(path string, r io.Reader) error {
 }
 
 func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
+	// Hv sockets don't support graceful/unidirectional shutdown, and the
+	// hvsock wrapper works weirdly with the tar reader, so we first write the
+	// contents to a temp file.
+	tmpFile, err := ioutil.TempFile("", "docker-tar")
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	fmt.Println("Copying tmpFile")
+	_, err = io.Copy(tmpFile, reader)
+	if err != nil {
+		return 0, err
+	}
+
+	fmt.Println("Seeking to start of tmp file.")
+	_, err = tmpFile.Seek(0, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	fmt.Println("Connecting to server")
 	conn, err := connectToServer()
 	if err != nil {
 		return 0, err
@@ -85,7 +111,7 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 
 	header := ServiceVMHeader{
 		Command:           ImportCmd,
-		Version:           Version2,
+		Version:           0,
 		SCSIControllerNum: 0,
 		SCSIDiskNum:       0,
 	}
@@ -95,22 +121,105 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 		return 0, err
 	}
 
-	err = sendImportLayer(conn, buf, reader)
+	fmt.Println("Sending message to service VM")
+	err = sendLayer(conn, buf, tmpFile)
 	if err != nil {
 		return 0, err
 	}
 
-	size, err := waitForResponse(conn)
+	fmt.Println("Waiting for server response")
+	rSize, err := waitForResponse(conn)
 	if err != nil {
 		return 0, err
 	}
 
+	fmt.Println("writing vhd to file.")
 	// We are getting the VHD stream, so write it to file
 	err = writeVHDFile(path.Join(layerPath, LayerVHDName), conn)
 	if err != nil {
-		size = 0
+		rSize = 0
 	}
-	return size, err
+	return rSize, err
+}
+
+func getVHDFile(vhdPath string) (*os.File, error) {
+	// The vhd could be either layer.vhd or sandbox.vhdx depending on
+	// if we are a ro layer or r/w layer
+
+	vhdFile, err := os.Open(path.Join(vhdPath, "layer.vhd"))
+	if err == nil {
+		return vhdFile, err
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	// Try the sandbox path
+	vhdFile, err = os.Open(path.Join(vhdPath, "sandbox.vhdx"))
+	return vhdFile, err
+}
+
+func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
+	vhdFile, err := getVHDFile(vhdPath)
+	if err != nil {
+		return nil, err
+	}
+	defer vhdFile.Close()
+
+	conn, err := connectToServer()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	header := ServiceVMHeader{
+		Command:           ExportCmd,
+		Version:           0,
+		SCSIControllerNum: 0,
+		SCSIDiskNum:       0,
+	}
+
+	buf, err := SerializeHeader(&header)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("VHD PATH = ", vhdFile.Name())
+	err = sendLayer(conn, buf, vhdFile)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("Waiting for server response")
+	_, err = waitForResponse(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	// copy to tmp file.
+	tmpFile, err := ioutil.TempFile("", "docker-tar")
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("Copying tmpFile")
+	_, err = io.Copy(tmpFile, conn)
+	if err != nil && err != hvsock.ErrSocketClosed && err != hvsock.ErrSocketReadClosed {
+		os.Remove(tmpFile.Name())
+		tmpFile.Close()
+		return nil, err
+	}
+
+	reader, writer := io.Pipe()
+	go func() {
+		defer os.Remove(tmpFile.Name())
+		defer tmpFile.Close()
+		defer writer.Close()
+
+		fmt.Println("Seeking to start of tmp file.")
+		tmpFile.Seek(0, 0)
+		io.Copy(writer, tmpFile)
+	}()
+	return reader, nil
 }
 
 func ServiceVMCreateSandbox(sandboxFolder string) error {

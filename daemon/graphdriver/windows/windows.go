@@ -323,7 +323,7 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
 }
 
 func (d *Driver) getOldestAncestor(id string, parent string) (string, error) {
-	root, err := d.resolveID(id)
+	rID, err := d.resolveID(id)
 	if err != nil {
 		return "", err
 	}
@@ -332,10 +332,8 @@ func (d *Driver) getOldestAncestor(id string, parent string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(layerChain) != 0 {
-		root = getOldestFromLayerChain(layerChain)
-	}
-	return root, nil
+
+	return getOldestFromLayerChain(rID, layerChain), nil
 }
 
 func (d *Driver) getLayerChainFromParent(parent string) (string, []string, error) {
@@ -373,7 +371,10 @@ func (d *Driver) getLayerChainFromParent(parent string) (string, []string, error
 	return rPId, layerChain, nil
 }
 
-func getOldestFromLayerChain(layerChain []string) string {
+func getOldestFromLayerChain(id string, layerChain []string) string {
+	if len(layerChain) == 0 {
+		return id
+	}
 	return filepath.Base(layerChain[len(layerChain)-1])
 }
 
@@ -447,12 +448,11 @@ func (d *Driver) create(id, parent, mountLabel string, readOnly bool, storageOpt
 func (d *Driver) createRWLayer(id, rPId string, layerChain []string, storageOpt map[string]string) error {
 	// Write layer. First check for OS
 	var parentPath string
-	var rootID = id
 
 	fmt.Printf("CreateRWLayer: %s=id %s=parent %v=layerchain\n", id, rPId, layerChain)
+	rootID := getOldestFromLayerChain(id, layerChain)
 	if len(layerChain) != 0 {
 		parentPath = layerChain[0]
-		rootID = getOldestFromLayerChain(layerChain)
 	}
 
 	osName, ok := d.lookupOSFromID(rootID)
@@ -577,6 +577,7 @@ func (d *Driver) Remove(id string) error {
 
 // Get returns the rootfs path for the id. This will mount the dir at its given path.
 func (d *Driver) Get(id, mountLabel string) (string, error) {
+	debug.PrintStack()
 	logrus.Debugf("WindowsGraphDriver Get() id %s mountLabel %s", id, mountLabel)
 	var dir string
 
@@ -596,26 +597,33 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 		return "", err
 	}
 
-	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
-		d.ctr.Decrement(rID)
-		return "", err
-	}
-	if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
-		d.ctr.Decrement(rID)
-		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
-			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
+	// We bypass all of this if we are running an Linux image.
+	// For Hyper-V containers, the mount ID = ID of the RW layer (so rID)
+	osName, _ := d.lookupOSFromID(getOldestFromLayerChain(rID, layerChain))
+	var mountPath string
+	if osName != "linux" {
+		if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
+			d.ctr.Decrement(rID)
+			return "", err
 		}
-		return "", err
+		if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
+			d.ctr.Decrement(rID)
+			if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
+				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
+			}
+			return "", err
+		}
+
+		mountPath, err = hcsshim.GetLayerMountPath(d.info, rID)
+		if err != nil {
+			d.ctr.Decrement(rID)
+			if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
+				logrus.Warnf("Failed to Deactivate %s: %s", id, err)
+			}
+			return "", err
+		}
 	}
 
-	mountPath, err := hcsshim.GetLayerMountPath(d.info, rID)
-	if err != nil {
-		d.ctr.Decrement(rID)
-		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
-			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
-		}
-		return "", err
-	}
 	d.cacheMu.Lock()
 	d.cache[rID] = mountPath
 	d.cacheMu.Unlock()
@@ -647,6 +655,16 @@ func (d *Driver) Put(id string) error {
 	delete(d.cache, rID)
 	d.cacheMu.Unlock()
 
+	layerChain, err := d.getLayerChain(rID)
+	if err != nil {
+		return err
+	}
+
+	osName, _ := d.lookupOSFromID(getOldestFromLayerChain(rID, layerChain))
+	if osName == "linux" {
+		return nil
+	}
+
 	if err := hcsshim.UnprepareLayer(d.info, rID); err != nil {
 		return err
 	}
@@ -670,6 +688,11 @@ func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
 	layerChain, err := d.getLayerChain(rID)
 	if err != nil {
 		return
+	}
+
+	osName, _ := d.lookupOSFromID(getOldestFromLayerChain(rID, layerChain))
+	if osName == "linux" {
+		return winlx.ServiceVMExportLayer(filepath.Join(d.info.HomeDir, id))
 	}
 
 	// this is assuming that the layer is unmounted

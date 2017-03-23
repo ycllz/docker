@@ -169,11 +169,12 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 		}
 		history = img.History
 		rootFS = img.RootFS
-		osVersion = img.OSVersion
+		osVersion = img.OS
 		osFeatures = img.OSFeatures
 	}
 
-	l, err := daemon.layerStore.Register(rwTar, rootFS.ChainID())
+	rootFSID := daemon.encodeOS(osVersion, rootFS.ChainID())
+	l, err := daemon.layerStore.Register(rwTar, rootFSID)
 	if err != nil {
 		return "", err
 	}

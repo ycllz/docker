@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"runtime"
 	"sync"
 
-	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/distribution"
 	"github.com/docker/docker/daemon/graphdriver"
@@ -240,7 +238,13 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 }
 
 func (ls *layerStore) Register(ts io.Reader, parent ChainID) (Layer, error) {
-	return ls.registerWithDescriptor(ts, parent, distribution.Descriptor{})
+	fmt.Printf("GOT: LAYER %s\n", parent.String())
+	osVersion, parentID, err := ls.decodeOS(parent.String())
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("NOW: ID IS %s\n", parentID)
+	return ls.registerWithDescriptor(ts, ChainID(parentID), distribution.Descriptor{OS: osVersion})
 }
 
 func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descriptor distribution.Descriptor) (Layer, error) {
@@ -282,11 +286,7 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 
 	// Lets do this hack to distinguish between linux and windows
 	// Linux images only suppported on windowsfilter.
-	layerID := layer.cacheID
-	if runtime.GOOS == "windows" && ls.driver.String() == "windowsfilter" {
-		// Append the OS information infront of the string.
-		layerID = winlx.EncodeOS(layerID, layer.descriptor.OS)
-	}
+	layerID := ls.encodeOS(descriptor.OS, layer.cacheID)
 	if err = ls.driver.Create(layerID, pid, nil); err != nil {
 		return nil, err
 	}

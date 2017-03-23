@@ -5,7 +5,7 @@ import "fmt"
 
 const osSplit = "-"
 
-func EncodeOS(id, os string) string {
+func EncodeOS(os, id string) string {
 	return os + osSplit + id
 }
 
