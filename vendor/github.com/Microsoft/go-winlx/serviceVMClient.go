@@ -59,24 +59,16 @@ func waitForResponse(c net.Conn) (int64, error) {
 	return int64(binary.BigEndian.Uint64(buf[4:])), nil
 }
 
-func writeVHDFile(path string, r io.Reader) error {
+func writeVHDFile(path string, r io.Reader) (int64, error) {
 	fmt.Println(path)
 	f, err := os.Create(path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	_, err = io.Copy(f, r)
-	if err != nil {
-		// If the server closes the connection, then io.Copy might return an
-		// error since the connection is already closed. This is okay because
-		// all of the data has been read, so we are ready to close anyway.
-		if err == hvsock.ErrSocketClosed || err == hvsock.ErrSocketReadClosed {
-			err = nil
-		}
-	}
-	f.Close()
-	return err
+	// Ignore error since hvsocket can close and return a non eof after sending all the data.
+	n, _ := io.Copy(f, r)
+	return n, f.Close()
 }
 
 func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
@@ -135,10 +127,15 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 
 	fmt.Println("writing vhd to file.")
 	// We are getting the VHD stream, so write it to file
-	err = writeVHDFile(path.Join(layerPath, LayerVHDName), conn)
+	fSize, err := writeVHDFile(path.Join(layerPath, LayerVHDName), conn)
 	if err != nil {
 		rSize = 0
 	}
+
+	if fSize != rSize {
+		return 0, fmt.Errorf("hvsock closed before reading all data. Expected: %d, got: %d", rSize, fSize)
+	}
+
 	return rSize, err
 }
 
