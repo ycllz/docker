@@ -3,6 +3,7 @@ package winlx
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 
 	"github.com/Microsoft/hvsock"
 )
@@ -25,6 +26,7 @@ import (
 const (
 	ImportCmd = iota
 	ExportCmd
+	TerminateCmd
 	ResponseOKCmd
 	ResponseFailCmd
 )
@@ -35,18 +37,50 @@ const (
 )
 
 type ServiceVMHeader struct {
-	Command           uint8
-	Version           uint8
-	SCSIControllerNum uint8 // Used for Version 1, but not used anymore.
-	SCSIDiskNum       uint8 // Used for Version 1, but not used anymore.
+	Command     uint32
+	Version     uint32
+	PayloadSize int64
 }
+
+const ServiceVMHeaderSize = 16
 
 const ConnTimeOut = 300
 const LayerVHDName = "layer.vhd"
-const ServiceVMName = "ZUbuntu1604-Dev"
+const LayerSandboxName = "sandbox.vhdx"
+const ServiceVMName = "LinuxServiceVM"
 
 var ServiceVMId hvsock.GUID
 var ServiceVMSocketId, _ = hvsock.GUIDFromString("E9447876-BA98-444F-8C14-6A2FFF773E87")
+
+func SendData(hdr *ServiceVMHeader, payload io.Reader, dest io.Writer) error {
+	hdrBytes, err := SerializeHeader(hdr)
+	if err != nil {
+		return err
+	}
+
+	_, err = dest.Write(hdrBytes)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.CopyN(dest, payload, hdr.PayloadSize)
+	return err
+}
+
+func ReadHeader(r io.Reader) (*ServiceVMHeader, error) {
+	hdr := &ServiceVMHeader{}
+	buf, err := SerializeHeader(hdr)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = io.ReadFull(r, buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return DeserializeHeader(buf)
+}
 
 func SerializeHeader(hdr *ServiceVMHeader) ([]byte, error) {
 	buf := &bytes.Buffer{}

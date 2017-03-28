@@ -1,10 +1,8 @@
 package winlx
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -24,139 +22,131 @@ func init() {
 	ServiceVMId, _ = hvsock.GUIDFromString(strings.TrimSpace(string(result)))
 }
 
-func connectToServer() (hvsock.Conn, error) {
-	hvAddr := hvsock.HypervAddr{VMID: ServiceVMId, ServiceID: ServiceVMSocketId}
-	return hvsock.Dial(hvAddr)
-}
-
-func sendLayer(c hvsock.Conn, hdr []byte, r io.Reader) error {
-	// First send the header, then the payload, then EOF
-	_, err := c.Write(hdr)
-	if err != nil {
-		return err
-	}
-
-	_, err = io.Copy(c, r)
-	if err != nil {
-		return err
-	}
-
-	return c.CloseWrite()
-}
-
-func waitForResponse(c net.Conn) (int64, error) {
-	// Read header
-	// TODO: Handle error case
-	buf := [12]byte{}
-	_, err := io.ReadFull(c, buf[:])
-	if err != nil {
-		return 0, err
-	}
-
-	if buf[0] != ResponseOKCmd {
-		return 0, fmt.Errorf("Service VM failed")
-	}
-	return int64(binary.BigEndian.Uint64(buf[4:])), nil
-}
-
-func writeVHDFile(path string, r io.Reader) (int64, error) {
-	fmt.Println(path)
-	f, err := os.Create(path)
-	if err != nil {
-		return 0, err
-	}
-
-	// Ignore error since hvsocket can close and return a non eof after sending all the data.
-	n, _ := io.Copy(f, r)
-	return n, f.Close()
-}
-
 func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 	// Hv sockets don't support graceful/unidirectional shutdown, and the
 	// hvsock wrapper works weirdly with the tar reader, so we first write the
 	// contents to a temp file.
-	tmpFile, err := ioutil.TempFile("", "docker-tar")
+	tmpFile, fileSize, err := storeReader(reader)
 	if err != nil {
 		return 0, err
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	fmt.Println("Copying tmpFile")
-	_, err = io.Copy(tmpFile, reader)
-	if err != nil {
-		return 0, err
-	}
-
-	fmt.Println("Seeking to start of tmp file.")
-	_, err = tmpFile.Seek(0, 0)
-	if err != nil {
-		return 0, err
-	}
-
-	fmt.Println("Connecting to server")
 	conn, err := connectToServer()
 	if err != nil {
 		return 0, err
 	}
 	defer conn.Close()
 
-	header := ServiceVMHeader{
-		Command:           ImportCmd,
-		Version:           0,
-		SCSIControllerNum: 0,
-		SCSIDiskNum:       0,
+	header := &ServiceVMHeader{
+		Command:     ImportCmd,
+		Version:     Version1,
+		PayloadSize: fileSize,
 	}
 
-	buf, err := SerializeHeader(&header)
+	err = SendData(header, tmpFile, conn)
 	if err != nil {
 		return 0, err
 	}
 
-	fmt.Println("Sending message to service VM")
-	err = sendLayer(conn, buf, tmpFile)
-	if err != nil {
-		return 0, err
-	}
-
-	fmt.Println("Waiting for server response")
-	rSize, err := waitForResponse(conn)
+	resultSize, err := waitForResponse(conn)
 	if err != nil {
 		return 0, err
 	}
 
 	fmt.Println("writing vhd to file.")
 	// We are getting the VHD stream, so write it to file
-	fSize, err := writeVHDFile(path.Join(layerPath, LayerVHDName), conn)
+	err = writeVHDFile(path.Join(layerPath, LayerVHDName), resultSize, conn)
 	if err != nil {
-		rSize = 0
+		return 0, err
 	}
 
-	if fSize != rSize {
-		return 0, fmt.Errorf("hvsock closed before reading all data. Expected: %d, got: %d", rSize, fSize)
+	err = sendClose(conn)
+	if err != nil {
+		return 0, err
 	}
 
-	return rSize, err
+	return resultSize, err
 }
 
-func getVHDFile(vhdPath string) (*os.File, error) {
-	// The vhd could be either layer.vhd or sandbox.vhdx depending on
-	// if we are a ro layer or r/w layer
-
-	vhdFile, err := os.Open(path.Join(vhdPath, "layer.vhd"))
-	if err == nil {
-		return vhdFile, err
-	} else if err != nil && !os.IsNotExist(err) {
-		return nil, err
+func storeReader(r io.Reader) (*os.File, int64, error) {
+	tmpFile, err := ioutil.TempFile("", "docker-reader")
+	if err != nil {
+		return nil, 0, err
 	}
 
-	// Try the sandbox path
-	vhdFile, err = os.Open(path.Join(vhdPath, "sandbox.vhdx"))
-	return vhdFile, err
+	fileSize, err := io.Copy(tmpFile, r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	_, err = tmpFile.Seek(0, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	return tmpFile, fileSize, nil
+}
+
+func connectToServer() (hvsock.Conn, error) {
+	hvAddr := hvsock.HypervAddr{VMID: ServiceVMId, ServiceID: ServiceVMSocketId}
+	return hvsock.Dial(hvAddr)
+}
+
+func waitForResponse(r io.Reader) (int64, error) {
+	buf := make([]byte, ServiceVMHeaderSize)
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return 0, err
+	}
+
+	hdr, err := DeserializeHeader(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	if hdr.Command != ResponseOKCmd {
+		return 0, fmt.Errorf("Service VM failed")
+	}
+	return hdr.PayloadSize, nil
+}
+
+func writeVHDFile(path string, bytesToRead int64, r io.Reader) error {
+	fmt.Println(path)
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.CopyN(f, r, bytesToRead)
+	if err != nil {
+		return err
+	}
+
+	return f.Close()
+}
+
+func sendClose(rc io.WriteCloser) error {
+	header := &ServiceVMHeader{
+		Command:     TerminateCmd,
+		Version:     Version1,
+		PayloadSize: 0,
+	}
+
+	buf, err := SerializeHeader(header)
+	if err != nil {
+		return err
+	}
+
+	_, err = rc.Write(buf)
+	if err != nil {
+		return err
+	}
+	return rc.Close()
 }
 
 func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
-	vhdFile, err := getVHDFile(vhdPath)
+	vhdFile, fileSize, err := getVHDFile(vhdPath)
 	if err != nil {
 		return nil, err
 	}
@@ -167,28 +157,21 @@ func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	header := ServiceVMHeader{
-		Command:           ExportCmd,
-		Version:           0,
-		SCSIControllerNum: 0,
-		SCSIDiskNum:       0,
-	}
-
-	buf, err := SerializeHeader(&header)
-	if err != nil {
-		conn.Close()
-		return nil, err
+	header := &ServiceVMHeader{
+		Command:     ExportCmd,
+		Version:     0,
+		PayloadSize: fileSize,
 	}
 
 	fmt.Println("VHD PATH = ", vhdFile.Name())
-	err = sendLayer(conn, buf, vhdFile)
+	err = SendData(header, vhdFile, conn)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
 
 	fmt.Println("Waiting for server response")
-	_, err = waitForResponse(conn)
+	payloadSize, err := waitForResponse(conn)
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -197,16 +180,39 @@ func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 	reader, writer := io.Pipe()
 	go func() {
 		defer writer.Close()
-		defer conn.Close()
+		defer sendClose(conn)
 		fmt.Println("Copying result over hvsock")
-		io.Copy(writer, conn)
+		io.CopyN(writer, conn, payloadSize)
 	}()
 	return reader, nil
 }
 
+func getVHDFile(vhdPath string) (*os.File, int64, error) {
+	// The vhd could be either layer.vhd or sandbox.vhdx depending on
+	// if we are a ro layer or r/w layer
+	vhdFile, err := os.Open(path.Join(vhdPath, LayerVHDName))
+	if err == nil {
+		return nil, 0, err
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, 0, err
+	}
+
+	// Try the sandbox path
+	vhdFile, err = os.Open(path.Join(vhdPath, LayerSandboxName))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	fileInfo, err := vhdFile.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
+	return vhdFile, fileInfo.Size(), nil
+}
+
 func ServiceVMCreateSandbox(sandboxFolder string) error {
 	// Right now just use powershell and bypass the service VM
-	sandboxPath := path.Join(sandboxFolder, "sandbox.vhdx")
+	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
 	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
 	return exec.Command("powershell",
 		"New-VHD",

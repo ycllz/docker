@@ -1,7 +1,6 @@
 package libcontainerd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -102,6 +101,13 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
 
 	osName := spec.Platform.OS
+	if osName == "windows" {
+		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+	}
+	return clnt.createLinux(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+}
+
+func (clnt *client) createWindows(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
 	configuration := &hcsshim.ContainerConfig{
 		SystemType: "Container",
 		Name:       containerID,
@@ -181,7 +187,7 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 		return fmt.Errorf("no layer option or paths were supplied to the runtime")
 	}
 
-	if configuration.HvPartition && osName == "windows" {
+	if configuration.HvPartition {
 		// Find the upper-most utility VM image, since the utility VM does not
 		// use layering in RS1.
 		// TODO @swernli/jhowardmsft at some point post RS1 this may be re-locatable.
@@ -201,16 +207,11 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 			return errors.New("utility VM image could not be found")
 		}
 		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: uvmImagePath}
-	} else if osName == "windows" {
-		configuration.VolumePath = spec.Root.Path
 	} else {
-		// ATTN: Some place holder for Linux to pass some internal Windows stuff
-		// This isn't actually needed for Linux
-		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\scratch.vhdx"}
+		configuration.VolumePath = spec.Root.Path
 	}
 
 	configuration.LayerFolderPath = layerOpt.LayerFolderPath
-
 	for _, layerPath := range layerOpt.LayerPaths {
 		_, filename := filepath.Split(layerPath)
 		g, err := hcsshim.NameToGuid(filename)
@@ -238,17 +239,94 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 		}
 	}
 	configuration.MappedDirectories = mds
+	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
+	if err != nil {
+		return err
+	}
 
-	if osName == "linux" {
-		configuration.ContainerType = "Linux"
-		// Add the oci config spec.
-		ociSpecBytes, err := json.MarshalIndent(spec, "", "    ")
+	// Construct a container object for calling start on it.
+	container := &container{
+		containerCommon: containerCommon{
+			process: process{
+				processCommon: processCommon{
+					containerID:  containerID,
+					client:       clnt,
+					friendlyName: InitFriendlyName,
+				},
+				commandLine: strings.Join(spec.Process.Args, " "),
+			},
+			processes: make(map[string]*process),
+		},
+		ociSpec:      spec,
+		hcsContainer: hcsContainer,
+	}
+
+	container.options = options
+	for _, option := range options {
+		if err := option.Apply(container); err != nil {
+			logrus.Errorf("libcontainerd: %v", err)
+		}
+	}
+
+	// Call start, and if it fails, delete the container from our
+	// internal structure, start will keep HCS in sync by deleting the
+	// container there.
+	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
+	if err := container.start(attachStdio); err != nil {
+		clnt.deleteContainer(containerID)
+		return err
+	}
+
+	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
+	return nil
+}
+
+func (clnt *client) createLinux(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
+	// Make simple config based off Adam's + Kris's work
+	configuration := &hcsshim.ContainerConfig{
+		HvPartition:                 true,
+		Name:                        containerID,
+		SystemType:                  "Container",
+		ContainerType:               "Linux",
+		TerminateOnLastHandleClosed: true,
+	}
+
+	var layerOpt *LayerOption
+	for _, option := range options {
+		if l, ok := option.(*LayerOption); ok {
+			layerOpt = l
+		}
+	}
+
+	// We must have a layer option with at least one path
+	if layerOpt == nil || layerOpt.LayerPaths == nil {
+		return fmt.Errorf("no layer option or paths were supplied to the runtime")
+	}
+
+	// LayerFolderPath (writeable layer) + Layers (Guid + path)
+	configuration.LayerFolderPath = layerOpt.LayerFolderPath
+	for _, layerPath := range layerOpt.LayerPaths {
+		_, filename := filepath.Split(layerPath)
+		g, err := hcsshim.NameToGuid(filename)
 		if err != nil {
 			return err
 		}
-		ociSpecRaw := json.RawMessage(ociSpecBytes)
-		configuration.LinuxContainerSpec = &ociSpecRaw
+		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+			ID:   g.ToString(),
+			Path: layerPath,
+		})
 	}
+
+	// HvRuntime (Image path + Enable console)
+	configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
+
+	/* TODO: Add OCI Spec later.
+	ociSpecBytes, err := json.MarshalIndent(spec, "", "    ")
+	if err != nil {
+		return err
+	}
+	ociSpecRaw := json.RawMessage(ociSpecBytes)
+	configuration.LinuxContainerSpec = &ociSpecRaw*/
 
 	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
 	if err != nil {
