@@ -1,6 +1,8 @@
 package winlx
 
 import (
+	"encoding/binary"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -212,6 +214,34 @@ func getVHDFile(vhdPath string) (*os.File, int64, error) {
 	return vhdFile, fileInfo.Size(), nil
 }
 
+func ServiceVMCreateSandbox(sandboxFolder string) error {
+	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
+	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+
+	err := newVHDX(sandboxPath)
+	if err != nil {
+		return err
+	}
+
+	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("ServiceVMCreateSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
+
+	hdr := &ServiceVMHeader{
+		Command: CreateSandboxCmd,
+		Version: Version1,
+		PayloadSize: SCSICodeHeaderSize,
+	}
+
+	scsiHeader := &SCSICodeHeader{
+		ControllerNumber: controllerNumber,
+		ControllerLocation: controllerLocation,
+	}
+	return sendSCSINumbers(hdr, scsiHeader)
+}
+
 func newVHDX(pathName string) error {
 	return exec.Command("powershell",
 		"New-VHD",
@@ -253,17 +283,35 @@ func attachVHDX(pathName string) (uint32, uint32, error) {
 	return uint32(controllerNumber), uint32(controllerLocation), nil
 }
 
-func ServiceVMCreateSandbox(sandboxFolder string) error {
-	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
-	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+func sendSCSINumbers(header *ServiceVMHeader, scsiHeader *SCSICodeHeader) error {
+	conn, err := connectToServer()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 
-	err := newVHDX(sandboxPath)
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.BigEndian, header); err != nil {
+		return err
+	}
+
+	if err := binary.Write(buf, binary.BigEndian, scsiHeader); err != nil {
+		return err
+	}
+
+	_, err = conn.Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
 
-	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
-	fmt.Printf("ServiceVMCreateSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
-	return err
-}
+	_, err = waitForResponse(conn)
+	if err != nil {
+		return err
+	}
 
+	err = sendClose(conn)
+	if err != nil {
+		return err
+	}
+	return nil
+}

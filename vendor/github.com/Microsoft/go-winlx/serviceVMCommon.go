@@ -26,6 +26,8 @@ import (
 const (
 	ImportCmd = iota
 	ExportCmd
+	CreateSandboxCmd
+	ExportSandboxCmd
 	TerminateCmd
 	ResponseOKCmd
 	ResponseFailCmd
@@ -42,9 +44,10 @@ type ServiceVMHeader struct {
 	PayloadSize int64
 }
 
+const SCSICodeHeaderSize = 4
 type SCSICodeHeader struct {
 	ControllerNumber uint32
-	DeviceNumber uint32
+	ControllerLocation uint32
 }
 
 const ServiceVMHeaderSize = 16
