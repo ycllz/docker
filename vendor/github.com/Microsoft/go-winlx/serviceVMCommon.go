@@ -42,6 +42,11 @@ type ServiceVMHeader struct {
 	PayloadSize int64
 }
 
+type SCSICodeHeader struct {
+	ControllerNumber uint32
+	DeviceNumber uint32
+}
+
 const ServiceVMHeaderSize = 16
 
 const ConnTimeOut = 300

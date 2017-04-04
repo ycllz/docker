@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"regexp"
 
 	"strings"
 
 	"io/ioutil"
 
 	"github.com/Microsoft/hvsock"
+	"strconv"
 )
 
 func init() {
@@ -210,14 +212,58 @@ func getVHDFile(vhdPath string) (*os.File, int64, error) {
 	return vhdFile, fileInfo.Size(), nil
 }
 
-func ServiceVMCreateSandbox(sandboxFolder string) error {
-	// Right now just use powershell and bypass the service VM
-	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
-	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+func newVHDX(pathName string) error {
 	return exec.Command("powershell",
 		"New-VHD",
-		"-Path", sandboxPath,
+		"-Path", pathName,
 		"-Dynamic",
 		"-BlockSizeBytes", "1MB",
 		"-SizeBytes", "16GB").Run()
 }
+
+func attachVHDX(pathName string) (uint32, uint32, error) {
+	res, err := exec.Command("powershell",
+	"Add-VMHardDiskDrive",
+	"-Path",
+	pathName,
+	"-VMName",
+	ServiceVMName,
+	"-Passthru").Output()
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+    re := regexp.MustCompile("SCSI *[0-9]+ *[0-9]+")
+    resultStr := re.FindString(string(res))
+	fields := strings.Fields(resultStr)
+	if len(fields) != 3 {
+		return 0, 0, fmt.Errorf("Error invalid disk attached to service VM")
+	}
+
+	controllerNumber, err := strconv.ParseUint(fields[1], 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	controllerLocation, err := strconv.ParseUint(fields[2], 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+	return uint32(controllerNumber), uint32(controllerLocation), nil
+}
+
+func ServiceVMCreateSandbox(sandboxFolder string) error {
+	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
+	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+
+	err := newVHDX(sandboxPath)
+	if err != nil {
+		return err
+	}
+
+	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
+	fmt.Printf("ServiceVMCreateSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
+	return err
+}
+

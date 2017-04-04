@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/sysinfo"
@@ -313,7 +314,7 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 		}
 		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
 			ID:   g.ToString(),
-			Path: layerPath,
+			Path: filepath.Join(layerPath, winlx.LayerVHDName),
 		})
 	}
 
