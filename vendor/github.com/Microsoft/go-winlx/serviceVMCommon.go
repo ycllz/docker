@@ -38,19 +38,20 @@ const (
 	Version2
 )
 
+const ServiceVMHeaderSize = 16
+
 type ServiceVMHeader struct {
 	Command     uint32
 	Version     uint32
 	PayloadSize int64
 }
 
-const SCSICodeHeaderSize = 4
+const SCSICodeHeaderSize = 8
+
 type SCSICodeHeader struct {
-	ControllerNumber uint32
+	ControllerNumber   uint32
 	ControllerLocation uint32
 }
-
-const ServiceVMHeaderSize = 16
 
 const ConnTimeOut = 300
 const LayerVHDName = "layer.vhd"

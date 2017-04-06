@@ -1,8 +1,8 @@
 package winlx
 
 import (
-	"encoding/binary"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -14,8 +14,9 @@ import (
 
 	"io/ioutil"
 
-	"github.com/Microsoft/hvsock"
 	"strconv"
+
+	"github.com/Microsoft/hvsock"
 )
 
 func init() {
@@ -227,16 +228,17 @@ func ServiceVMCreateSandbox(sandboxFolder string) error {
 	if err != nil {
 		return err
 	}
+	defer detachVHDX(controllerNumber, controllerLocation)
 	fmt.Printf("ServiceVMCreateSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
 
 	hdr := &ServiceVMHeader{
-		Command: CreateSandboxCmd,
-		Version: Version1,
+		Command:     CreateSandboxCmd,
+		Version:     Version1,
 		PayloadSize: SCSICodeHeaderSize,
 	}
 
 	scsiHeader := &SCSICodeHeader{
-		ControllerNumber: controllerNumber,
+		ControllerNumber:   controllerNumber,
 		ControllerLocation: controllerLocation,
 	}
 	return sendSCSINumbers(hdr, scsiHeader)
@@ -253,19 +255,19 @@ func newVHDX(pathName string) error {
 
 func attachVHDX(pathName string) (uint32, uint32, error) {
 	res, err := exec.Command("powershell",
-	"Add-VMHardDiskDrive",
-	"-Path",
-	pathName,
-	"-VMName",
-	ServiceVMName,
-	"-Passthru").Output()
+		"Add-VMHardDiskDrive",
+		"-Path",
+		pathName,
+		"-VMName",
+		ServiceVMName,
+		"-Passthru").Output()
 
 	if err != nil {
 		return 0, 0, err
 	}
 
-    re := regexp.MustCompile("SCSI *[0-9]+ *[0-9]+")
-    resultStr := re.FindString(string(res))
+	re := regexp.MustCompile("SCSI *[0-9]+ *[0-9]+")
+	resultStr := re.FindString(string(res))
 	fields := strings.Fields(resultStr)
 	if len(fields) != 3 {
 		return 0, 0, fmt.Errorf("Error invalid disk attached to service VM")
@@ -281,6 +283,22 @@ func attachVHDX(pathName string) (uint32, uint32, error) {
 		return 0, 0, err
 	}
 	return uint32(controllerNumber), uint32(controllerLocation), nil
+}
+
+func detachVHDX(controllerNum, controllerLoc uint32) error {
+	cn := strconv.FormatUint(uint64(controllerNum), 10)
+	cl := strconv.FormatUint(uint64(controllerLoc), 10)
+	err := exec.Command("powershell",
+		"Remove-VMHardDiskDrive",
+		"-ControllerType",
+		"SCSI",
+		"-ControllerNumber",
+		cn,
+		"-ControllerLocation",
+		cl,
+		"-VMName",
+		ServiceVMName).Run()
+	return err
 }
 
 func sendSCSINumbers(header *ServiceVMHeader, scsiHeader *SCSICodeHeader) error {
@@ -299,6 +317,7 @@ func sendSCSINumbers(header *ServiceVMHeader, scsiHeader *SCSICodeHeader) error 
 		return err
 	}
 
+	fmt.Println(buf.Bytes())
 	_, err = conn.Write(buf.Bytes())
 	if err != nil {
 		return err
