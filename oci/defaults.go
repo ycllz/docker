@@ -124,7 +124,6 @@ func DefaultLinuxSpec() specs.Spec {
 			"/proc/timer_list",
 			"/proc/timer_stats",
 			"/proc/sched_debug",
-			"/sys/firmware",
 		},
 		ReadonlyPaths: []string{
 			"/proc/asound",
@@ -205,5 +204,8 @@ func DefaultLinuxSpec() specs.Spec {
 		},
 	}
 
+	if runtime.GOOS != "windows" {
+		s.Linux.MaskedPaths = append(s.Linux.MaskedPaths, "/sys/firmware")
+	}
 	return s
 }

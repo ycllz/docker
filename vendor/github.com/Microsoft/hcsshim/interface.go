@@ -18,7 +18,8 @@ type ProcessConfig struct {
 	CreateStdInPipe  bool
 	CreateStdOutPipe bool
 	CreateStdErrPipe bool
-	ConsoleSize      [2]uint
+	ConsoleSize      [2]uint          `json:",omitempty"`
+	OCISpecification *json.RawMessage `json:",omitempty"`
 }
 
 type Layer struct {

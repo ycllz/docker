@@ -80,13 +80,13 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 		}
 	}
 
-	if c.Config.Tty && img.OS == "linux" {
+	if img.OS == "linux" {
 		linkedEnv = append(linkedEnv, "TERM=xterm")
 	}
 	s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty, linkedEnv)
 	s.Process.ConsoleSize.Height = c.HostConfig.ConsoleSize[0]
 	s.Process.ConsoleSize.Width = c.HostConfig.ConsoleSize[1]
-	s.Process.Terminal = c.Config.Tty
+	s.Process.Terminal = true
 	s.Process.User.Username = c.Config.User
 
 	// In spec.Root. This is not set for Hyper-V containers
