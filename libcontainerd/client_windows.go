@@ -10,13 +10,14 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/net/context"
+	"time"
 
 	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/sysinfo"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/net/context"
 )
 
 type client struct {
@@ -254,7 +255,6 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 					client:       clnt,
 					friendlyName: InitFriendlyName,
 				},
-				commandLine: strings.Join(spec.Process.Args, " "),
 			},
 			processes: make(map[string]*process),
 		},
@@ -335,7 +335,6 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 					client:       clnt,
 					friendlyName: InitFriendlyName,
 				},
-				commandLine: strings.Join(spec.Process.Args, " "),
 			},
 			processes: make(map[string]*process),
 		},
@@ -436,8 +435,7 @@ func (clnt *client) AddProcess(ctx context.Context, containerID, processFriendly
 			client:       clnt,
 			systemPid:    uint32(pid),
 		},
-		commandLine: createProcessParms.CommandLine,
-		hcsProcess:  newProcess,
+		hcsProcess: newProcess,
 	}
 
 	// Add the process to the container's list of processes
