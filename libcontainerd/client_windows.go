@@ -321,14 +321,6 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 	// HvRuntime (Image path + Enable console)
 	configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
 
-	/* TODO: Add OCI Spec later.
-	ociSpecBytes, err := json.MarshalIndent(spec, "", "    ")
-	if err != nil {
-		return err
-	}
-	ociSpecRaw := json.RawMessage(ociSpecBytes)
-	configuration.LinuxContainerSpec = &ociSpecRaw*/
-
 	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
 	if err != nil {
 		return err
@@ -648,8 +640,30 @@ func (clnt *client) Stats(containerID string) (*Stats, error) {
 
 // Restore is the handler for restoring a container
 func (clnt *client) Restore(containerID string, _ StdioCallback, unusedOnWindows ...CreateOption) error {
-	// TODO Windows: Implement this. For now, just tell the backend the container exited.
 	logrus.Debugf("libcontainerd: Restore(%s)", containerID)
+
+	// TODO Windows: On RS1, a re-attach isn't possible.
+	// However, there is a scenario in which there is an issue.
+	// Consider a background container. The daemon dies unexpectedly.
+	// HCS will still have the compute service alive and running.
+	// For consistence, we call in to shoot it regardless if HCS knows about it
+	// We explicitly just log a warning if the terminate fails.
+	// Then we tell the backend the container exited.
+	if hc, err := hcsshim.OpenContainer(containerID); err == nil {
+		const terminateTimeout = time.Minute * 2
+		err := hc.Terminate()
+
+		if hcsshim.IsPending(err) {
+			err = hc.WaitTimeout(terminateTimeout)
+		} else if hcsshim.IsAlreadyStopped(err) {
+			err = nil
+		}
+
+		if err != nil {
+			logrus.Warnf("libcontainerd: failed to terminate %s on restore - %q", containerID, err)
+			return err
+		}
+	}
 	return clnt.backend.StateChanged(containerID, StateInfo{
 		CommonStateInfo: CommonStateInfo{
 			State:    StateExit,
@@ -658,23 +672,9 @@ func (clnt *client) Restore(containerID string, _ StdioCallback, unusedOnWindows
 }
 
 // GetPidsForContainer returns a list of process IDs running in a container.
-// Although implemented, this is not used in Windows.
+// Not used on Windows.
 func (clnt *client) GetPidsForContainer(containerID string) ([]int, error) {
-	var pids []int
-	clnt.lock(containerID)
-	defer clnt.unlock(containerID)
-	cont, err := clnt.getContainer(containerID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add the first process
-	pids = append(pids, int(cont.containerCommon.systemPid))
-	// And add all the exec'd processes
-	for _, p := range cont.processes {
-		pids = append(pids, int(p.processCommon.systemPid))
-	}
-	return pids, nil
+	return nil, errors.New("not implemented on Windows")
 }
 
 // Summary returns a summary of the processes running in a container.

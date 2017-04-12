@@ -91,8 +91,8 @@ type NetworkAPIClient interface {
 	NetworkConnect(ctx context.Context, networkID, container string, config *network.EndpointSettings) error
 	NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error)
 	NetworkDisconnect(ctx context.Context, networkID, container string, force bool) error
-	NetworkInspect(ctx context.Context, networkID string) (types.NetworkResource, error)
-	NetworkInspectWithRaw(ctx context.Context, networkID string) (types.NetworkResource, []byte, error)
+	NetworkInspect(ctx context.Context, networkID string, verbose bool) (types.NetworkResource, error)
+	NetworkInspectWithRaw(ctx context.Context, networkID string, verbose bool) (types.NetworkResource, []byte, error)
 	NetworkList(ctx context.Context, options types.NetworkListOptions) ([]types.NetworkResource, error)
 	NetworkRemove(ctx context.Context, networkID string) error
 	NetworksPrune(ctx context.Context, pruneFilter filters.Args) (types.NetworksPruneReport, error)
@@ -108,11 +108,12 @@ type NodeAPIClient interface {
 
 // PluginAPIClient defines API client methods for the plugins
 type PluginAPIClient interface {
-	PluginList(ctx context.Context) (types.PluginsListResponse, error)
+	PluginList(ctx context.Context, filter filters.Args) (types.PluginsListResponse, error)
 	PluginRemove(ctx context.Context, name string, options types.PluginRemoveOptions) error
 	PluginEnable(ctx context.Context, name string, options types.PluginEnableOptions) error
 	PluginDisable(ctx context.Context, name string, options types.PluginDisableOptions) error
 	PluginInstall(ctx context.Context, name string, options types.PluginInstallOptions) (io.ReadCloser, error)
+	PluginUpgrade(ctx context.Context, name string, options types.PluginInstallOptions) (io.ReadCloser, error)
 	PluginPush(ctx context.Context, name string, registryAuth string) (io.ReadCloser, error)
 	PluginSet(ctx context.Context, name string, args []string) error
 	PluginInspectWithRaw(ctx context.Context, name string) (*types.Plugin, []byte, error)
@@ -122,11 +123,12 @@ type PluginAPIClient interface {
 // ServiceAPIClient defines API client methods for the services
 type ServiceAPIClient interface {
 	ServiceCreate(ctx context.Context, service swarm.ServiceSpec, options types.ServiceCreateOptions) (types.ServiceCreateResponse, error)
-	ServiceInspectWithRaw(ctx context.Context, serviceID string) (swarm.Service, []byte, error)
+	ServiceInspectWithRaw(ctx context.Context, serviceID string, options types.ServiceInspectOptions) (swarm.Service, []byte, error)
 	ServiceList(ctx context.Context, options types.ServiceListOptions) ([]swarm.Service, error)
 	ServiceRemove(ctx context.Context, serviceID string) error
 	ServiceUpdate(ctx context.Context, serviceID string, version swarm.Version, service swarm.ServiceSpec, options types.ServiceUpdateOptions) (types.ServiceUpdateResponse, error)
 	ServiceLogs(ctx context.Context, serviceID string, options types.ContainerLogsOptions) (io.ReadCloser, error)
+	TaskLogs(ctx context.Context, taskID string, options types.ContainerLogsOptions) (io.ReadCloser, error)
 	TaskInspectWithRaw(ctx context.Context, taskID string) (swarm.Task, []byte, error)
 	TaskList(ctx context.Context, options types.TaskListOptions) ([]swarm.Task, error)
 }

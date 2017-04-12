@@ -43,10 +43,14 @@ func TestConvertRestartPolicyFromFailure(t *testing.T) {
 	assert.DeepEqual(t, policy, expected)
 }
 
+func strPtr(val string) *string {
+	return &val
+}
+
 func TestConvertEnvironment(t *testing.T) {
-	source := map[string]string{
-		"foo": "bar",
-		"key": "value",
+	source := map[string]*string{
+		"foo": strPtr("bar"),
+		"key": strPtr("value"),
 	}
 	env := convertEnvironment(source)
 	sort.Strings(env)
@@ -143,12 +147,46 @@ func TestConvertHealthcheckDisableWithTest(t *testing.T) {
 	assert.Error(t, err, "test and disable can't be set")
 }
 
+func TestConvertEndpointSpec(t *testing.T) {
+	source := []composetypes.ServicePortConfig{
+		{
+			Protocol:  "udp",
+			Target:    53,
+			Published: 1053,
+			Mode:      "host",
+		},
+		{
+			Target:    8080,
+			Published: 80,
+		},
+	}
+	endpoint, err := convertEndpointSpec("vip", source)
+
+	expected := swarm.EndpointSpec{
+		Mode: swarm.ResolutionMode(strings.ToLower("vip")),
+		Ports: []swarm.PortConfig{
+			{
+				TargetPort:    8080,
+				PublishedPort: 80,
+			},
+			{
+				Protocol:      "udp",
+				TargetPort:    53,
+				PublishedPort: 1053,
+				PublishMode:   "host",
+			},
+		},
+	}
+
+	assert.NilError(t, err)
+	assert.DeepEqual(t, *endpoint, expected)
+}
+
 func TestConvertServiceNetworksOnlyDefault(t *testing.T) {
 	networkConfigs := networkMap{}
-	networks := map[string]*composetypes.ServiceNetworkConfig{}
 
 	configs, err := convertServiceNetworks(
-		networks, networkConfigs, NewNamespace("foo"), "service")
+		nil, networkConfigs, NewNamespace("foo"), "service")
 
 	expected := []swarm.NetworkAttachmentConfig{
 		{
@@ -201,6 +239,31 @@ func TestConvertServiceNetworks(t *testing.T) {
 	assert.DeepEqual(t, []swarm.NetworkAttachmentConfig(sortedConfigs), expected)
 }
 
+func TestConvertServiceNetworksCustomDefault(t *testing.T) {
+	networkConfigs := networkMap{
+		"default": composetypes.NetworkConfig{
+			External: composetypes.External{
+				External: true,
+				Name:     "custom",
+			},
+		},
+	}
+	networks := map[string]*composetypes.ServiceNetworkConfig{}
+
+	configs, err := convertServiceNetworks(
+		networks, networkConfigs, NewNamespace("foo"), "service")
+
+	expected := []swarm.NetworkAttachmentConfig{
+		{
+			Target:  "custom",
+			Aliases: []string{"service"},
+		},
+	}
+
+	assert.NilError(t, err)
+	assert.DeepEqual(t, []swarm.NetworkAttachmentConfig(configs), expected)
+}
+
 type byTargetSort []swarm.NetworkAttachmentConfig
 
 func (s byTargetSort) Len() int {
@@ -213,4 +276,43 @@ func (s byTargetSort) Less(i, j int) bool {
 
 func (s byTargetSort) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
+}
+
+func TestConvertDNSConfigEmpty(t *testing.T) {
+	dnsConfig, err := convertDNSConfig(nil, nil)
+
+	assert.NilError(t, err)
+	assert.Equal(t, dnsConfig, (*swarm.DNSConfig)(nil))
+}
+
+var (
+	nameservers = []string{"8.8.8.8", "9.9.9.9"}
+	search      = []string{"dc1.example.com", "dc2.example.com"}
+)
+
+func TestConvertDNSConfigAll(t *testing.T) {
+	dnsConfig, err := convertDNSConfig(nameservers, search)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, dnsConfig, &swarm.DNSConfig{
+		Nameservers: nameservers,
+		Search:      search,
+	})
+}
+
+func TestConvertDNSConfigNameservers(t *testing.T) {
+	dnsConfig, err := convertDNSConfig(nameservers, nil)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, dnsConfig, &swarm.DNSConfig{
+		Nameservers: nameservers,
+		Search:      nil,
+	})
+}
+
+func TestConvertDNSConfigSearch(t *testing.T) {
+	dnsConfig, err := convertDNSConfig(nil, search)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, dnsConfig, &swarm.DNSConfig{
+		Nameservers: nil,
+		Search:      search,
+	})
 }

@@ -68,6 +68,7 @@ type ContainerConfig struct {
 	HvRuntime                   *HvRuntime       `json:",omitempty"` // Hyper-V container settings. Used by Hyper-V containers only. Format ImagePath=%root%\BaseLayerID\UtilityVM
 	Servicing                   bool             `json:",omitempty"` // True if this container is for servicing
 	AllowUnqualifiedDNSQuery    bool             `json:",omitempty"` // True to allow unqualified DNS name resolution
+	DNSSearchList              	string     		 `json:",omitempty"` // Comma seperated list of DNS suffixes to use for name resolution
 	ContainerType               string           `json:",omitempty"` // "Linux" for Linux containers.
 	LinuxContainerSpec          *json.RawMessage `json:",omitempty"` // Additional information for Linux containers
 	TerminateOnLastHandleClosed bool             `json:",omitempty"`

@@ -15,14 +15,6 @@ import (
 	"github.com/docker/docker/pkg/term"
 )
 
-type containerAttachConfig struct {
-	detachKeys     []byte
-	stdin          io.ReadCloser
-	stdout, stderr io.Writer
-	showHistory    bool
-	stream         bool
-}
-
 // ContainerAttach attaches to logs according to the config passed in. See ContainerAttachConfig.
 func (daemon *Daemon) ContainerAttach(prefixOrName string, c *backend.ContainerAttachConfig) error {
 	keys := []byte{}
@@ -30,7 +22,7 @@ func (daemon *Daemon) ContainerAttach(prefixOrName string, c *backend.ContainerA
 	if c.DetachKeys != "" {
 		keys, err = term.ToBytes(c.DetachKeys)
 		if err != nil {
-			return fmt.Errorf("Invalid escape keys (%s) provided", c.DetachKeys)
+			return fmt.Errorf("Invalid detach keys (%s) provided", c.DetachKeys)
 		}
 	}
 
@@ -43,6 +35,16 @@ func (daemon *Daemon) ContainerAttach(prefixOrName string, c *backend.ContainerA
 		return errors.NewRequestConflictError(err)
 	}
 
+	cfg := stream.AttachConfig{
+		UseStdin:   c.UseStdin,
+		UseStdout:  c.UseStdout,
+		UseStderr:  c.UseStderr,
+		TTY:        container.Config.Tty,
+		CloseStdin: container.Config.StdinOnce,
+		DetachKeys: keys,
+	}
+	container.StreamConfig.AttachStreams(&cfg)
+
 	inStream, outStream, errStream, err := c.GetStreams()
 	if err != nil {
 		return err
@@ -54,48 +56,51 @@ func (daemon *Daemon) ContainerAttach(prefixOrName string, c *backend.ContainerA
 		outStream = stdcopy.NewStdWriter(outStream, stdcopy.Stdout)
 	}
 
-	var cfg containerAttachConfig
-
-	if c.UseStdin {
-		cfg.stdin = inStream
+	if cfg.UseStdin {
+		cfg.Stdin = inStream
 	}
-	if c.UseStdout {
-		cfg.stdout = outStream
+	if cfg.UseStdout {
+		cfg.Stdout = outStream
 	}
-	if c.UseStderr {
-		cfg.stderr = errStream
+	if cfg.UseStderr {
+		cfg.Stderr = errStream
 	}
 
-	cfg.showHistory = c.Logs
-	cfg.stream = c.Stream
-	cfg.detachKeys = keys
-
-	if err := daemon.containerAttach(container, &cfg); err != nil {
+	if err := daemon.containerAttach(container, &cfg, c.Logs, c.Stream); err != nil {
 		fmt.Fprintf(outStream, "Error attaching: %s\n", err)
 	}
 	return nil
 }
 
 // ContainerAttachRaw attaches the provided streams to the container's stdio
-func (daemon *Daemon) ContainerAttachRaw(prefixOrName string, stdin io.ReadCloser, stdout, stderr io.Writer, stream bool) error {
+func (daemon *Daemon) ContainerAttachRaw(prefixOrName string, stdin io.ReadCloser, stdout, stderr io.Writer, doStream bool) error {
 	container, err := daemon.GetContainer(prefixOrName)
 	if err != nil {
 		return err
 	}
-	cfg := &containerAttachConfig{
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
-		stream: stream,
+	cfg := stream.AttachConfig{
+		UseStdin:   stdin != nil,
+		UseStdout:  stdout != nil,
+		UseStderr:  stderr != nil,
+		TTY:        container.Config.Tty,
+		CloseStdin: container.Config.StdinOnce,
 	}
-	return daemon.containerAttach(container, cfg)
+	container.StreamConfig.AttachStreams(&cfg)
+	if cfg.UseStdin {
+		cfg.Stdin = stdin
+	}
+	if cfg.UseStdout {
+		cfg.Stdout = stdout
+	}
+	if cfg.UseStderr {
+		cfg.Stderr = stderr
+	}
+
+	return daemon.containerAttach(container, &cfg, false, doStream)
 }
 
-func (daemon *Daemon) containerAttach(c *container.Container, cfg *containerAttachConfig) error {
-	stdin := cfg.stdin
-	stdout := cfg.stdout
-	stderr := cfg.stderr
-	if cfg.showHistory {
+func (daemon *Daemon) containerAttach(c *container.Container, cfg *stream.AttachConfig, logs, doStream bool) error {
+	if logs {
 		logDriver, err := daemon.getLogger(c)
 		if err != nil {
 			return err
@@ -113,11 +118,11 @@ func (daemon *Daemon) containerAttach(c *container.Container, cfg *containerAtta
 				if !ok {
 					break LogLoop
 				}
-				if msg.Source == "stdout" && stdout != nil {
-					stdout.Write(msg.Line)
+				if msg.Source == "stdout" && cfg.Stdout != nil {
+					cfg.Stdout.Write(msg.Line)
 				}
-				if msg.Source == "stderr" && stderr != nil {
-					stderr.Write(msg.Line)
+				if msg.Source == "stderr" && cfg.Stderr != nil {
+					cfg.Stderr.Write(msg.Line)
 				}
 			case err := <-logs.Err:
 				logrus.Errorf("Error streaming logs: %v", err)
@@ -128,19 +133,22 @@ func (daemon *Daemon) containerAttach(c *container.Container, cfg *containerAtta
 
 	daemon.LogContainerEvent(c, "attach")
 
-	if !cfg.stream {
+	if !doStream {
 		return nil
 	}
 
-	var stdinPipe io.ReadCloser
-	if stdin != nil {
+	if cfg.Stdin != nil {
 		r, w := io.Pipe()
-		go func() {
+		go func(stdin io.ReadCloser) {
 			defer w.Close()
 			defer logrus.Debug("Closing buffered stdin pipe")
 			io.Copy(w, stdin)
-		}()
-		stdinPipe = r
+		}(cfg.Stdin)
+		cfg.Stdin = r
+	}
+
+	if !c.Config.OpenStdin {
+		cfg.Stdin = nil
 	}
 
 	waitChan := make(chan struct{})
@@ -154,14 +162,8 @@ func (daemon *Daemon) containerAttach(c *container.Container, cfg *containerAtta
 		}()
 	}
 
-	aCfg := &stream.AttachConfig{
-		Stdin:      stdinPipe,
-		Stdout:     stdout,
-		Stderr:     stderr,
-		DetachKeys: cfg.detachKeys,
-	}
-
-	err := <-c.Attach(aCfg)
+	ctx := c.InitAttachContext()
+	err := <-c.StreamConfig.CopyStreams(ctx, cfg)
 	if err != nil {
 		if _, ok := err.(stream.DetachError); ok {
 			daemon.LogContainerEvent(c, "detach")

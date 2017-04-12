@@ -2,7 +2,9 @@ package distribution
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
+	"runtime"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema2"
@@ -12,7 +14,7 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/progress"
-	"github.com/docker/docker/reference"
+	refstore "github.com/docker/docker/reference"
 	"github.com/docker/docker/registry"
 	"github.com/docker/libtrust"
 	digest "github.com/opencontainers/go-digest"
@@ -42,7 +44,7 @@ type Config struct {
 	ImageStore ImageConfigStore
 	// ReferenceStore manages tags. This value is optional, when excluded
 	// content will not be tagged.
-	ReferenceStore reference.Store
+	ReferenceStore refstore.Store
 	// RequireSchema2 ensures that only schema2 manifests are used.
 	RequireSchema2 bool
 }
@@ -140,10 +142,9 @@ func (s *imageConfigStore) RootFSFromConfig(c []byte) (*image.RootFS, error) {
 		return nil, err
 	}
 
-	// fail immediately on windows
-	/*if runtime.GOOS == "windows" && unmarshalledConfig.OS == "linux" {
+	if runtime.GOOS != "windows" && unmarshalledConfig.OS == "windows" {
 		return nil, fmt.Errorf("image operating system %q cannot be used on this platform", unmarshalledConfig.OS)
-	}*/
+	}
 
 	return unmarshalledConfig.RootFS, nil
 }

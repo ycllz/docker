@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/hex"
-	"fmt"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/distribution/reference"
@@ -33,10 +32,12 @@ func resolveServiceImageDigest(dockerCli *command.DockerCli, service *swarm.Serv
 		namedRef, ok := ref.(reference.Named)
 		if !ok {
 			return errors.New("failed to resolve image digest using content trust: reference is not named")
-
 		}
-
-		taggedRef := reference.EnsureTagged(namedRef)
+		namedRef = reference.TagNameOnly(namedRef)
+		taggedRef, ok := namedRef.(reference.NamedTagged)
+		if !ok {
+			return errors.New("failed to resolve image digest using content trust: reference is not tagged")
+		}
 
 		resolvedImage, err := trustedResolveDigest(context.Background(), dockerCli, taggedRef)
 		if err != nil {
@@ -65,12 +66,12 @@ func trustedResolveDigest(ctx context.Context, cli *command.DockerCli, ref refer
 
 	t, err := notaryRepo.GetTargetByName(ref.Tag(), trust.ReleasesRole, data.CanonicalTargetsRole)
 	if err != nil {
-		return nil, trust.NotaryError(repoInfo.FullName(), err)
+		return nil, trust.NotaryError(repoInfo.Name.Name(), err)
 	}
 	// Only get the tag if it's in the top level targets role or the releases delegation role
 	// ignore it if it's in any other delegation roles
 	if t.Role != trust.ReleasesRole && t.Role != data.CanonicalTargetsRole {
-		return nil, trust.NotaryError(repoInfo.FullName(), fmt.Errorf("No trust data for %s", reference.FamiliarString(ref)))
+		return nil, trust.NotaryError(repoInfo.Name.Name(), errors.Errorf("No trust data for %s", reference.FamiliarString(ref)))
 	}
 
 	logrus.Debugf("retrieving target for %s role\n", t.Role)

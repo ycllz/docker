@@ -3,7 +3,6 @@ package image
 import (
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -19,6 +18,7 @@ import (
 	"github.com/docker/notary/client"
 	"github.com/docker/notary/tuf/data"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
 
@@ -92,7 +92,7 @@ func PushTrustedReference(cli *command.DockerCli, repoInfo *registry.RepositoryI
 	}
 
 	if cnt > 1 {
-		return fmt.Errorf("internal error: only one call to handleTarget expected")
+		return errors.Errorf("internal error: only one call to handleTarget expected")
 	}
 
 	if target == nil {
@@ -129,15 +129,15 @@ func PushTrustedReference(cli *command.DockerCli, repoInfo *registry.RepositoryI
 
 		// Initialize the notary repository with a remotely managed snapshot key
 		if err := repo.Initialize([]string{rootKeyID}, data.CanonicalSnapshotRole); err != nil {
-			return trust.NotaryError(repoInfo.FullName(), err)
+			return trust.NotaryError(repoInfo.Name.Name(), err)
 		}
-		fmt.Fprintf(cli.Out(), "Finished initializing %q\n", repoInfo.FullName())
+		fmt.Fprintf(cli.Out(), "Finished initializing %q\n", repoInfo.Name.Name())
 		err = repo.AddTarget(target, data.CanonicalTargetsRole)
 	case nil:
 		// already initialized and we have successfully downloaded the latest metadata
 		err = addTargetToAllSignableRoles(repo, target)
 	default:
-		return trust.NotaryError(repoInfo.FullName(), err)
+		return trust.NotaryError(repoInfo.Name.Name(), err)
 	}
 
 	if err == nil {
@@ -145,11 +145,11 @@ func PushTrustedReference(cli *command.DockerCli, repoInfo *registry.RepositoryI
 	}
 
 	if err != nil {
-		fmt.Fprintf(cli.Out(), "Failed to sign %q:%s - %s\n", repoInfo.FullName(), tag, err.Error())
-		return trust.NotaryError(repoInfo.FullName(), err)
+		fmt.Fprintf(cli.Out(), "Failed to sign %q:%s - %s\n", repoInfo.Name.Name(), tag, err.Error())
+		return trust.NotaryError(repoInfo.Name.Name(), err)
 	}
 
-	fmt.Fprintf(cli.Out(), "Successfully signed %q:%s\n", repoInfo.FullName(), tag)
+	fmt.Fprintf(cli.Out(), "Successfully signed %q:%s\n", repoInfo.Name.Name(), tag)
 	return nil
 }
 
@@ -195,7 +195,7 @@ func addTargetToAllSignableRoles(repo *client.NotaryRepository, target *client.T
 	}
 
 	if len(signableRoles) == 0 {
-		return fmt.Errorf("no valid signing keys for delegation roles")
+		return errors.Errorf("no valid signing keys for delegation roles")
 	}
 
 	return repo.AddTarget(target, signableRoles...)
@@ -245,7 +245,7 @@ func trustedPull(ctx context.Context, cli *command.DockerCli, repoInfo *registry
 			refs = append(refs, t)
 		}
 		if len(refs) == 0 {
-			return trust.NotaryError(ref.Name(), fmt.Errorf("No trusted tags for %s", ref.Name()))
+			return trust.NotaryError(ref.Name(), errors.Errorf("No trusted tags for %s", ref.Name()))
 		}
 	} else {
 		t, err := notaryRepo.GetTargetByName(tagged.Tag(), trust.ReleasesRole, data.CanonicalTargetsRole)
@@ -255,7 +255,7 @@ func trustedPull(ctx context.Context, cli *command.DockerCli, repoInfo *registry
 		// Only get the tag if it's in the top level targets role or the releases delegation role
 		// ignore it if it's in any other delegation roles
 		if t.Role != trust.ReleasesRole && t.Role != data.CanonicalTargetsRole {
-			return trust.NotaryError(ref.Name(), fmt.Errorf("No trust data for %s", tagged.Tag()))
+			return trust.NotaryError(ref.Name(), errors.Errorf("No trust data for %s", tagged.Tag()))
 		}
 
 		logrus.Debugf("retrieving target for %s role\n", t.Role)
@@ -342,12 +342,12 @@ func TrustedReference(ctx context.Context, cli *command.DockerCli, ref reference
 
 	t, err := notaryRepo.GetTargetByName(ref.Tag(), trust.ReleasesRole, data.CanonicalTargetsRole)
 	if err != nil {
-		return nil, trust.NotaryError(repoInfo.FullName(), err)
+		return nil, trust.NotaryError(repoInfo.Name.Name(), err)
 	}
 	// Only list tags in the top level targets role or the releases delegation role - ignore
 	// all other delegation roles
 	if t.Role != trust.ReleasesRole && t.Role != data.CanonicalTargetsRole {
-		return nil, trust.NotaryError(repoInfo.FullName(), fmt.Errorf("No trust data for %s", ref.Tag()))
+		return nil, trust.NotaryError(repoInfo.Name.Name(), errors.Errorf("No trust data for %s", ref.Tag()))
 	}
 	r, err := convertTarget(t.Target)
 	if err != nil {

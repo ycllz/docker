@@ -1,8 +1,6 @@
 package plugin
 
 import (
-	"fmt"
-
 	"golang.org/x/net/context"
 
 	"github.com/docker/distribution/reference"
@@ -11,6 +9,7 @@ import (
 	"github.com/docker/docker/cli/command/image"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/registry"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -37,13 +36,10 @@ func runPush(dockerCli *command.DockerCli, name string) error {
 		return err
 	}
 	if _, ok := named.(reference.Canonical); ok {
-		return fmt.Errorf("invalid name: %s", name)
+		return errors.Errorf("invalid name: %s", name)
 	}
 
-	taggedRef, ok := named.(reference.NamedTagged)
-	if !ok {
-		taggedRef = reference.EnsureTagged(named)
-	}
+	named = reference.TagNameOnly(named)
 
 	ctx := context.Background()
 
@@ -58,7 +54,7 @@ func runPush(dockerCli *command.DockerCli, name string) error {
 		return err
 	}
 
-	responseBody, err := dockerCli.Client().PluginPush(ctx, reference.FamiliarString(taggedRef), encodedAuth)
+	responseBody, err := dockerCli.Client().PluginPush(ctx, reference.FamiliarString(named), encodedAuth)
 	if err != nil {
 		return err
 	}

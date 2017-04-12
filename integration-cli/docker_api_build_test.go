@@ -3,11 +3,14 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/docker/docker/integration-cli/checker"
+	"github.com/docker/docker/integration-cli/cli/build/fakecontext"
+	"github.com/docker/docker/integration-cli/cli/build/fakestorage"
 	"github.com/docker/docker/integration-cli/request"
 	"github.com/docker/docker/pkg/testutil"
 	"github.com/go-check/check"
@@ -28,10 +31,10 @@ COPY * /tmp/
 RUN find / -xdev -name ba*
 RUN find /tmp/`
 	}
-	server := fakeStorage(c, map[string]string{"testD": testD})
+	server := fakestorage.New(c, "", fakecontext.WithFiles(map[string]string{"testD": testD}))
 	defer server.Close()
 
-	res, body, err := request.SockRequestRaw("POST", "/build?dockerfile=baz&remote="+server.URL()+"/testD", nil, "application/json", daemonHost())
+	res, body, err := request.Post("/build?dockerfile=baz&remote="+server.URL()+"/testD", request.JSON)
 	c.Assert(err, checker.IsNil)
 	c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 
@@ -65,12 +68,12 @@ func (s *DockerSuite) TestBuildAPIRemoteTarballContext(c *check.C) {
 	// failed to close tar archive
 	c.Assert(tw.Close(), checker.IsNil)
 
-	server := fakeBinaryStorage(c, map[string]*bytes.Buffer{
+	server := fakestorage.New(c, "", fakecontext.WithBinaryFiles(map[string]*bytes.Buffer{
 		"testT.tar": buffer,
-	})
+	}))
 	defer server.Close()
 
-	res, b, err := request.SockRequestRaw("POST", "/build?remote="+server.URL()+"/testT.tar", nil, "application/tar", daemonHost())
+	res, b, err := request.Post("/build?remote="+server.URL()+"/testT.tar", request.ContentType("application/tar"))
 	c.Assert(err, checker.IsNil)
 	c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 	b.Close()
@@ -112,13 +115,13 @@ RUN echo 'right'
 	// failed to close tar archive
 	c.Assert(tw.Close(), checker.IsNil)
 
-	server := fakeBinaryStorage(c, map[string]*bytes.Buffer{
+	server := fakestorage.New(c, "", fakecontext.WithBinaryFiles(map[string]*bytes.Buffer{
 		"testT.tar": buffer,
-	})
+	}))
 	defer server.Close()
 
 	url := "/build?dockerfile=custom&remote=" + server.URL() + "/testT.tar"
-	res, body, err := request.SockRequestRaw("POST", url, nil, "application/tar", daemonHost())
+	res, body, err := request.Post(url, request.ContentType("application/tar"))
 	c.Assert(err, checker.IsNil)
 	c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 
@@ -137,7 +140,7 @@ RUN echo from dockerfile`,
 	}, false)
 	defer git.Close()
 
-	res, body, err := request.SockRequestRaw("POST", "/build?remote="+git.RepoURL, nil, "application/json", daemonHost())
+	res, body, err := request.Post("/build?remote="+git.RepoURL, request.JSON)
 	c.Assert(err, checker.IsNil)
 	c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 
@@ -158,7 +161,7 @@ RUN echo from Dockerfile`,
 	defer git.Close()
 
 	// Make sure it tries to 'dockerfile' query param value
-	res, body, err := request.SockRequestRaw("POST", "/build?dockerfile=baz&remote="+git.RepoURL, nil, "application/json", daemonHost())
+	res, body, err := request.Post("/build?dockerfile=baz&remote="+git.RepoURL, request.JSON)
 	c.Assert(err, checker.IsNil)
 	c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 
@@ -180,7 +183,7 @@ RUN echo from dockerfile`,
 	defer git.Close()
 
 	// Make sure it tries to 'dockerfile' query param value
-	res, body, err := request.SockRequestRaw("POST", "/build?remote="+git.RepoURL, nil, "application/json", daemonHost())
+	res, body, err := request.Post("/build?remote="+git.RepoURL, request.JSON)
 	c.Assert(err, checker.IsNil)
 	c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 
@@ -227,7 +230,7 @@ func (s *DockerSuite) TestBuildAPIUnnormalizedTarPaths(c *check.C) {
 		// failed to close tar archive
 		c.Assert(tw.Close(), checker.IsNil)
 
-		res, body, err := request.SockRequestRaw("POST", "/build", buffer, "application/x-tar", daemonHost())
+		res, body, err := request.Post("/build", request.RawContent(ioutil.NopCloser(buffer)), request.ContentType("application/x-tar"))
 		c.Assert(err, checker.IsNil)
 		c.Assert(res.StatusCode, checker.Equals, http.StatusOK)
 
