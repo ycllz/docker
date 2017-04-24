@@ -84,6 +84,9 @@ type Manifest struct {
 	// run
 	Architecture string `json:"architecture"`
 
+	// OS is the OS which this image was built and will be run on
+	OS string `json:"os"`
+
 	// FSLayers is a list of filesystem layer blobSums contained in this image
 	FSLayers []FSLayer `json:"fsLayers"`
 

@@ -174,12 +174,18 @@ type CreateRWLayerOpts struct {
 	MountLabel string
 	InitFunc   MountInit
 	StorageOpt map[string]string
+	OS         string
+}
+
+// RegisterLayerOpts contains optional argmuments to be passed to Register
+type RegisterLayerOpts struct {
+	OS string
 }
 
 // Store represents a backend for managing both
 // read-only and read-write layers.
 type Store interface {
-	Register(io.Reader, ChainID) (Layer, error)
+	Register(io.Reader, ChainID, *RegisterLayerOpts) (Layer, error)
 	Get(ChainID) (Layer, error)
 	Map() map[ChainID]Layer
 	Release(Layer) ([]Metadata, error)
@@ -197,7 +203,7 @@ type Store interface {
 // DescribableStore represents a layer store capable of storing
 // descriptors for layers.
 type DescribableStore interface {
-	RegisterWithDescriptor(io.Reader, ChainID, distribution.Descriptor) (Layer, error)
+	RegisterWithDescriptor(io.Reader, ChainID, *RegisterLayerOpts, distribution.Descriptor) (Layer, error)
 }
 
 // MetadataTransaction represents functions for setting layer metadata

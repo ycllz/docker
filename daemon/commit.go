@@ -177,7 +177,7 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 	}
 
 	rootFSID := daemon.encodeOS(osVersion, rootFS.ChainID())
-	l, err := daemon.layerStore.Register(rwTar, rootFSID)
+	l, err := daemon.layerStore.Register(rwTar, rootFSID, nil)
 	if err != nil {
 		return "", err
 	}

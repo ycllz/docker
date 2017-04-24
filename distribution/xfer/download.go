@@ -59,6 +59,12 @@ func (d *downloadTransfer) result() (layer.Layer, error) {
 	return d.layer, d.err
 }
 
+// DownloadContext is additional context/config downloaded before the
+// actual layers get extract such as the image config file.
+type DownloadContext struct {
+	OS string
+}
+
 // A DownloadDescriptor references a layer that may need to be downloaded.
 type DownloadDescriptor interface {
 	// Key returns the key used to deduplicate downloads.
@@ -69,6 +75,9 @@ type DownloadDescriptor interface {
 	// if it is unknown (for example, if it has not been downloaded
 	// before).
 	DiffID() (layer.DiffID, error)
+	// GetDownloadContext returns additional download context or nil if
+	// no download context exists.
+	GetDownloadContext() *DownloadContext
 	// Download is called to perform the download.
 	Download(ctx context.Context, progressOutput progress.Output) (io.ReadCloser, int64, error)
 	// Close is called when the download manager is finished with this
@@ -331,13 +340,17 @@ func (ldm *LayerDownloadManager) makeDownloadFunc(descriptor DownloadDescriptor,
 			}
 
 			var src distribution.Descriptor
+			var registerOpts *layer.RegisterLayerOpts
+			if descriptor.GetDownloadContext() != nil {
+				registerOpts = &layer.RegisterLayerOpts{OS: descriptor.GetDownloadContext().OS}
+			}
 			if fs, ok := descriptor.(distribution.Describable); ok {
 				src = fs.Descriptor()
 			}
 			if ds, ok := d.layerStore.(layer.DescribableStore); ok {
-				d.layer, err = ds.RegisterWithDescriptor(inflatedLayerData, parentLayer, src)
+				d.layer, err = ds.RegisterWithDescriptor(inflatedLayerData, parentLayer, registerOpts, src)
 			} else {
-				d.layer, err = d.layerStore.Register(inflatedLayerData, parentLayer)
+				d.layer, err = d.layerStore.Register(inflatedLayerData, parentLayer, registerOpts)
 			}
 			if err != nil {
 				select {
@@ -430,13 +443,17 @@ func (ldm *LayerDownloadManager) makeDownloadFuncFromDownload(descriptor Downloa
 			defer layerReader.Close()
 
 			var src distribution.Descriptor
+			var registerOpts *layer.RegisterLayerOpts
+			if descriptor.GetDownloadContext() != nil {
+				registerOpts = &layer.RegisterLayerOpts{OS: descriptor.GetDownloadContext().OS}
+			}
 			if fs, ok := l.(distribution.Describable); ok {
 				src = fs.Descriptor()
 			}
 			if ds, ok := d.layerStore.(layer.DescribableStore); ok {
-				d.layer, err = ds.RegisterWithDescriptor(layerReader, parentLayer, src)
+				d.layer, err = ds.RegisterWithDescriptor(layerReader, parentLayer, registerOpts, src)
 			} else {
-				d.layer, err = d.layerStore.Register(layerReader, parentLayer)
+				d.layer, err = d.layerStore.Register(layerReader, parentLayer, registerOpts)
 			}
 			if err != nil {
 				d.err = fmt.Errorf("failed to register layer: %v", err)

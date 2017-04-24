@@ -136,6 +136,7 @@ type v2LayerDescriptor struct {
 	V2MetadataService metadata.V2MetadataService
 	tmpFile           *os.File
 	verifier          digest.Verifier
+	ctx               *xfer.DownloadContext
 	src               distribution.Descriptor
 }
 
@@ -149,6 +150,10 @@ func (ld *v2LayerDescriptor) ID() string {
 
 func (ld *v2LayerDescriptor) DiffID() (layer.DiffID, error) {
 	return ld.V2MetadataService.GetDiffID(ld.digest)
+}
+
+func (ld *v2LayerDescriptor) GetDownloadContext() *xfer.DownloadContext {
+	return ld.ctx
 }
 
 func (ld *v2LayerDescriptor) Download(ctx context.Context, progressOutput progress.Output) (io.ReadCloser, int64, error) {
@@ -477,6 +482,7 @@ func (p *v2Puller) pullSchema1(ctx context.Context, ref reference.Named, unverif
 			repoInfo:          p.repoInfo,
 			repo:              p.repo,
 			V2MetadataService: p.V2MetadataService,
+			ctx:               &xfer.DownloadContext{OS: verifiedManifest.OS},
 		}
 
 		descriptors = append(descriptors, layerDescriptor)
@@ -536,34 +542,26 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 	}()
 
 	var (
-		configJSON       []byte        // raw serialized image config
-		downloadedRootFS *image.RootFS // rootFS from registered layers
-		configRootFS     *image.RootFS // rootFS from configuration
-		release          func()        // release resources from rootFS download
+		configJSON         []byte        // raw serialized image config
+		unmarshalledConfig image.Image   // Deserialized image
+		downloadedRootFS   *image.RootFS // rootFS from registered layers
+		configRootFS       *image.RootFS // rootFS from configuration
+		release            func()        // release resources from rootFS download
+
 	)
 
-	// https://github.com/docker/docker/issues/24766 - Err on the side of caution,
-	// explicitly blocking images intended for linux from the Windows daemon. On
-	// Windows, we do this before the attempt to download, effectively serialising
-	// the download slightly slowing it down. We have to do it this way, as
-	// chances are the download of layers itself would fail due to file names
-	// which aren't suitable for NTFS. At some point in the future, if a similar
-	// check to block Windows images being pulled on Linux is implemented, it
-	// may be necessary to perform the same type of serialisation.
-	osType := runtime.GOOS
-	if runtime.GOOS == "windows" {
-		configJSON, configRootFS, err = receiveConfig(p.config.ImageStore, configChan, configErrChan)
-		if err != nil {
-			return "", "", err
-		}
+	configJSON, configRootFS, err = receiveConfig(p.config.ImageStore, configChan, configErrChan)
+	if err != nil {
+		return "", "", err
+	}
 
-		if configRootFS == nil {
-			return "", "", errRootFSInvalid
-		}
-		osType, err = getOS(configJSON)
-		if err != nil {
-			return "", "", err
-		}
+	if configRootFS == nil {
+		return "", "", errRootFSInvalid
+	}
+
+	err = json.Unmarshal(configJSON, &unmarshalledConfig)
+	if err != nil {
+		return "", "", err
 	}
 
 	var descriptors []xfer.DownloadDescriptor
@@ -575,9 +573,9 @@ func (p *v2Puller) pullSchema2(ctx context.Context, ref reference.Named, mfst *s
 			repo:              p.repo,
 			repoInfo:          p.repoInfo,
 			V2MetadataService: p.V2MetadataService,
+			ctx:               &xfer.DownloadContext{OS: unmarshalledConfig.OS},
 			src:               d,
 		}
-		layerDescriptor.src.OS = osType
 		descriptors = append(descriptors, layerDescriptor)
 	}
 
@@ -666,14 +664,6 @@ func receiveConfig(s ImageConfigStore, configChan <-chan []byte, errChan <-chan 
 		// Don't need a case for ctx.Done in the select because cancellation
 		// will trigger an error in p.pullSchema2ImageConfig.
 	}
-}
-
-func getOS(configJSON []byte) (string, error) {
-	var unmarshalledConfig image.Image
-	if err := json.Unmarshal(configJSON, &unmarshalledConfig); err != nil {
-		return "", err
-	}
-	return unmarshalledConfig.OS, nil
 }
 
 // pullManifestList handles "manifest lists" which point to various

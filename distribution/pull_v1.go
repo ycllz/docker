@@ -1,6 +1,7 @@
 package distribution
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -218,6 +219,10 @@ func (p *v1Puller) pullImage(ctx context.Context, v1ID, endpoint string, localNa
 		}
 		newHistory = append(newHistory, h)
 
+		var v1Image image.V1Image
+		if err := json.Unmarshal(imgJSON, &v1Image); err != nil {
+			return err
+		}
 		layerDescriptor := &v1LayerDescriptor{
 			v1LayerID:        v1LayerID,
 			indexName:        p.repoInfo.Index.Name,
@@ -226,6 +231,7 @@ func (p *v1Puller) pullImage(ctx context.Context, v1ID, endpoint string, localNa
 			layersDownloaded: layersDownloaded,
 			layerSize:        imgSize,
 			session:          p.session,
+			ctx:              &xfer.DownloadContext{OS: v1Image.OS},
 		}
 
 		descriptors = append(descriptors, layerDescriptor)
@@ -287,6 +293,7 @@ type v1LayerDescriptor struct {
 	layerSize        int64
 	session          *registry.Session
 	tmpFile          *os.File
+	ctx              *xfer.DownloadContext
 }
 
 func (ld *v1LayerDescriptor) Key() string {
@@ -299,6 +306,10 @@ func (ld *v1LayerDescriptor) ID() string {
 
 func (ld *v1LayerDescriptor) DiffID() (layer.DiffID, error) {
 	return ld.v1IDService.Get(ld.v1LayerID, ld.indexName)
+}
+
+func (ld *v1LayerDescriptor) GetDownloadContext() *xfer.DownloadContext {
+	return ld.ctx
 }
 
 func (ld *v1LayerDescriptor) Download(ctx context.Context, progressOutput progress.Output) (io.ReadCloser, int64, error) {

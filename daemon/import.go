@@ -87,7 +87,7 @@ func (daemon *Daemon) ImportImage(src string, repository, tag string, msg string
 		return err
 	}
 	// TODO: support windows baselayer?
-	l, err := daemon.layerStore.Register(inflatedLayerData, "")
+	l, err := daemon.layerStore.Register(inflatedLayerData, "", nil)
 	if err != nil {
 		return err
 	}

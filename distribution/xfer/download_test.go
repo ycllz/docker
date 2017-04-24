@@ -86,11 +86,11 @@ func (ls *mockLayerStore) Map() map[layer.ChainID]layer.Layer {
 	return layers
 }
 
-func (ls *mockLayerStore) Register(reader io.Reader, parentID layer.ChainID) (layer.Layer, error) {
-	return ls.RegisterWithDescriptor(reader, parentID, distribution.Descriptor{})
+func (ls *mockLayerStore) Register(reader io.Reader, parentID layer.ChainID, opts *layer.RegisterLayerOpts) (layer.Layer, error) {
+	return ls.RegisterWithDescriptor(reader, parentID, opts, distribution.Descriptor{})
 }
 
-func (ls *mockLayerStore) RegisterWithDescriptor(reader io.Reader, parentID layer.ChainID, _ distribution.Descriptor) (layer.Layer, error) {
+func (ls *mockLayerStore) RegisterWithDescriptor(reader io.Reader, parentID layer.ChainID, opts *layer.RegisterLayerOpts, _ distribution.Descriptor) (layer.Layer, error) {
 	var (
 		parent layer.Layer
 		err    error
@@ -160,6 +160,7 @@ type mockDownloadDescriptor struct {
 	registeredDiffID layer.DiffID
 	expectedDiffID   layer.DiffID
 	simulateRetries  int
+	ctx              *DownloadContext
 }
 
 // Key returns the key used to deduplicate downloads.
@@ -180,6 +181,10 @@ func (d *mockDownloadDescriptor) DiffID() (layer.DiffID, error) {
 		return d.diffID, nil
 	}
 	return "", errors.New("no diffID available")
+}
+
+func (d *mockDownloadDescriptor) GetDownloadContext() *DownloadContext {
+	return d.ctx
 }
 
 func (d *mockDownloadDescriptor) Registered(diffID layer.DiffID) {
@@ -286,7 +291,7 @@ func TestSuccessfulDownload(t *testing.T) {
 	firstDescriptor := descriptors[0].(*mockDownloadDescriptor)
 
 	// Pre-register the first layer to simulate an already-existing layer
-	l, err := layerStore.Register(firstDescriptor.mockTarStream(), "")
+	l, err := layerStore.Register(firstDescriptor.mockTarStream(), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

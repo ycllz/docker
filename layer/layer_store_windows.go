@@ -25,6 +25,6 @@ func (ls *layerStore) decodeOS(id string) (string, string, error) {
 	return "windows", id, nil
 }
 
-func (ls *layerStore) RegisterWithDescriptor(ts io.Reader, parent ChainID, descriptor distribution.Descriptor) (Layer, error) {
-	return ls.registerWithDescriptor(ts, parent, descriptor)
+func (ls *layerStore) RegisterWithDescriptor(ts io.Reader, parent ChainID, opts *RegisterLayerOpts, descriptor distribution.Descriptor) (Layer, error) {
+	return ls.registerWithDescriptor(ts, parent, opts, descriptor)
 }

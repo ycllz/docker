@@ -19,7 +19,7 @@ func (ld *v2LayerDescriptor) Descriptor() distribution.Descriptor {
 	if ld.src.MediaType == schema2.MediaTypeForeignLayer && len(ld.src.URLs) > 0 {
 		return ld.src
 	}
-	return distribution.Descriptor{OS: ld.src.OS}
+	return distribution.Descriptor{}
 }
 
 func (ld *v2LayerDescriptor) open(ctx context.Context) (distribution.ReadSeekCloser, error) {
