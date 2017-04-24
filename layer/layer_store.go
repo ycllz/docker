@@ -465,12 +465,14 @@ func (ls *layerStore) CreateRWLayer(name string, parent ChainID, opts *CreateRWL
 		storageOpt map[string]string
 		initFunc   MountInit
 		mountLabel string
+		osType     string
 	)
 
 	if opts != nil {
 		mountLabel = opts.MountLabel
 		storageOpt = opts.StorageOpt
 		initFunc = opts.InitFunc
+		osType = opts.OS
 	}
 
 	ls.mountL.Lock()
@@ -518,6 +520,7 @@ func (ls *layerStore) CreateRWLayer(name string, parent ChainID, opts *CreateRWL
 
 	createOpts := &graphdriver.CreateOpts{
 		StorageOpt: storageOpt,
+		OS:         osType,
 	}
 
 	if err = ls.driver.CreateReadWrite(m.mountID, pid, createOpts); err != nil {

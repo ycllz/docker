@@ -209,18 +209,21 @@ func (daemon *Daemon) generateSecurityOpt(hostConfig *containertypes.HostConfig)
 
 func (daemon *Daemon) setRWLayer(container *container.Container) error {
 	var layerID layer.ChainID
+	var osType string
 	if container.ImageID != "" {
 		img, err := daemon.imageStore.Get(container.ImageID)
 		if err != nil {
 			return err
 		}
 		layerID = img.RootFS.ChainID()
+		osType = img.OS
 	}
 
 	rwLayerOpts := &layer.CreateRWLayerOpts{
 		MountLabel: container.MountLabel,
 		InitFunc:   daemon.getLayerInit(),
 		StorageOpt: container.HostConfig.StorageOpt,
+		OS:         osType,
 	}
 
 	rwLayer, err := daemon.layerStore.CreateRWLayer(container.ID, layerID, rwLayerOpts)

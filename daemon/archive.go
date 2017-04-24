@@ -470,7 +470,11 @@ func (daemon *Daemon) MountImage(name string) (string, func() error, error) {
 	}
 
 	mountID := stringid.GenerateRandomID()
-	rwLayer, err := daemon.layerStore.CreateRWLayer(mountID, img.RootFS.ChainID(), nil)
+	var opts *layer.CreateRWLayerOpts
+	if daemon.GraphDriverName() == "windowsfilter" {
+		opts = &layer.CreateRWLayerOpts{OS: img.OS}
+	}
+	rwLayer, err := daemon.layerStore.CreateRWLayer(mountID, img.RootFS.ChainID(), opts)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "failed to create rwlayer")
 	}
