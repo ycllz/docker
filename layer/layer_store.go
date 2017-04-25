@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"runtime"
 	"sync"
 
 	"github.com/Sirupsen/logrus"
@@ -13,6 +14,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/stringid"
+	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/go-digest"
 	"github.com/vbatts/tar-split/tar/asm"
 	"github.com/vbatts/tar-split/tar/storage"
@@ -238,9 +240,22 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 		}
 	}
 
-	applySize, err := ls.driver.ApplyDiff(layer.cacheID, parent, rdr)
-	if err != nil {
-		return err
+	// TODO @jhowardmsft LCOW support.
+	// More building blocks are required so that the file I/O is redirected
+	// to service VM. At this point, there's no point calling the graphdriver
+	// as it would fail. Instead, make this a no-op for now so that validation
+	// can be made on pull for example.
+	var (
+		applySize int64
+		err       error
+	)
+	if runtime.GOOS == "windows" && system.LCOWSupported() && layer.Platform() != "windows" {
+		logrus.Warnln("In development - not calling graphdriver ApplyDiff for LCOW")
+	} else {
+		applySize, err = ls.driver.ApplyDiff(layer.cacheID, parent, rdr)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Discard trailing data but ensure metadata is picked up to reconstruct stream
@@ -254,11 +269,11 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 	return nil
 }
 
-func (ls *layerStore) Register(ts io.Reader, parent ChainID) (Layer, error) {
-	return ls.registerWithDescriptor(ts, parent, distribution.Descriptor{})
+func (ls *layerStore) Register(ts io.Reader, parent ChainID, platform Platform) (Layer, error) {
+	return ls.registerWithDescriptor(ts, parent, platform, distribution.Descriptor{})
 }
 
-func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descriptor distribution.Descriptor) (Layer, error) {
+func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, platform Platform, descriptor distribution.Descriptor) (Layer, error) {
 	// err is used to hold the error which will always trigger
 	// cleanup of creates sources but may not be an error returned
 	// to the caller (already exists).
@@ -293,10 +308,20 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 		layerStore:     ls,
 		references:     map[Layer]struct{}{},
 		descriptor:     descriptor,
+		platform:       platform,
 	}
 
-	if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
-		return nil, err
+	// TODO @jhowardmsft LCOW support.
+	// More building blocks are required so that the file I/O is redirected
+	// to service VM. At this point, there's no point calling the graphdriver
+	// as it would fail. Instead, make this a no-op for now so that validation
+	// can be made on pull for example.
+	if runtime.GOOS == "windows" && system.LCOWSupported() && platform != "windows" {
+		logrus.Warnln("In development - not calling graphdriver Create for LCOW")
+	} else {
+		if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
+			return nil, err
+		}
 	}
 
 	tx, err := ls.store.StartTransaction()
@@ -306,9 +331,19 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, descr
 
 	defer func() {
 		if err != nil {
-			logrus.Debugf("Cleaning up layer %s: %v", layer.cacheID, err)
-			if err := ls.driver.Remove(layer.cacheID); err != nil {
-				logrus.Errorf("Error cleaning up cache layer %s: %v", layer.cacheID, err)
+			// TODO @jhowardmsft LCOW support.
+			// More building blocks are required so that the file I/O is redirected
+			// to service VM. At this point, there's no point calling the graphdriver
+			// as it would fail. Instead, make this a no-op for now so that validation
+			// can be made on pull for example.
+			if runtime.GOOS == "windows" && system.LCOWSupported() && platform != "windows" {
+				logrus.Warnln("In development - not calling graphdriver Create for LCOW")
+			} else {
+
+				logrus.Debugf("Cleaning up layer %s: %v", layer.cacheID, err)
+				if err := ls.driver.Remove(layer.cacheID); err != nil {
+					logrus.Errorf("Error cleaning up cache layer %s: %v", layer.cacheID, err)
+				}
 			}
 			if err := tx.Cancel(); err != nil {
 				logrus.Errorf("Error canceling metadata transaction %q: %s", tx.String(), err)
@@ -391,12 +426,21 @@ func (ls *layerStore) Map() map[ChainID]Layer {
 }
 
 func (ls *layerStore) deleteLayer(layer *roLayer, metadata *Metadata) error {
-	err := ls.driver.Remove(layer.cacheID)
-	if err != nil {
-		return err
+	// TODO @jhowardmsft LCOW support.
+	// More building blocks are required so that the file I/O is redirected
+	// to service VM. At this point, there's no point calling the graphdriver
+	// as it would fail. Instead, make this a no-op for now so that validation
+	// can be made on pull for example.
+	if runtime.GOOS == "windows" && system.LCOWSupported() && layer.Platform() != "windows" {
+		logrus.Warnln("In development - not calling graphdriver Remove for LCOW")
+	} else {
+		err := ls.driver.Remove(layer.cacheID)
+		if err != nil {
+			return err
+		}
 	}
 
-	err = ls.store.Remove(layer.chainID)
+	err := ls.store.Remove(layer.chainID)
 	if err != nil {
 		return err
 	}
@@ -525,7 +569,6 @@ func (ls *layerStore) CreateRWLayer(name string, parent ChainID, opts *CreateRWL
 	if err = ls.driver.CreateReadWrite(m.mountID, pid, createOpts); err != nil {
 		return nil, err
 	}
-
 	if err = ls.saveMount(m); err != nil {
 		return nil, err
 	}
