@@ -159,7 +159,10 @@ func getOSFromOpts(opts *graphdriver.CreateOpts) string {
 func (d *Driver) getOSFromID(id string) (string, error) {
 	fileName := filepath.Join(d.info.HomeDir, id, osFileName)
 	data, err := ioutil.ReadFile(fileName)
-	if err != nil {
+	if err != nil && os.IsNotExist(err) {
+		// Assume that this is Windows to preserve compatability with older Windows images.
+		return "windows", nil
+	} else if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
