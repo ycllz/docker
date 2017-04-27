@@ -162,6 +162,7 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 
 	var history []image.History
 	rootFS := image.NewRootFS()
+	osType := runtime.GOOS
 	osVersion := ""
 	var osFeatures []string
 
@@ -172,12 +173,12 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 		}
 		history = img.History
 		rootFS = img.RootFS
-		osVersion = img.OS
+		osType = img.OS
+		osVersion = img.OSVersion
 		osFeatures = img.OSFeatures
 	}
-
-	rootFSID := daemon.encodeOS(osVersion, rootFS.ChainID())
-	l, err := daemon.layerStore.Register(rwTar, rootFSID, nil)
+	regOpts := &layer.RegisterLayerOpts{OS: osType}
+	l, err := daemon.layerStore.Register(rwTar, rootFS.ChainID(), regOpts)
 	if err != nil {
 		return "", err
 	}
@@ -203,7 +204,7 @@ func (daemon *Daemon) Commit(name string, c *backend.ContainerCommitConfig) (str
 			DockerVersion:   dockerversion.Version,
 			Config:          newConfig,
 			Architecture:    runtime.GOARCH,
-			OS:              runtime.GOOS,
+			OS:              osType,
 			Container:       container.ID,
 			ContainerConfig: *container.Config,
 			Author:          c.Author,
