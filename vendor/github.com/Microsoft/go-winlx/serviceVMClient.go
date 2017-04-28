@@ -5,16 +5,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
-
-	"strings"
-
-	"io/ioutil"
-
 	"strconv"
+	"strings"
 
 	"github.com/Microsoft/hvsock"
 )
@@ -42,7 +40,7 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer conn.Close()
+	defer closeConnection(conn)
 
 	header := &ServiceVMHeader{
 		Command:     ImportCmd,
@@ -63,15 +61,6 @@ func ServiceVMImportLayer(layerPath string, reader io.Reader) (int64, error) {
 	fmt.Println("writing vhd to file.")
 	// We are getting the VHD stream, so write it to file
 	err = writeVHDFile(path.Join(layerPath, LayerVHDName), resultSize, conn)
-	if err != nil {
-		return 0, err
-	}
-
-	err = sendClose(conn)
-	if err != nil {
-		return 0, err
-	}
-
 	return resultSize, err
 }
 
@@ -131,7 +120,7 @@ func writeVHDFile(path string, bytesToRead int64, r io.Reader) error {
 	return f.Close()
 }
 
-func sendClose(rc io.WriteCloser) error {
+func closeConnection(rc io.WriteCloser) error {
 	header := &ServiceVMHeader{
 		Command:     TerminateCmd,
 		Version:     Version1,
@@ -140,22 +129,35 @@ func sendClose(rc io.WriteCloser) error {
 
 	buf, err := SerializeHeader(header)
 	if err != nil {
+		rc.Close()
 		return err
 	}
 
 	_, err = rc.Write(buf)
 	if err != nil {
+		rc.Close()
 		return err
 	}
 	return rc.Close()
 }
 
 func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
-	vhdFile, fileSize, err := getVHDFile(vhdPath)
+	// Check if sandbox
+	if _, err := os.Stat(filepath.Join(vhdPath, LayerSandboxName)); err == nil {
+		return ServiceVMExportSandbox(vhdPath)
+	}
+
+	// Otherwise, it's a normal vhd file.
+	vhdFile, err := os.Open(path.Join(vhdPath, LayerVHDName))
 	if err != nil {
 		return nil, err
 	}
 	defer vhdFile.Close()
+
+	fileInfo, err := vhdFile.Stat()
+	if err != nil {
+		return nil, err
+	}
 
 	conn, err := connectToServer()
 	if err != nil {
@@ -165,54 +167,31 @@ func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 	header := &ServiceVMHeader{
 		Command:     ExportCmd,
 		Version:     0,
-		PayloadSize: fileSize,
+		PayloadSize: fileInfo.Size(),
 	}
 
 	fmt.Println("VHD PATH = ", vhdFile.Name())
 	err = SendData(header, vhdFile, conn)
 	if err != nil {
-		conn.Close()
+		closeConnection(conn)
 		return nil, err
 	}
 
 	fmt.Println("Waiting for server response")
 	payloadSize, err := waitForResponse(conn)
 	if err != nil {
-		conn.Close()
+		closeConnection(conn)
 		return nil, err
 	}
 
 	reader, writer := io.Pipe()
 	go func() {
-		defer writer.Close()
-		defer sendClose(conn)
 		fmt.Println("Copying result over hvsock")
 		io.CopyN(writer, conn, payloadSize)
+		closeConnection(conn)
+		writer.Close()
 	}()
 	return reader, nil
-}
-
-func getVHDFile(vhdPath string) (*os.File, int64, error) {
-	// The vhd could be either layer.vhd or sandbox.vhdx depending on
-	// if we are a ro layer or r/w layer
-	vhdFile, err := os.Open(path.Join(vhdPath, LayerVHDName))
-	if err == nil {
-		return nil, 0, err
-	} else if err != nil && !os.IsNotExist(err) {
-		return nil, 0, err
-	}
-
-	// Try the sandbox path
-	vhdFile, err = os.Open(path.Join(vhdPath, LayerSandboxName))
-	if err != nil {
-		return nil, 0, err
-	}
-
-	fileInfo, err := vhdFile.Stat()
-	if err != nil {
-		return nil, 0, err
-	}
-	return vhdFile, fileInfo.Size(), nil
 }
 
 func ServiceVMCreateSandbox(sandboxFolder string) error {
@@ -241,7 +220,26 @@ func ServiceVMCreateSandbox(sandboxFolder string) error {
 		ControllerNumber:   controllerNumber,
 		ControllerLocation: controllerLocation,
 	}
-	return sendSCSINumbers(hdr, scsiHeader)
+
+	conn, err := connectToServer()
+	if err != nil {
+		return err
+	}
+	defer closeConnection(conn)
+
+	data, err := serializeSCSI(hdr, scsiHeader)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("CREATING SANDBOX", data)
+	_, err = conn.Write(data)
+	if err != nil {
+		return err
+	}
+
+	_, err = waitForResponse(conn)
+	return err
 }
 
 func newVHDX(pathName string) error {
@@ -301,36 +299,67 @@ func detachVHDX(controllerNum, controllerLoc uint32) error {
 	return err
 }
 
-func sendSCSINumbers(header *ServiceVMHeader, scsiHeader *SCSICodeHeader) error {
-	conn, err := connectToServer()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
+func serializeSCSI(header *ServiceVMHeader, scsiHeader *SCSICodeHeader) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := binary.Write(buf, binary.BigEndian, header); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := binary.Write(buf, binary.BigEndian, scsiHeader); err != nil {
-		return err
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func ServiceVMExportSandbox(sandboxFolder string) (io.ReadCloser, error) {
+	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
+	fmt.Printf("ServiceVMAttachSandbox: Creating sandbox path: %s\n", sandboxPath)
+
+	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
+	if err != nil {
+		return nil, err
+	}
+	defer detachVHDX(controllerNumber, controllerLocation)
+	fmt.Printf("ServiceVMExportSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
+
+	hdr := &ServiceVMHeader{
+		Command:     ExportSandboxCmd,
+		Version:     Version1,
+		PayloadSize: SCSICodeHeaderSize,
 	}
 
-	fmt.Println(buf.Bytes())
-	_, err = conn.Write(buf.Bytes())
-	if err != nil {
-		return err
+	scsiHeader := &SCSICodeHeader{
+		ControllerNumber:   controllerNumber,
+		ControllerLocation: controllerLocation,
 	}
 
-	_, err = waitForResponse(conn)
+	data, err := serializeSCSI(hdr, scsiHeader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	err = sendClose(conn)
+	conn, err := connectToServer()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	fmt.Println("EXPORTING SANDBOX TO TAR", data)
+	_, err = conn.Write(data)
+	if err != nil {
+		return nil, err
+	}
+
+	payloadSize, err := waitForResponse(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, writer := io.Pipe()
+	go func() {
+		fmt.Println("Copying result over hvsock")
+		io.CopyN(writer, conn, payloadSize)
+		closeConnection(conn)
+		writer.Close()
+	}()
+	return reader, nil
 }
