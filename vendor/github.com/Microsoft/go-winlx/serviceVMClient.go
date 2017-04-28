@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Microsoft/hvsock"
+	"github.com/rneugeba/virtsock/pkg/hvsock"
 )
 
 func init() {

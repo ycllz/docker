@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/Microsoft/hvsock"
+	"github.com/rneugeba/virtsock/pkg/hvsock"
 )
 
 // The protocol between the service VM and docker is very simple:
