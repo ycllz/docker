@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -152,8 +153,9 @@ func (s *tempConfigStore) Get(d digest.Digest) ([]byte, error) {
 	return s.config, nil
 }
 
-func (s *tempConfigStore) RootFSFromConfig(c []byte) (*image.RootFS, error) {
-	return configToRootFS(c)
+func (s *tempConfigStore) RootFSAndPlatformFromConfig(c []byte) (*image.RootFS, layer.Platform, error) {
+	r, e := configToRootFS(c)
+	return r, layer.Platform(runtime.GOOS), e
 }
 
 func computePrivileges(c types.PluginConfig) (types.PluginPrivileges, error) {
@@ -534,8 +536,9 @@ func (s *pluginConfigStore) Get(d digest.Digest) ([]byte, error) {
 	return ioutil.ReadAll(rwc)
 }
 
-func (s *pluginConfigStore) RootFSFromConfig(c []byte) (*image.RootFS, error) {
-	return configToRootFS(c)
+func (s *pluginConfigStore) RootFSAndPlatformFromConfig(c []byte) (*image.RootFS, layer.Platform, error) {
+	r, e := configToRootFS(c)
+	return r, layer.Platform(runtime.GOOS), e
 }
 
 type pluginLayerProvider struct {

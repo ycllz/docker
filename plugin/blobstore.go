@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/distribution/xfer"
@@ -125,7 +126,7 @@ type downloadManager struct {
 	configDigest digest.Digest
 }
 
-func (dm *downloadManager) Download(ctx context.Context, initialRootFS image.RootFS, layers []xfer.DownloadDescriptor, progressOutput progress.Output) (image.RootFS, func(), error) {
+func (dm *downloadManager) Download(ctx context.Context, initialRootFS image.RootFS, platform layer.Platform, layers []xfer.DownloadDescriptor, progressOutput progress.Output) (image.RootFS, func(), error) {
 	for _, l := range layers {
 		b, err := dm.blobStore.New()
 		if err != nil {
@@ -177,6 +178,8 @@ func (dm *downloadManager) Put(dt []byte) (digest.Digest, error) {
 func (dm *downloadManager) Get(d digest.Digest) ([]byte, error) {
 	return nil, fmt.Errorf("digest not found")
 }
-func (dm *downloadManager) RootFSFromConfig(c []byte) (*image.RootFS, error) {
-	return configToRootFS(c)
+func (dm *downloadManager) RootFSAndPlatformFromConfig(c []byte) (*image.RootFS, layer.Platform, error) {
+	r, e := configToRootFS(c)
+	// TODO @jhowardmsft LCOW support: This may need revisiting. For now, assume it's the daemon OS.
+	return r, layer.Platform(runtime.GOOS), e
 }
