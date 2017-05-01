@@ -14,7 +14,6 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/stringid"
-	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/go-digest"
 	"github.com/vbatts/tar-split/tar/asm"
 	"github.com/vbatts/tar-split/tar/storage"
@@ -27,24 +26,27 @@ import (
 // used to create a rwlayer.
 const maxLayerDepth = 125
 
+type driverInfo struct {
+	driver      graphdriver.Driver
+	useTarSplit bool
+}
+
 type layerStore struct {
-	store  MetadataStore
-	driver graphdriver.Driver
+	store   MetadataStore
+	drivers map[string]driverInfo
 
 	layerMap map[ChainID]*roLayer
 	layerL   sync.Mutex
 
 	mounts map[string]*mountedLayer
 	mountL sync.Mutex
-
-	useTarSplit bool
 }
 
 // StoreOptions are the options used to create a new Store instance
 type StoreOptions struct {
 	StorePath                 string
 	MetadataStorePathTemplate string
-	GraphDriver               string
+	GraphDriverMap            map[string]string
 	GraphDriverOptions        []string
 	UIDMaps                   []idtools.IDMap
 	GIDMaps                   []idtools.IDMap
@@ -54,41 +56,65 @@ type StoreOptions struct {
 
 // NewStoreFromOptions creates a new Store instance
 func NewStoreFromOptions(options StoreOptions) (Store, error) {
-	driver, err := graphdriver.New(options.GraphDriver, options.PluginGetter, graphdriver.Options{
-		Root:                options.StorePath,
-		DriverOptions:       options.GraphDriverOptions,
-		UIDMaps:             options.UIDMaps,
-		GIDMaps:             options.GIDMaps,
-		ExperimentalEnabled: options.ExperimentalEnabled,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error initializing graphdriver: %v", err)
+	driverMap := make(map[string]graphdriver.Driver)
+	if len(options.GraphDriverMap) > 1 {
+		// We may be explicitly passed in multiple drivers, all of which require initialising.
+		for platform, driver := range options.GraphDriverMap {
+			driver, err := graphdriver.New(driver, options.PluginGetter, graphdriver.Options{
+				Root:                options.StorePath,
+				DriverOptions:       options.GraphDriverOptions,
+				UIDMaps:             options.UIDMaps,
+				GIDMaps:             options.GIDMaps,
+				ExperimentalEnabled: options.ExperimentalEnabled,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error initializing graphdriver: %v", err)
+			}
+			driverMap[platform] = driver
+			logrus.Debugf("Added graph driver %s for %s", driver, platform)
+		}
+	} else {
+		// Single-driver mode. The driver will be determined by prioity etc., if not explicitly supplied
+		driver, err := graphdriver.New(options.GraphDriverMap[runtime.GOOS], options.PluginGetter, graphdriver.Options{
+			Root:                options.StorePath,
+			DriverOptions:       options.GraphDriverOptions,
+			UIDMaps:             options.UIDMaps,
+			GIDMaps:             options.GIDMaps,
+			ExperimentalEnabled: options.ExperimentalEnabled,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error initializing graphdriver: %v", err)
+		}
+		driverMap[runtime.GOOS] = driver
+		logrus.Debugf("Using graph driver %s", driver)
 	}
-	logrus.Debugf("Using graph driver %s", driver)
 
-	fms, err := NewFSMetadataStore(fmt.Sprintf(options.MetadataStorePathTemplate, driver))
+	fms, err := NewFSMetadataStore(fmt.Sprintf(options.MetadataStorePathTemplate, driverMap[runtime.GOOS]))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewStoreFromGraphDriver(fms, driver)
+	return NewStoreFromGraphDriver(fms, driverMap)
 }
 
 // NewStoreFromGraphDriver creates a new Store instance using the provided
-// metadata store and graph driver. The metadata store will be used to restore
+// metadata store and graph drivers. The metadata store will be used to restore
 // the Store.
-func NewStoreFromGraphDriver(store MetadataStore, driver graphdriver.Driver) (Store, error) {
-	caps := graphdriver.Capabilities{}
-	if capDriver, ok := driver.(graphdriver.CapabilityDriver); ok {
-		caps = capDriver.Capabilities()
-	}
+func NewStoreFromGraphDriver(store MetadataStore, driverMap map[string]graphdriver.Driver) (Store, error) {
 
 	ls := &layerStore{
-		store:       store,
-		driver:      driver,
-		layerMap:    map[ChainID]*roLayer{},
-		mounts:      map[string]*mountedLayer{},
-		useTarSplit: !caps.ReproducesExactDiffs,
+		store:    store,
+		layerMap: map[ChainID]*roLayer{},
+		mounts:   map[string]*mountedLayer{},
+		drivers:  make(map[string]driverInfo),
+	}
+
+	for platform, driver := range driverMap {
+		caps := graphdriver.Capabilities{}
+		if capDriver, ok := driver.(graphdriver.CapabilityDriver); ok {
+			caps = capDriver.Capabilities()
+		}
+		ls.drivers[platform] = driverInfo{useTarSplit: !caps.ReproducesExactDiffs, driver: driver}
 	}
 
 	ids, mounts, err := store.List()
@@ -223,8 +249,13 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 	digester := digest.Canonical.Digester()
 	tr := io.TeeReader(ts, digester.Hash())
 
+	platform := string(layer.platform)
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+
 	rdr := tr
-	if ls.useTarSplit {
+	if ls.drivers[platform].useTarSplit {
 		tsw, err := tx.TarSplitWriter(true)
 		if err != nil {
 			return err
@@ -240,22 +271,13 @@ func (ls *layerStore) applyTar(tx MetadataTransaction, ts io.Reader, parent stri
 		}
 	}
 
-	// TODO @jhowardmsft LCOW support.
-	// More building blocks are required so that the file I/O is redirected
-	// to service VM. At this point, there's no point calling the graphdriver
-	// as it would fail. Instead, make this a no-op for now so that validation
-	// can be made on pull for example.
 	var (
 		applySize int64
 		err       error
 	)
-	if runtime.GOOS == "windows" && system.LCOWSupported() && layer.Platform() != "windows" {
-		logrus.Warnln("In development - not calling graphdriver ApplyDiff for LCOW")
-	} else {
-		applySize, err = ls.driver.ApplyDiff(layer.cacheID, parent, rdr)
-		if err != nil {
-			return err
-		}
+	applySize, err = ls.drivers[platform].driver.ApplyDiff(layer.cacheID, parent, rdr)
+	if err != nil {
+		return err
 	}
 
 	// Discard trailing data but ensure metadata is picked up to reconstruct stream
@@ -300,6 +322,10 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, platf
 		}
 	}
 
+	if string(platform) == "" {
+		platform = Platform(runtime.GOOS)
+	}
+
 	// Create new roLayer
 	layer := &roLayer{
 		parent:         p,
@@ -311,17 +337,8 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, platf
 		platform:       platform,
 	}
 
-	// TODO @jhowardmsft LCOW support.
-	// More building blocks are required so that the file I/O is redirected
-	// to service VM. At this point, there's no point calling the graphdriver
-	// as it would fail. Instead, make this a no-op for now so that validation
-	// can be made on pull for example.
-	if runtime.GOOS == "windows" && system.LCOWSupported() && platform != "windows" {
-		logrus.Warnln("In development - not calling graphdriver Create for LCOW")
-	} else {
-		if err = ls.driver.Create(layer.cacheID, pid, nil); err != nil {
-			return nil, err
-		}
+	if err = ls.drivers[string(platform)].driver.Create(layer.cacheID, pid, nil); err != nil {
+		return nil, err
 	}
 
 	tx, err := ls.store.StartTransaction()
@@ -331,19 +348,9 @@ func (ls *layerStore) registerWithDescriptor(ts io.Reader, parent ChainID, platf
 
 	defer func() {
 		if err != nil {
-			// TODO @jhowardmsft LCOW support.
-			// More building blocks are required so that the file I/O is redirected
-			// to service VM. At this point, there's no point calling the graphdriver
-			// as it would fail. Instead, make this a no-op for now so that validation
-			// can be made on pull for example.
-			if runtime.GOOS == "windows" && system.LCOWSupported() && platform != "windows" {
-				logrus.Warnln("In development - not calling graphdriver Create for LCOW")
-			} else {
-
-				logrus.Debugf("Cleaning up layer %s: %v", layer.cacheID, err)
-				if err := ls.driver.Remove(layer.cacheID); err != nil {
-					logrus.Errorf("Error cleaning up cache layer %s: %v", layer.cacheID, err)
-				}
+			logrus.Debugf("Cleaning up layer %s: %v", layer.cacheID, err)
+			if err := ls.drivers[string(platform)].driver.Remove(layer.cacheID); err != nil {
+				logrus.Errorf("Error cleaning up cache layer %s: %v", layer.cacheID, err)
 			}
 			if err := tx.Cancel(); err != nil {
 				logrus.Errorf("Error canceling metadata transaction %q: %s", tx.String(), err)
@@ -426,21 +433,17 @@ func (ls *layerStore) Map() map[ChainID]Layer {
 }
 
 func (ls *layerStore) deleteLayer(layer *roLayer, metadata *Metadata) error {
-	// TODO @jhowardmsft LCOW support.
-	// More building blocks are required so that the file I/O is redirected
-	// to service VM. At this point, there's no point calling the graphdriver
-	// as it would fail. Instead, make this a no-op for now so that validation
-	// can be made on pull for example.
-	if runtime.GOOS == "windows" && system.LCOWSupported() && layer.Platform() != "windows" {
-		logrus.Warnln("In development - not calling graphdriver Remove for LCOW")
-	} else {
-		err := ls.driver.Remove(layer.cacheID)
-		if err != nil {
-			return err
-		}
+	platform := string(layer.Platform())
+	if platform == "" {
+		platform = runtime.GOOS
 	}
 
-	err := ls.store.Remove(layer.chainID)
+	err := ls.drivers[platform].driver.Remove(layer.cacheID)
+	if err != nil {
+		return err
+	}
+
+	err = ls.store.Remove(layer.chainID)
 	if err != nil {
 		return err
 	}
@@ -506,12 +509,16 @@ func (ls *layerStore) Release(l Layer) ([]Metadata, error) {
 	return ls.releaseLayer(layer)
 }
 
-func (ls *layerStore) CreateRWLayer(name string, parent ChainID, opts *CreateRWLayerOpts) (RWLayer, error) {
+func (ls *layerStore) CreateRWLayer(name string, parent ChainID, platform Platform, opts *CreateRWLayerOpts) (RWLayer, error) {
 	var (
 		storageOpt map[string]string
 		initFunc   MountInit
 		mountLabel string
 	)
+
+	if platform == "" {
+		platform = Platform(runtime.GOOS)
+	}
 
 	if opts != nil {
 		mountLabel = opts.MountLabel
@@ -552,10 +559,11 @@ func (ls *layerStore) CreateRWLayer(name string, parent ChainID, opts *CreateRWL
 		mountID:    ls.mountID(name),
 		layerStore: ls,
 		references: map[RWLayer]*referencedRWLayer{},
+		platform:   platform,
 	}
 
 	if initFunc != nil {
-		pid, err = ls.initMount(m.mountID, pid, mountLabel, initFunc, storageOpt)
+		pid, err = ls.initMount(m.mountID, pid, mountLabel, platform, initFunc, storageOpt)
 		if err != nil {
 			return nil, err
 		}
@@ -566,7 +574,7 @@ func (ls *layerStore) CreateRWLayer(name string, parent ChainID, opts *CreateRWL
 		StorageOpt: storageOpt,
 	}
 
-	if err = ls.driver.CreateReadWrite(m.mountID, pid, createOpts); err != nil {
+	if err = ls.drivers[string(platform)].driver.CreateReadWrite(m.mountID, pid, createOpts); err != nil {
 		return nil, err
 	}
 	if err = ls.saveMount(m); err != nil {
@@ -599,6 +607,7 @@ func (ls *layerStore) GetMountID(id string) (string, error) {
 	return mount.mountID, nil
 }
 
+// JJH HELP HELP HELP Can't do this as don't have the platform at the moment
 func (ls *layerStore) ReleaseRWLayer(l RWLayer) ([]Metadata, error) {
 	ls.mountL.Lock()
 	defer ls.mountL.Unlock()
@@ -615,14 +624,19 @@ func (ls *layerStore) ReleaseRWLayer(l RWLayer) ([]Metadata, error) {
 		return []Metadata{}, nil
 	}
 
-	if err := ls.driver.Remove(m.mountID); err != nil {
+	platform := string(l.Platform())
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+
+	if err := ls.drivers[platform].driver.Remove(m.mountID); err != nil {
 		logrus.Errorf("Error removing mounted layer %s: %s", m.name, err)
 		m.retakeReference(l)
 		return nil, err
 	}
 
 	if m.initID != "" {
-		if err := ls.driver.Remove(m.initID); err != nil {
+		if err := ls.drivers[platform].driver.Remove(m.initID); err != nil {
 			logrus.Errorf("Error removing init layer %s: %s", m.name, err)
 			m.retakeReference(l)
 			return nil, err
@@ -668,7 +682,7 @@ func (ls *layerStore) saveMount(mount *mountedLayer) error {
 	return nil
 }
 
-func (ls *layerStore) initMount(graphID, parent, mountLabel string, initFunc MountInit, storageOpt map[string]string) (string, error) {
+func (ls *layerStore) initMount(graphID, parent, mountLabel string, platform Platform, initFunc MountInit, storageOpt map[string]string) (string, error) {
 	// Use "<graph-id>-init" to maintain compatibility with graph drivers
 	// which are expecting this layer with this special name. If all
 	// graph drivers can be updated to not rely on knowing about this layer
@@ -680,20 +694,20 @@ func (ls *layerStore) initMount(graphID, parent, mountLabel string, initFunc Mou
 		StorageOpt: storageOpt,
 	}
 
-	if err := ls.driver.CreateReadWrite(initID, parent, createOpts); err != nil {
+	if err := ls.drivers[string(platform)].driver.CreateReadWrite(initID, parent, createOpts); err != nil {
 		return "", err
 	}
-	p, err := ls.driver.Get(initID, "")
+	p, err := ls.drivers[string(platform)].driver.Get(initID, "")
 	if err != nil {
 		return "", err
 	}
 
 	if err := initFunc(p); err != nil {
-		ls.driver.Put(initID)
+		ls.drivers[string(platform)].driver.Put(initID)
 		return "", err
 	}
 
-	if err := ls.driver.Put(initID); err != nil {
+	if err := ls.drivers[string(platform)].driver.Put(initID); err != nil {
 		return "", err
 	}
 
@@ -701,13 +715,18 @@ func (ls *layerStore) initMount(graphID, parent, mountLabel string, initFunc Mou
 }
 
 func (ls *layerStore) getTarStream(rl *roLayer) (io.ReadCloser, error) {
-	if !ls.useTarSplit {
+	platform := string(rl.platform)
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+
+	if !ls.drivers[platform].useTarSplit {
 		var parentCacheID string
 		if rl.parent != nil {
 			parentCacheID = rl.parent.cacheID
 		}
 
-		return ls.driver.Diff(rl.cacheID, parentCacheID)
+		return ls.drivers[platform].driver.Diff(rl.cacheID, parentCacheID)
 	}
 
 	r, err := ls.store.TarSplitReader(rl.chainID)
@@ -717,7 +736,7 @@ func (ls *layerStore) getTarStream(rl *roLayer) (io.ReadCloser, error) {
 
 	pr, pw := io.Pipe()
 	go func() {
-		err := ls.assembleTarTo(rl.cacheID, r, nil, pw)
+		err := ls.assembleTarTo(rl.cacheID, r, nil, pw, platform)
 		if err != nil {
 			pw.CloseWithError(err)
 		} else {
@@ -728,10 +747,13 @@ func (ls *layerStore) getTarStream(rl *roLayer) (io.ReadCloser, error) {
 	return pr, nil
 }
 
-func (ls *layerStore) assembleTarTo(graphID string, metadata io.ReadCloser, size *int64, w io.Writer) error {
-	diffDriver, ok := ls.driver.(graphdriver.DiffGetterDriver)
+func (ls *layerStore) assembleTarTo(graphID string, metadata io.ReadCloser, size *int64, w io.Writer, platform string) error {
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+	diffDriver, ok := ls.drivers[platform].driver.(graphdriver.DiffGetterDriver)
 	if !ok {
-		diffDriver = &naiveDiffPathDriver{ls.driver}
+		diffDriver = &naiveDiffPathDriver{ls.drivers[platform].driver}
 	}
 
 	defer metadata.Close()
@@ -750,15 +772,38 @@ func (ls *layerStore) assembleTarTo(graphID string, metadata io.ReadCloser, size
 }
 
 func (ls *layerStore) Cleanup() error {
-	return ls.driver.Cleanup()
+	var e error
+	for platform, di := range ls.drivers {
+		if err := di.driver.Cleanup(); err != nil {
+			e = fmt.Errorf("Failed cleanup driver for platform %s: %v\n", platform, err)
+		}
+	}
+	return e
 }
 
 func (ls *layerStore) DriverStatus() [][2]string {
-	return ls.driver.Status()
+	// TODO @jhowardmsft Revisit this. Reluctant to make an API change, but in a multi-driver
+	// model, how do you know which fields apply to which driver? Only applicable on Windows for now.
+	var status [][2]string
+	for _, di := range ls.drivers {
+		status = append(status, di.driver.Status()...)
+	}
+
+	return status
 }
 
 func (ls *layerStore) DriverName() string {
-	return ls.driver.String()
+	driverNames := ""
+	for platform, di := range ls.drivers {
+		if len(driverNames) > 0 {
+			driverNames += ", "
+		}
+		driverNames += di.driver.String()
+		if len(platform) > 0 {
+			driverNames += " (" + platform + ")"
+		}
+	}
+	return driverNames
 }
 
 type naiveDiffPathDriver struct {
@@ -781,4 +826,17 @@ func (n *naiveDiffPathDriver) DiffGetter(id string) (graphdriver.FileGetCloser, 
 		return nil, err
 	}
 	return &fileGetPutter{storage.NewPathFileGetter(p), n.Driver, id}, nil
+}
+
+type unpackSizeCounter struct {
+	unpacker storage.Unpacker
+	size     *int64
+}
+
+func (u *unpackSizeCounter) Next() (*storage.Entry, error) {
+	e, err := u.unpacker.Next()
+	if err == nil && u.size != nil {
+		*u.size += e.Size
+	}
+	return e, err
 }

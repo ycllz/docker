@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -470,7 +471,10 @@ func (daemon *Daemon) MountImage(name string) (string, func() error, error) {
 	}
 
 	mountID := stringid.GenerateRandomID()
-	rwLayer, err := daemon.layerStore.CreateRWLayer(mountID, img.RootFS.ChainID(), nil)
+	// TODO @jhowardmsft LCOW support. Once the builder is target platform aware, we
+	// need to pass through the right platform here. For now, passing through the
+	// current OS is sufficient to avoid regressions.
+	rwLayer, err := daemon.layerStore.CreateRWLayer(mountID, img.RootFS.ChainID(), layer.Platform(runtime.GOOS), nil)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "failed to create rwlayer")
 	}

@@ -135,6 +135,9 @@ type RWLayer interface {
 	// layer was created from.
 	Parent() Layer
 
+	// Platform returns the platform of the layer
+	Platform() Platform
+
 	// Mount mounts the RWLayer and returns the filesystem path
 	// the to the writable layer.
 	Mount(mountLabel string) (string, error)
@@ -195,7 +198,7 @@ type Store interface {
 	Map() map[ChainID]Layer
 	Release(Layer) ([]Metadata, error)
 
-	CreateRWLayer(id string, parent ChainID, opts *CreateRWLayerOpts) (RWLayer, error)
+	CreateRWLayer(id string, parent ChainID, platform Platform, opts *CreateRWLayerOpts) (RWLayer, error)
 	GetRWLayer(id string) (RWLayer, error)
 	GetMountID(id string) (string, error)
 	ReleaseRWLayer(RWLayer) ([]Metadata, error)

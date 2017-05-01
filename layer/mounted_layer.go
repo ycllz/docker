@@ -11,6 +11,7 @@ type mountedLayer struct {
 	mountID    string
 	initID     string
 	parent     *roLayer
+	platform   Platform
 	path       string
 	layerStore *layerStore
 
@@ -28,7 +29,7 @@ func (ml *mountedLayer) cacheParent() string {
 }
 
 func (ml *mountedLayer) TarStream() (io.ReadCloser, error) {
-	return ml.layerStore.driver.Diff(ml.mountID, ml.cacheParent())
+	return ml.layerStore.drivers[string(ml.platform)].driver.Diff(ml.mountID, ml.cacheParent())
 }
 
 func (ml *mountedLayer) Name() string {
@@ -45,16 +46,20 @@ func (ml *mountedLayer) Parent() Layer {
 	return nil
 }
 
+func (ml *mountedLayer) Platform() Platform {
+	return ml.platform
+}
+
 func (ml *mountedLayer) Size() (int64, error) {
-	return ml.layerStore.driver.DiffSize(ml.mountID, ml.cacheParent())
+	return ml.layerStore.drivers[string(ml.platform)].driver.DiffSize(ml.mountID, ml.cacheParent())
 }
 
 func (ml *mountedLayer) Changes() ([]archive.Change, error) {
-	return ml.layerStore.driver.Changes(ml.mountID, ml.cacheParent())
+	return ml.layerStore.drivers[string(ml.platform)].driver.Changes(ml.mountID, ml.cacheParent())
 }
 
 func (ml *mountedLayer) Metadata() (map[string]string, error) {
-	return ml.layerStore.driver.GetMetadata(ml.mountID)
+	return ml.layerStore.drivers[string(ml.platform)].driver.GetMetadata(ml.mountID)
 }
 
 func (ml *mountedLayer) getReference() RWLayer {
@@ -89,11 +94,11 @@ type referencedRWLayer struct {
 }
 
 func (rl *referencedRWLayer) Mount(mountLabel string) (string, error) {
-	return rl.layerStore.driver.Get(rl.mountedLayer.mountID, mountLabel)
+	return rl.layerStore.drivers[string(rl.platform)].driver.Get(rl.mountedLayer.mountID, mountLabel)
 }
 
 // Unmount decrements the activity count and unmounts the underlying layer
 // Callers should only call `Unmount` once per call to `Mount`, even on error.
 func (rl *referencedRWLayer) Unmount() error {
-	return rl.layerStore.driver.Put(rl.mountedLayer.mountID)
+	return rl.layerStore.drivers[string(rl.platform)].driver.Put(rl.mountedLayer.mountID)
 }

@@ -223,7 +223,10 @@ func (daemon *Daemon) setRWLayer(container *container.Container) error {
 		StorageOpt: container.HostConfig.StorageOpt,
 	}
 
-	rwLayer, err := daemon.layerStore.CreateRWLayer(container.ID, layerID, rwLayerOpts)
+	// TODO @jhowardmsft LCOW support. This will probably require a CLI change
+	// so that the user can optionally specify the target operating system of the
+	// create. For now, pass through the daemon OS, and revisit later.
+	rwLayer, err := daemon.layerStore.CreateRWLayer(container.ID, layerID, layer.Platform(runtime.GOOS), rwLayerOpts)
 	if err != nil {
 		return err
 	}

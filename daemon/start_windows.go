@@ -60,6 +60,7 @@ func (daemon *Daemon) getLibcontainerdCreateOptions(container *container.Contain
 	max := len(img.RootFS.DiffIDs)
 	for i := 1; i <= max; i++ {
 		img.RootFS.DiffIDs = img.RootFS.DiffIDs[:i]
+		// TODO @jhowardmsft LCOW: This needs re-visiting.
 		layerPath, err := layer.GetLayerPath(daemon.layerStore, img.RootFS.ChainID())
 		if err != nil {
 			return nil, fmt.Errorf("failed to get layer path from graphdriver %s for ImageID %s - %s", daemon.layerStore, img.RootFS.ChainID(), err)

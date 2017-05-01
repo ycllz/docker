@@ -16,12 +16,12 @@ func GetLayerPath(s Store, layer ChainID) (string, error) {
 		return "", ErrLayerDoesNotExist
 	}
 
-	path, err := ls.driver.Get(rl.cacheID, "")
+	path, err := ls.drivers[string(rl.platform)].driver.Get(rl.cacheID, "")
 	if err != nil {
 		return "", err
 	}
 
-	if err := ls.driver.Put(rl.cacheID); err != nil {
+	if err := ls.drivers[string(rl.platform)].driver.Put(rl.cacheID); err != nil {
 		return "", err
 	}
 

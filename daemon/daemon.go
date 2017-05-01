@@ -585,6 +585,24 @@ func NewDaemon(config *config.Config, registryService registry.Service, containe
 		driverName = config.GraphDriver
 	}
 
+	drivers := make(map[string]string)
+	if runtime.GOOS != "windows" {
+		if driverName != "" {
+			drivers[runtime.GOOS] = driverName
+		}
+	} else {
+		// Windows supports multiple drivers (for LCOW support). For now
+		// we just hard-code this. Can be revisited at a later date.
+		// (Note it's unlikely Windows will have many possible graphdrivers,
+		// unlike *nix platforms. This hard coding effectively disables
+		// the --storage-driver daemon parameter, and DOCKER_DRIVER environment
+		// variable on Windows. @jhowardmsft
+		drivers["windows"] = "windowsfilter"
+		if system.LCOWSupported() {
+			drivers["linux"] = "lcow"
+		}
+	}
+
 	d.RegistryService = registryService
 	d.PluginStore = pluginStore
 	logger.RegisterPluginGetter(d.PluginStore)
@@ -607,7 +625,7 @@ func NewDaemon(config *config.Config, registryService registry.Service, containe
 	d.layerStore, err = layer.NewStoreFromOptions(layer.StoreOptions{
 		StorePath:                 config.Root,
 		MetadataStorePathTemplate: filepath.Join(config.Root, "image", "%s", "layerdb"),
-		GraphDriver:               driverName,
+		GraphDriverMap:            drivers,
 		GraphDriverOptions:        config.GraphOptions,
 		UIDMaps:                   uidMaps,
 		GIDMaps:                   gidMaps,

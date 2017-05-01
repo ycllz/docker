@@ -1,3 +1,5 @@
+// +build !windows
+
 package layer
 
 import (
@@ -6,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/opencontainers/go-digest"
@@ -31,7 +34,7 @@ func (ls *layerStore) CreateRWLayerByGraphID(name string, graphID string, parent
 		return nil
 	}
 
-	if !ls.driver.Exists(graphID) {
+	if !ls.drivers[string(runtime.GOOS)].driver.Exists(graphID) {
 		return fmt.Errorf("graph ID does not exist: %q", graphID)
 	}
 
@@ -57,6 +60,7 @@ func (ls *layerStore) CreateRWLayerByGraphID(name string, graphID string, parent
 	m = &mountedLayer{
 		name:       name,
 		parent:     p,
+		platform:   Platform(runtime.GOOS),
 		mountID:    graphID,
 		layerStore: ls,
 		references: map[RWLayer]*referencedRWLayer{},
@@ -64,7 +68,7 @@ func (ls *layerStore) CreateRWLayerByGraphID(name string, graphID string, parent
 
 	// Check for existing init layer
 	initID := fmt.Sprintf("%s-init", graphID)
-	if ls.driver.Exists(initID) {
+	if ls.drivers[string(runtime.GOOS)].driver.Exists(initID) {
 		m.initID = initID
 	}
 
@@ -99,7 +103,10 @@ func (ls *layerStore) ChecksumForGraphID(id, parent, oldTarDataPath, newTarDataP
 	}
 
 	dgst := digest.Canonical.Digester()
-	err = ls.assembleTarTo(id, uncompressed, &size, dgst.Hash())
+	// Note it is safe to pass runtime.GOOS here. Windows (currently the only platform to
+	// support multiple graphdrivers per layerstore) doesn't need to do migration, which
+	// is where this functionality is called from.
+	err = ls.assembleTarTo(id, uncompressed, &size, dgst.Hash(), runtime.GOOS)
 	if err != nil {
 		return
 	}
@@ -115,7 +122,7 @@ func (ls *layerStore) ChecksumForGraphID(id, parent, oldTarDataPath, newTarDataP
 }
 
 func (ls *layerStore) checksumForGraphIDNoTarsplit(id, parent, newTarDataPath string) (diffID DiffID, size int64, err error) {
-	rawarchive, err := ls.driver.Diff(id, parent)
+	rawarchive, err := ls.drivers[string(runtime.GOOS)].driver.Diff(id, parent)
 	if err != nil {
 		return
 	}
@@ -169,6 +176,7 @@ func (ls *layerStore) RegisterByGraphID(graphID string, parent ChainID, diffID D
 	// Create new roLayer
 	layer := &roLayer{
 		parent:         p,
+		platform:       Platform(runtime.GOOS),
 		cacheID:        graphID,
 		referenceCount: 1,
 		layerStore:     ls,
@@ -227,19 +235,6 @@ func (ls *layerStore) RegisterByGraphID(graphID string, parent ChainID, diffID D
 	ls.layerMap[layer.chainID] = layer
 
 	return layer.getReference(), nil
-}
-
-type unpackSizeCounter struct {
-	unpacker storage.Unpacker
-	size     *int64
-}
-
-func (u *unpackSizeCounter) Next() (*storage.Entry, error) {
-	e, err := u.unpacker.Next()
-	if err == nil && u.size != nil {
-		*u.size += e.Size
-	}
-	return e, err
 }
 
 type packSizeCounter struct {
