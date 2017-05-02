@@ -289,6 +289,7 @@ func (s *saveSession) saveLayer(id layer.ChainID, legacyImg image.V1Image, creat
 	}
 
 	outDir := filepath.Join(s.outDir, legacyImg.ID)
+	fmt.Println("JJH saveLayer outdir=", outDir)
 	if err := os.Mkdir(outDir, 0755); err != nil {
 		return distribution.Descriptor{}, err
 	}

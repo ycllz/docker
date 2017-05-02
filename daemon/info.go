@@ -90,14 +90,15 @@ func (daemon *Daemon) SystemInfo() (*types.Info, error) {
 	}
 
 	v := &types.Info{
-		ID:                 daemon.ID,
-		Containers:         int(cRunning + cPaused + cStopped),
-		ContainersRunning:  int(cRunning),
-		ContainersPaused:   int(cPaused),
-		ContainersStopped:  int(cStopped),
-		Images:             len(daemon.imageStore.Map()),
-		Driver:             daemon.GraphDriverName(),
-		DriverStatus:       daemon.layerStore.DriverStatus(),
+		ID:                daemon.ID,
+		Containers:        int(cRunning + cPaused + cStopped),
+		ContainersRunning: int(cRunning),
+		ContainersPaused:  int(cPaused),
+		ContainersStopped: int(cStopped),
+		Images:            len(daemon.imageStore.Map()),
+		// JJH Need to fix this
+		//		Driver:             daemon.GraphDriverName(),
+		//		DriverStatus:       daemon.layerStore.DriverStatus(),
 		Plugins:            daemon.showPluginsInfo(),
 		IPv4Forwarding:     !sysInfo.IPv4ForwardingDisabled,
 		BridgeNfIptables:   !sysInfo.BridgeNFCallIPTablesDisabled,

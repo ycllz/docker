@@ -30,7 +30,9 @@ type StoreBackend interface {
 // fs implements StoreBackend using the filesystem.
 type fs struct {
 	sync.RWMutex
-	root string
+	root        string
+	platform    string
+	graphdriver string
 }
 
 const (
@@ -39,18 +41,20 @@ const (
 )
 
 // NewFSStoreBackend returns new filesystem based backend for image.Store
-func NewFSStoreBackend(root string) (StoreBackend, error) {
-	return newFSStore(root)
+func NewFSStoreBackend(imageRoot, platform, graphdriver, imageDB string) (StoreBackend, error) {
+	return newFSStore(imageRoot, platform, graphdriver, imageDB)
 }
 
-func newFSStore(root string) (*fs, error) {
+func newFSStore(imageRoot, platform, graphdriver, imageDB string) (*fs, error) {
 	s := &fs{
-		root: root,
+		root:        filepath.Join(imageRoot, graphdriver, imageDB),
+		platform:    platform,
+		graphdriver: graphdriver,
 	}
-	if err := os.MkdirAll(filepath.Join(root, contentDirName, string(digest.Canonical)), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(s.root, contentDirName, string(digest.Canonical)), 0700); err != nil {
 		return nil, errors.Wrap(err, "failed to create storage backend")
 	}
-	if err := os.MkdirAll(filepath.Join(root, metadataDirName, string(digest.Canonical)), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(s.root, metadataDirName, string(digest.Canonical)), 0700); err != nil {
 		return nil, errors.Wrap(err, "failed to create storage backend")
 	}
 	return s, nil

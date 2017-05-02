@@ -204,8 +204,10 @@ type Store interface {
 	ReleaseRWLayer(RWLayer) ([]Metadata, error)
 
 	Cleanup() error
-	DriverStatus() [][2]string
-	DriverName() string
+	DriverStatus(platform string) [][2]string
+	DriverName(platform string) string
+	DriverPlatforms() []string
+	DriverList() []string
 }
 
 // DescribableStore represents a layer store capable of storing

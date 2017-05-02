@@ -781,29 +781,28 @@ func (ls *layerStore) Cleanup() error {
 	return e
 }
 
-func (ls *layerStore) DriverStatus() [][2]string {
-	// TODO @jhowardmsft Revisit this. Reluctant to make an API change, but in a multi-driver
-	// model, how do you know which fields apply to which driver? Only applicable on Windows for now.
-	var status [][2]string
-	for _, di := range ls.drivers {
-		status = append(status, di.driver.Status()...)
-	}
-
-	return status
+func (ls *layerStore) DriverStatus(platform string) [][2]string {
+	return ls.drivers[platform].driver.Status()
 }
 
-func (ls *layerStore) DriverName() string {
-	driverNames := ""
-	for platform, di := range ls.drivers {
-		if len(driverNames) > 0 {
-			driverNames += ", "
-		}
-		driverNames += di.driver.String()
-		if len(platform) > 0 {
-			driverNames += " (" + platform + ")"
-		}
+func (ls *layerStore) DriverName(platform string) string {
+	return ls.drivers[platform].driver.String()
+}
+
+func (ls *layerStore) DriverPlatforms() []string {
+	var p []string
+	for platform, _ := range ls.drivers {
+		p = append(p, platform)
 	}
-	return driverNames
+	return p
+}
+
+func (ls *layerStore) DriverList() []string {
+	var dl []string
+	for _, di := range ls.drivers {
+		dl = append(dl, di.driver.String())
+	}
+	return dl
 }
 
 type naiveDiffPathDriver struct {

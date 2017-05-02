@@ -636,11 +636,11 @@ func NewDaemon(config *config.Config, registryService registry.Service, containe
 		return nil, err
 	}
 
-	graphDriver := d.layerStore.DriverName()
-	imageRoot := filepath.Join(config.Root, "image", graphDriver)
+	// Get the list of graphdrivers the layer store supports
+	graphDrivers := d.layerStore.DriverList()
 
 	// Configure and validate the kernels security support
-	if err := configureKernelSecuritySupport(config, graphDriver); err != nil {
+	if err := configureKernelSecuritySupport(config, graphDrivers); err != nil {
 		return nil, err
 	}
 
@@ -649,7 +649,8 @@ func NewDaemon(config *config.Config, registryService registry.Service, containe
 	logrus.Debugf("Max Concurrent Uploads: %d", *config.MaxConcurrentUploads)
 	d.uploadManager = xfer.NewLayerUploadManager(*config.MaxConcurrentUploads)
 
-	ifs, err := image.NewFSStoreBackend(filepath.Join(imageRoot, "imagedb"))
+	imageRoot := filepath.Join(config.Root, "image")
+	ifs, err := image.NewFSStoreBackend(imageRoot, graphDrivers, "imagedb")
 	if err != nil {
 		return nil, err
 	}
