@@ -134,7 +134,7 @@ func (im *imageMount) context() (builder.Context, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to mount %s", im.id)
 		}
-		ctx, err := remotecontext.NewLazyContext(p)
+		source, err := remotecontext.NewLazyContext(p.String())
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create lazycontext for %s", p)
 		}

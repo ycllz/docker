@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/fs"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
@@ -291,6 +292,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	}
 
 	stat, err := placeholderGuptaAk.Lstat(resolvedPath)
+
 	if err != nil {
 		return err
 	}
@@ -312,9 +314,9 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// filter driver, we are guaranteed that the path will always be
 	// a volume file path.
 	var baseRel string
-	if strings.HasPrefix(resolvedPath, `\\?\Volume{`) {
-		if strings.HasPrefix(resolvedPath, container.BaseFS) {
-			baseRel = resolvedPath[len(container.BaseFS):]
+	if strings.HasPrefix(resolvedPath.String(), `\\?\Volume{`) {
+		if strings.HasPrefix(resolvedPath.String(), container.BaseFS.String()) {
+			baseRel = resolvedPath.String()[len(container.BaseFS.String()):]
 			if baseRel[:1] == `\` {
 				baseRel = baseRel[1:]
 			}
@@ -397,7 +399,6 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 	if err != nil {
 		return nil, err
 	}
-
 	placeholderGuptaAk := fs.NewFilesystemOperator(false, container.BaseFS)
 	basePath, err := placeholderGuptaAk.GetResourcePath(resource)
 	if err != nil {
@@ -418,11 +419,8 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 		filter = []string{pathutils.Base(basePath, osType)}
 		basePath = pathutils.Dir(basePath, osType)
 	}
-	archive, err := placeholderGuptaAk.ArchivePath(basePath, &archive.TarOptions{
-		Compression:  archive.Uncompressed,
-		IncludeFiles: filter,
-	})
 
+	archive, err := placeholderGuptaAk.ArchivePath(basePath, &archive.TarOptions{
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +478,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 		dest += string(separator)
 	}
 
-	destPath = dest
+	destmnt = dest
 
 	destStat, err := placeholderGuptaAk.Stat(destPath)
 	if err != nil {
@@ -543,16 +541,16 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 }
 
 // MountImage returns mounted path with rootfs of an image.
-func (daemon *Daemon) MountImage(name string) (string, func() error, error) {
+func (daemon *Daemon) MountImage(name string) (graphdriver.Mount, func() error, error) {
 	img, err := daemon.GetImage(name)
 	if err != nil {
-		return "", nil, errors.Wrapf(err, "no such image: %s", name)
+		return graphdriver.DummyMount{""}, nil, errors.Wrapf(err, "no such image: %s", name)
 	}
 
 	mountID := stringid.GenerateRandomID()
 	rwLayer, err := daemon.layerStore.CreateRWLayer(mountID, img.RootFS.ChainID(), nil)
 	if err != nil {
-		return "", nil, errors.Wrap(err, "failed to create rwlayer")
+		return graphdriver.DummyMount{""}, nil, errors.Wrap(err, "failed to create rwlayer")
 	}
 
 	mountPath, err := rwLayer.Mount("")
@@ -562,7 +560,7 @@ func (daemon *Daemon) MountImage(name string) (string, func() error, error) {
 			err = errors.Wrapf(err, "failed to release rwlayer: %s", releaseErr.Error())
 		}
 		layer.LogReleaseMetadata(metadata)
-		return "", nil, errors.Wrap(err, "failed to mount rwlayer")
+		return graphdriver.DummyMount{""}, nil, errors.Wrap(err, "failed to mount rwlayer")
 	}
 
 	return mountPath, func() error {

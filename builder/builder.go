@@ -13,7 +13,11 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
+<<<<<<< HEAD
 	"github.com/docker/docker/image"
+=======
+	"github.com/docker/docker/daemon/graphdriver"
+>>>>>>> 538020834... Compiles daemon now
 	"golang.org/x/net/context"
 )
 
@@ -148,7 +152,7 @@ type Backend interface {
 	SquashImage(from string, to string) (string, error)
 
 	// MountImage returns mounted path with rootfs of an image.
-	MountImage(name string) (string, func() error, error)
+	MountImage(name string) (graphdriver.Mount, func() error, error)
 }
 
 // Image represents a Docker image used by the builder.

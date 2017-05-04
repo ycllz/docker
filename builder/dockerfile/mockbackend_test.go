@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/builder"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/image"
 	"golang.org/x/net/context"
 )
@@ -81,8 +82,8 @@ func (m *MockBackend) SquashImage(from string, to string) (string, error) {
 	return "", nil
 }
 
-func (m *MockBackend) MountImage(name string) (string, func() error, error) {
-	return "", func() error { return nil }, nil
+func (m *MockBackend) MountImage(name string) (graphdriver.Mount, func() error, error) {
+	return graphdriver.DummyMount{""}, func() error { return nil }, nil
 }
 
 type mockImage struct {
