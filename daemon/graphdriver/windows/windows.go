@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -149,7 +148,7 @@ func getFileSystemType(drive string) (fsType string, hr error) {
 
 // Functions to retreive + write the OS type
 func getOSFromOpts(opts *graphdriver.CreateOpts) string {
-	osType := runtime.GOOS
+	osType := "linux"
 	if opts != nil && opts.OS != "" {
 		osType = opts.OS
 	}
