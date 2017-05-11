@@ -34,13 +34,14 @@ const (
 	version1 = iota
 	version2
 
-	serviceVMHeaderSize = 16
-	scsiCodeHeaderSize  = 8
-	connTimeOut         = 300
-	layerVHDName        = "layer.vhd"
-	layerSandboxName    = "sandbox.vhdx"
-	serviceVMName       = "LinuxServiceVM"
-	socketID            = "E9447876-BA98-444F-8C14-6A2FFF773E87"
+	serviceVMHeaderSize   = 16
+	scsiCodeHeaderSize    = 8
+	sandboxInfoHeaderSize = 4
+	connTimeOut           = 300
+	layerVHDName          = "layer.vhd"
+	layerSandboxName      = "sandbox.vhdx"
+	serviceVMName         = "LinuxServiceVM"
+	socketID              = "E9447876-BA98-444F-8C14-6A2FFF773E87"
 )
 
 type serviceVMHeader struct {
@@ -52,6 +53,9 @@ type serviceVMHeader struct {
 type scsiCodeHeader struct {
 	controllerNumber   uint32
 	controllerLocation uint32
+}
+type sandboxInfoHeader struct {
+	maxSandboxSizeInMB uint32
 }
 
 var (
@@ -246,48 +250,60 @@ func exportLayer(vhdPath string) (io.ReadCloser, error) {
 // createSandbox creates a r/w sandbox layer
 func createSandbox(sandboxFolder string) error {
 	sandboxPath := path.Join(sandboxFolder, layerSandboxName)
-	logrus.Debugf("createSandbox path: %s\n", sandboxPath)
+	fmt.Printf("Soccerl: ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
 
-	err := newVHDX(sandboxPath)
-	if err != nil {
-		return err
-	}
-
-	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
-	if err != nil {
-		return err
-	}
-	defer detachVHDX(controllerNumber, controllerLocation)
-	logrus.Debugf("createSandbox: controllerNumber: %d controllerLocation: %d", controllerNumber, controllerLocation)
-
-	hdr := &serviceVMHeader{
-		command:     cmdCreateSandbox,
-		version:     version1,
-		payloadSize: scsiCodeHeaderSize,
-	}
-
-	scsiHeader := &scsiCodeHeader{
-		controllerNumber:   controllerNumber,
-		controllerLocation: controllerLocation,
-	}
-
+	// connect to the service VM
 	conn, err := connect()
 	if err != nil {
 		return err
 	}
-	defer closeConnection(conn)
+	defer conn.Close()
 
-	data, err := serializeSCSI(hdr, scsiHeader)
+	hdr := &serviceVMHeader{
+		command:     cmdCreateSandbox,
+		version:     version1,
+		payloadSize: sandboxInfoHeaderSize,
+	}
+
+	hdrSandboxInfo := &sandboxInfoHeader{
+		maxSandboxSizeInMB: 19264, // in MB, 16*1024MB = 16 GB
+	}
+
+	// Send the cmd header and data playload to the service VM
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
+		return err
+	}
+
+	if err := binary.Write(buf, binary.BigEndian, hdrSandboxInfo); err != nil {
+		return err
+	}
+
+	fmt.Println(buf.Bytes())
+	_, err = conn.Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
 
-	_, err = conn.Write(data)
+	// wait for response
+	resultSize, err := waitForResponse(conn)
 	if err != nil {
 		return err
 	}
 
-	_, err = waitForResponse(conn)
+	fmt.Println("writing vhdx stream to file.")
+	// Get back the sandbox VHDx stream from the service VM and write it to file
+	err = writeVHDFile(sandboxPath, resultSize, conn)
+	if err != nil {
+		return err
+	}
+
+	err = closeConnection(conn)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Soccerl: ServiceVMCreateSandbox: done creating %s\n", sandboxPath)
+
 	return err
 }
 
