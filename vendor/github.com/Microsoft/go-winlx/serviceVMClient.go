@@ -141,6 +141,25 @@ func closeConnection(rc io.WriteCloser) error {
 	return rc.Close()
 }
 
+func sendClose(rc io.WriteCloser) error {
+	header := &ServiceVMHeader{
+		Command:     TerminateCmd,
+		Version:     Version1,
+		PayloadSize: 0,
+	}
+
+	buf, err := SerializeHeader(header)
+	if err != nil {
+		return err
+	}
+
+	_, err = rc.Write(buf)
+	if err != nil {
+		return err
+	}
+	return rc.Close()
+}
+
 func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 	// Check if sandbox
 	if _, err := os.Stat(filepath.Join(vhdPath, LayerSandboxName)); err == nil {
@@ -196,49 +215,60 @@ func ServiceVMExportLayer(vhdPath string) (io.ReadCloser, error) {
 
 func ServiceVMCreateSandbox(sandboxFolder string) error {
 	sandboxPath := path.Join(sandboxFolder, LayerSandboxName)
-	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+	fmt.Printf("Soccerl: ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
 
-	err := newVHDX(sandboxPath)
-	if err != nil {
-		return err
-	}
-
-	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
-	if err != nil {
-		return err
-	}
-	defer detachVHDX(controllerNumber, controllerLocation)
-	fmt.Printf("ServiceVMCreateSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
-
-	hdr := &ServiceVMHeader{
-		Command:     CreateSandboxCmd,
-		Version:     Version1,
-		PayloadSize: SCSICodeHeaderSize,
-	}
-
-	scsiHeader := &SCSICodeHeader{
-		ControllerNumber:   controllerNumber,
-		ControllerLocation: controllerLocation,
-	}
-
+	// connect to the service VM
 	conn, err := connectToServer()
 	if err != nil {
 		return err
 	}
-	defer closeConnection(conn)
+	defer conn.Close()
 
-	data, err := serializeSCSI(hdr, scsiHeader)
+	hdr := &ServiceVMHeader{
+		Command:     CreateSandboxCmd,
+		Version:     Version1,
+		PayloadSize: SandboxInfoHeaderSize,
+	}
+
+	hdrSandboxInfo := &SandboxInfoHeader{
+		MaxSandboxSizeInMB:  19264, // in MB, 16*1024MB = 16 GB
+	}
+
+    // Send the cmd header and data playload to the service VM
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
+		return err
+	}
+
+	if err := binary.Write(buf, binary.BigEndian, hdrSandboxInfo); err != nil {
+		return err
+	}
+
+	fmt.Println(buf.Bytes())
+	_, err = conn.Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("CREATING SANDBOX", data)
-	_, err = conn.Write(data)
+	// wait for response
+	resultSize, err := waitForResponse(conn)
 	if err != nil {
 		return err
 	}
 
-	_, err = waitForResponse(conn)
+	fmt.Println("writing vhdx stream to file.")
+	// Get back the sandbox VHDx stream from the service VM and write it to file
+	err = writeVHDFile(sandboxPath, resultSize, conn)
+	if err != nil {
+		return err
+	}
+
+	err = sendClose(conn)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Soccerl: ServiceVMCreateSandbox: done creating %s\n", sandboxPath)
+
 	return err
 }
 

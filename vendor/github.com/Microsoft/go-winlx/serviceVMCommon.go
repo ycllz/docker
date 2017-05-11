@@ -53,6 +53,12 @@ type SCSICodeHeader struct {
 	ControllerLocation uint32
 }
 
+const SandboxInfoHeaderSize = 4
+
+type SandboxInfoHeader struct {
+	MaxSandboxSizeInMB   uint32
+}
+
 const ConnTimeOut = 300
 const LayerVHDName = "layer.vhd"
 const LayerSandboxName = "sandbox.vhdx"
