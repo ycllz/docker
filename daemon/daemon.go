@@ -879,6 +879,25 @@ func (daemon *Daemon) Shutdown() error {
 // Mount sets container.BaseFS
 // (is it not set coming in? why is it unset?)
 func (daemon *Daemon) Mount(container *container.Container) error {
+
+	// On Windows, it is not safe (host attack vector) to attempt to mount
+	// the sandbox of a Hyper-V container which has been started before.
+	// Note that this codepath will only trigger if the daemon is changed
+	// in some way to attempt this through an invalid PR of some kind.
+	if runtime.GOOS == "windows" {
+		var isHyperV bool
+		if container.HostConfig.Isolation.IsDefault() {
+			// Container using default isolation, so take the default from the daemon configuration
+			isHyperV = daemon.defaultIsolation.IsHyperV()
+		} else {
+			// Container may be requesting an explicit isolation mode.
+			isHyperV = container.HostConfig.Isolation.IsHyperV()
+		}
+		if isHyperV && container.HasBeenStartedBefore {
+			return fmt.Errorf("cannot re-mount the sandbox of a Hyper-V container")
+		}
+	}
+
 	dir, err := container.RWLayer.Mount(container.GetMountLabel())
 	if err != nil {
 		return err
