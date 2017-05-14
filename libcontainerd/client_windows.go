@@ -283,6 +283,9 @@ func (clnt *client) createWindows(containerID string, checkpoint string, checkpo
 }
 
 func (clnt *client) createLinux(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
+
+	logrus.Debugln("createLinux: ContainerId is ", containerID)
+
 	// Make simple config based off Adam's + Kris's work
 	configuration := &hcsshim.ContainerConfig{
 		HvPartition:                 true,
@@ -319,7 +322,17 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 	}
 
 	// HvRuntime (Image path + Enable console)
-	configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
+	if os.Getenv("BOOT_FROM_VHD") == "" {
+	    logrus.Debugln("Booting from initrd:")
+	    configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
+	} else {
+        logrus.Debugln("Booting from Vhd: c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx")
+	    configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx", 
+                                                     EnableConsole: true,
+	                                                 LayersUseVPMEM:  false,
+                                                     BootSource:  "Vhd",
+                                                     WritableBootSource: true}
+	}
 
 	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
 	if err != nil {

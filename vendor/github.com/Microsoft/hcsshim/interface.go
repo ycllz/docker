@@ -39,6 +39,9 @@ type HvRuntime struct {
 	ImagePath     string `json:",omitempty"`
 	SkipTemplate  bool   `json:",omitempty"`
 	EnableConsole bool   `json:",omitempty"`
+	LayersUseVPMEM bool  `json:",omitempty"`
+    BootSource    string `json:",omitempty"`
+    WritableBootSource bool `json:",omitempty"`
 }
 
 // ContainerConfig is used as both the input of CreateContainer
