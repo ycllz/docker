@@ -9,14 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
 	"time"
 
-	"golang.org/x/net/context"
-
+	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/sysinfo"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/net/context"
 )
 
 type client struct {
@@ -91,7 +92,6 @@ const defaultOwner = "docker"
 //	"SandboxPath": "C:\\\\control\\\\windowsfilter",
 //	"HvPartition": true,
 //	"EndpointList": ["e1bb1e61-d56f-405e-b75d-fd520cefa0cb"],
-//	"DNSSearchList": "a.com,b.com,c.com",
 //	"HvRuntime": {
 //		"ImagePath": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c\\\\UtilityVM"
 //	},
@@ -102,6 +102,14 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	defer clnt.unlock(containerID)
 	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
 
+	osName := spec.Platform.OS
+	if osName == "windows" {
+		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+	}
+	return clnt.createLinux(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+}
+
+func (clnt *client) createWindows(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
 	configuration := &hcsshim.ContainerConfig{
 		SystemType: "Container",
 		Name:       containerID,
@@ -168,10 +176,6 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 		if n, ok := option.(*NetworkEndpointsOption); ok {
 			configuration.EndpointList = n.Endpoints
 			configuration.AllowUnqualifiedDNSQuery = n.AllowUnqualifiedDNSQuery
-			if n.DNSSearchList != nil {
-				configuration.DNSSearchList = strings.Join(n.DNSSearchList, ",")
-			}
-			configuration.NetworkSharedContainerName = n.NetworkSharedContainerID
 			continue
 		}
 		if c, ok := option.(*CredentialsOption); ok {
@@ -210,7 +214,6 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	}
 
 	configuration.LayerFolderPath = layerOpt.LayerFolderPath
-
 	for _, layerPath := range layerOpt.LayerPaths {
 		_, filename := filepath.Split(layerPath)
 		g, err := hcsshim.NameToGuid(filename)
@@ -238,6 +241,98 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 		}
 	}
 	configuration.MappedDirectories = mds
+	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
+	if err != nil {
+		return err
+	}
+
+	// Construct a container object for calling start on it.
+	container := &container{
+		containerCommon: containerCommon{
+			process: process{
+				processCommon: processCommon{
+					containerID:  containerID,
+					client:       clnt,
+					friendlyName: InitFriendlyName,
+				},
+			},
+			processes: make(map[string]*process),
+		},
+		ociSpec:      spec,
+		hcsContainer: hcsContainer,
+	}
+
+	container.options = options
+	for _, option := range options {
+		if err := option.Apply(container); err != nil {
+			logrus.Errorf("libcontainerd: %v", err)
+		}
+	}
+
+	// Call start, and if it fails, delete the container from our
+	// internal structure, start will keep HCS in sync by deleting the
+	// container there.
+	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
+	if err := container.start(attachStdio); err != nil {
+		clnt.deleteContainer(containerID)
+		return err
+	}
+
+	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
+	return nil
+}
+
+func (clnt *client) createLinux(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
+
+	logrus.Debugln("createLinux: ContainerId is ", containerID)
+
+	// Make simple config based off Adam's + Kris's work
+	configuration := &hcsshim.ContainerConfig{
+		HvPartition:                 true,
+		Name:                        containerID,
+		SystemType:                  "Container",
+		ContainerType:               "Linux",
+		TerminateOnLastHandleClosed: true,
+	}
+
+	var layerOpt *LayerOption
+	for _, option := range options {
+		if l, ok := option.(*LayerOption); ok {
+			layerOpt = l
+		}
+	}
+
+	// We must have a layer option with at least one path
+	if layerOpt == nil || layerOpt.LayerPaths == nil {
+		return fmt.Errorf("no layer option or paths were supplied to the runtime")
+	}
+
+	// LayerFolderPath (writeable layer) + Layers (Guid + path)
+	configuration.LayerFolderPath = layerOpt.LayerFolderPath
+	for _, layerPath := range layerOpt.LayerPaths {
+		_, filename := filepath.Split(layerPath)
+		g, err := hcsshim.NameToGuid(filename)
+		if err != nil {
+			return err
+		}
+		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+			ID:   g.ToString(),
+			Path: filepath.Join(layerPath, winlx.LayerVHDName),
+		})
+	}
+
+	// HvRuntime (Image path + Enable console)
+	if os.Getenv("BOOT_FROM_VHD") == "" {
+		logrus.Debugln("Booting from initrd:")
+		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
+	} else {
+		logrus.Debugln("Booting from Vhd: c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx")
+		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx",
+			EnableConsole:      true,
+			LayersUseVPMEM:     false,
+			BootSource:         "Vhd",
+			WritableBootSource: true}
+	}
 
 	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
 	if err != nil {
@@ -278,7 +373,6 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 
 	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
 	return nil
-
 }
 
 // AddProcess is the handler for adding a process to an already running
@@ -317,7 +411,6 @@ func (clnt *client) AddProcess(ctx context.Context, containerID, processFriendly
 	createProcessParms.Environment = setupEnvironmentVariables(procToAdd.Env)
 	createProcessParms.CommandLine = strings.Join(procToAdd.Args, " ")
 	createProcessParms.User = procToAdd.User.Username
-
 	logrus.Debugf("libcontainerd: commandLine: %s", createProcessParms.CommandLine)
 
 	// Start the command running in the container.
