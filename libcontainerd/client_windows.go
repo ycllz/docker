@@ -99,7 +99,14 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	clnt.lock(containerID)
 	defer clnt.unlock(containerID)
 	logrus.Debugln("libcontainerd: client.Create() with spec", spec)
+	osName := spec.Platform.OS
+	if osName == "windows" {
+		return clnt.createWindows(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+	}
+	return clnt.createLinux(containerID, checkpoint, checkpointDir, spec, attachStdio, options...)
+}
 
+func (clnt *client) createWindows(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
 	configuration := &hcsshim.ContainerConfig{
 		SystemType: "Container",
 		Name:       containerID,
@@ -276,6 +283,99 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
 	return nil
 
+}
+
+func (clnt *client) createLinux(containerID string, checkpoint string, checkpointDir string, spec specs.Spec, attachStdio StdioCallback, options ...CreateOption) error {
+
+	logrus.Debugln("createLinux: ContainerId is ", containerID)
+
+	// Make simple config based off Adam's + Kris's work
+	configuration := &hcsshim.ContainerConfig{
+		HvPartition:                 true,
+		Name:                        containerID,
+		SystemType:                  "Container",
+		ContainerType:               "Linux",
+		TerminateOnLastHandleClosed: true,
+	}
+
+	var layerOpt *LayerOption
+	for _, option := range options {
+		if l, ok := option.(*LayerOption); ok {
+			layerOpt = l
+		}
+	}
+
+	// We must have a layer option with at least one path
+	if layerOpt == nil || layerOpt.LayerPaths == nil {
+		return fmt.Errorf("no layer option or paths were supplied to the runtime")
+	}
+
+	// LayerFolderPath (writeable layer) + Layers (Guid + path)
+	configuration.LayerFolderPath = layerOpt.LayerFolderPath
+	for _, layerPath := range layerOpt.LayerPaths {
+		_, filename := filepath.Split(layerPath)
+		g, err := hcsshim.NameToGuid(filename)
+		if err != nil {
+			return err
+		}
+		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+			ID:   g.ToString(),
+			Path: filepath.Join(layerPath, "layer.vhd"),
+		})
+	}
+
+	// HvRuntime (Image path + Enable console)
+	if os.Getenv("BOOT_FROM_VHD") == "" {
+		logrus.Debugln("Booting from initrd:")
+		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
+	} else {
+		logrus.Debugln("Booting from Vhd: c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx")
+		configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx",
+			EnableConsole:      true,
+			LayersUseVPMEM:     false,
+			BootSource:         "Vhd",
+			WritableBootSource: true}
+	}
+
+	hcsContainer, err := hcsshim.CreateContainer(containerID, configuration)
+	if err != nil {
+		return err
+	}
+
+	// Construct a container object for calling start on it.
+	container := &container{
+		containerCommon: containerCommon{
+			process: process{
+				processCommon: processCommon{
+					containerID:  containerID,
+					client:       clnt,
+					friendlyName: InitFriendlyName,
+				},
+			},
+			processes: make(map[string]*process),
+		},
+		ociSpec:      spec,
+		hcsContainer: hcsContainer,
+	}
+
+	container.options = options
+	for _, option := range options {
+		if err := option.Apply(container); err != nil {
+			logrus.Errorf("libcontainerd: %v", err)
+		}
+	}
+
+	// Call start, and if it fails, delete the container from our
+	// internal structure, start will keep HCS in sync by deleting the
+	// container there.
+	logrus.Debugf("libcontainerd: Create() id=%s, Calling start()", containerID)
+	if err := container.start(attachStdio); err != nil {
+		clnt.deleteContainer(containerID)
+		return err
+	}
+
+	logrus.Debugf("libcontainerd: Create() id=%s completed successfully", containerID)
+	return nil
 }
 
 // AddProcess is the handler for adding a process to an already running
