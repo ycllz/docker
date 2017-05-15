@@ -174,10 +174,10 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 			configuration.NetworkSharedContainerName = n.NetworkSharedContainerID
 			continue
 		}
-		if c, ok := option.(*CredentialsOption); ok {
-			configuration.Credentials = c.Credentials
-			continue
-		}
+	}
+
+	if cs, ok := spec.Windows.CredentialSpec.(string); ok {
+		configuration.Credentials = cs
 	}
 
 	// We must have a layer option with at least one path
