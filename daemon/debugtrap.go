@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/docker/docker/pkg/system"
 	"github.com/pkg/errors"
 )
 
@@ -28,6 +30,13 @@ func (d *Daemon) dumpDaemon(dir string) (string, error) {
 	}
 	defer f.Close()
 
+	// TODO @jhowardmsft LCOW Support - this will require revisiting later, as well
+	// as where it's used below to ensure all stores are dumped.
+	platform := runtime.GOOS
+	if platform == "windows" && system.LCOWSupported() {
+		platform = "linux"
+	}
+
 	dump := struct {
 		containers      interface{}
 		names           interface{}
@@ -45,9 +54,9 @@ func (d *Daemon) dumpDaemon(dir string) (string, error) {
 		containers:      d.containers,
 		execs:           d.execCommands,
 		volumes:         d.volumes,
-		images:          d.imageStore,
-		layers:          d.layerStore,
-		imageReferences: d.referenceStore,
+		images:          d.stores[platform].imageStore,
+		layers:          d.stores[platform].layerStore,
+		imageReferences: d.stores[platform].referenceStore,
 		downloads:       d.downloadManager,
 		uploads:         d.uploadManager,
 		registry:        d.RegistryService,
