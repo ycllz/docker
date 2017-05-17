@@ -134,12 +134,14 @@ func (im *imageMount) context() (builder.Context, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to mount %s", im.id)
 		}
-		source, err := remotecontext.NewLazyContext(p.String())
+		// TODO: @gupta-ak, figure out how mountimage is used and how it was replaced
+		// in the newer moby/moby
+		source, err := remotecontext.NewLazyContext(p)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create lazycontext for %s", p)
 		}
 		im.release = release
-		im.ctx = ctx
+		im.ctx = source
 	}
 	return im.ctx, nil
 }
