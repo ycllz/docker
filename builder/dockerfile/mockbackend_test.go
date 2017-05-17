@@ -3,11 +3,13 @@ package dockerfile
 import (
 	"io"
 
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/builder"
 	containerpkg "github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/fs"
 	"golang.org/x/net/context"
 )
 
@@ -106,6 +108,6 @@ func (l *mockLayer) Release() error {
 	return nil
 }
 
-func (l *mockLayer) Mount() (string, error) {
-	return "mountPath", nil
+func (l *mockLayer) Mount() (fs.FilesystemOperator, error) {
+	return fs.NewFilesystemOperator(fsdriver.Basic, "mountPath")
 }
