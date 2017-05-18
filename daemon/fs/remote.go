@@ -13,7 +13,7 @@ import (
 	"github.com/docker/docker/pkg/system"
 )
 
-// @gupta-ak. TODO: Implement this
+// @gupta-ak. TODO: Implement this. Just have dummmy implementations for now.
 type remotefs struct {
 	// Service VM Client?
 	dummyPath string
@@ -71,11 +71,6 @@ func (rfs *remotefs) ArchivePath(path string, options *archive.TarOptions) (io.R
 		tw.Close()
 	}()
 	return reader, nil
-}
-
-func (rfs *remotefs) Readlink(name string) (string, error) {
-	logrus.Debugf("LCOW: remotefs.Readlink(). Not implemented yet. path=%s", name)
-	return rfs.dummyPath, nil
 }
 
 func (rfs *remotefs) Stat(name string) (os.FileInfo, error) {

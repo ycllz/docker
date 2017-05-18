@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"errors"
 	"io"
 
 	"os"
@@ -9,43 +8,40 @@ import (
 	"github.com/docker/docker/pkg/archive"
 )
 
-// ErrNotSymlink is used by Readlink to indicate that the given path was not
-// a symlink
-var ErrNotSymlink = errors.New("Not a symlink: %s")
-
+// FilesystemOperator is an interface that provides ways to interact with a container's root file system.
 type FilesystemOperator interface {
 	// Remote returns true if the file system is remote. false otherwise.
 	Remote() bool
 
-	// Returns the path on the host if the file system is local.
+	// HostPathName returns the path where the file system is mounted.
+	// If the file system is remote, then it will be the path on the
+	// remote system.
 	HostPathName() string
 
+	// These are equivalent to the container.ResolvePath() and container.GetResourcePath()
+	// The purpose of these functions are to provide absolute paths to the remote machine, which
+	// can then be manipulated through os aware filepath functions (package pathutils) for things like
+	// setting up the Tar Rebase params.
+	// TODO @gupta-ak. Can probably clean this up to something like ResolvePath, ResolvePathExceptLast,
+	// and Abs.
+	ResolvePath(name string) (string, string, error)
+	GetResourcePath(name string) (string, error)
+
 	// ExtractArchive takes in an archive and extracts it to the given path.
-	// Only a limited set of options are supported; specficially none of path
-	// options: IncludeFiles, ExcludePatterns, & RebaseNames are supported since
-	// the caller doesn't know the path struct in the guest.
 	ExtractArchive(input io.Reader, path string, options *archive.TarOptions) error
 
 	// ArchivePath archives the given path (file or directory) and returns
 	// the archive.
-	// Only a limited set of options are supported; specficially none of path
-	// options: IncludeFiles, ExcludePatterns, & RebaseNames are supported since
-	// the caller doesn't know the path struct in the guest.
 	ArchivePath(path string, options *archive.TarOptions) (io.ReadCloser, error)
 
-	// Readlink interprets the path as a symlink and returns the file it's pointing to
-	Readlink(name string) (string, error)
-
-	// Stat & Lstat are equivalent to os.Stat & os.Lstat. The only difference
-	// is that the FileInfo.Name() returns the absolute path instead of the base
-	// file path.
+	// The following functions are from the go os package, ioutil & syscall package
 	Stat(name string) (os.FileInfo, error)
 	Lstat(name string) (os.FileInfo, error)
 
-	ResolvePath(name string) (string, string, error)
-	GetResourcePath(name string) (string, error)
+	//ReadFile(filename string) ([]byte, error)
+	//WriteFile(filename string, data []byte, perm os.FileMode) error
+	//ReadDir(dirname string) ([]os.FileInfo, error)
 
-	// WriteFile(filename string, data []byte, perm os.FileMode) error
 	//Mkdir(name string, perm FileMode) error
 	//MkdirAll(path string, perm os.FileMode) error
 	//Remove(name string) error
@@ -54,6 +50,7 @@ type FilesystemOperator interface {
 
 	//Link(oldname, newname string) error
 	//Symlink(oldname, newname string) error
+	//Readlink(name string) (string, error)
 
 	//Chmod(name string, mode os.FileMode) error
 	//Chown(name string, uid, gid int) error
@@ -63,6 +60,7 @@ type FilesystemOperator interface {
 	//Lchown(name string, uid, gid int) error
 	//Lchtimes(name string, atime time.Time, mtime time.Time) error
 
+	//Mount(source string, target string, fstype string, flags uintptr, data string) (err error)
 }
 
 // NewFilesystemOperator returns a remote or local filesystem operator

@@ -29,10 +29,6 @@ func (lfs *localfs) ArchivePath(path string, options *archive.TarOptions) (io.Re
 	return archive.TarWithOptions(path, options)
 }
 
-func (lfs *localfs) Readlink(name string) (string, error) {
-	return os.Readlink(name)
-}
-
 func (lfs *localfs) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
