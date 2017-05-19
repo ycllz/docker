@@ -70,7 +70,7 @@ func newTestStore(t *testing.T) (Store, string, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ls, err := NewStoreFromGraphDriver(fms, graph)
+	ls, err := NewStoreFromGraphDriver(fms, graph, runtime.GOOS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestStoreRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ls2, err := NewStoreFromGraphDriver(ls.(*layerStore).store, ls.(*layerStore).driver)
+	ls2, err := NewStoreFromGraphDriver(ls.(*layerStore).store, ls.(*layerStore).driver, runtime.GOOS)
 	if err != nil {
 		t.Fatal(err)
 	}

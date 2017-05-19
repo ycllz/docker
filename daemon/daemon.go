@@ -646,6 +646,7 @@ func NewDaemon(config *config.Config, registryService registry.Service, containe
 			GIDMaps:                   gidMaps,
 			PluginGetter:              d.PluginStore,
 			ExperimentalEnabled:       config.Experimental,
+			Platform:                  platform,
 		})
 		if err != nil {
 			return nil, err
