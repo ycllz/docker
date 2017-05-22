@@ -109,6 +109,7 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 		IgnoreFlushesDuringBoot: false,
 		HostName:                spec.Hostname,
 		HvPartition:             false,
+		Servicing:               spec.Windows.Servicing,
 	}
 
 	if spec.Windows.Resources != nil {
@@ -149,10 +150,6 @@ func (clnt *client) Create(containerID string, checkpoint string, checkpointDir 
 
 	var layerOpt *LayerOption
 	for _, option := range options {
-		if s, ok := option.(*ServicingOption); ok {
-			configuration.Servicing = s.IsServicing
-			continue
-		}
 		if f, ok := option.(*FlushOption); ok {
 			configuration.IgnoreFlushesDuringBoot = f.IgnoreFlushesDuringBoot
 			continue

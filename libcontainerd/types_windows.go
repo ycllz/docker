@@ -25,12 +25,6 @@ type Stats hcsshim.Statistics
 // Resources defines updatable container resource values.
 type Resources struct{}
 
-// ServicingOption is a CreateOption with a no-op application that signifies
-// the container needs to be used for a Windows servicing operation.
-type ServicingOption struct {
-	IsServicing bool
-}
-
 // FlushOption is a CreateOption that signifies if the container should be
 // started with flushes ignored until boot has completed. This is an optimisation
 // for first boot of a container.

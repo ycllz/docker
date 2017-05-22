@@ -15,11 +15,6 @@ func setupEnvironmentVariables(a []string) map[string]string {
 	return r
 }
 
-// Apply for a servicing option is a no-op.
-func (s *ServicingOption) Apply(interface{}) error {
-	return nil
-}
-
 // Apply for the flush option is a no-op.
 func (f *FlushOption) Apply(interface{}) error {
 	return nil
