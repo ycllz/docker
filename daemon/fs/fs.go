@@ -18,14 +18,13 @@ type FilesystemOperator interface {
 	// remote system.
 	HostPathName() string
 
-	// These are equivalent to the container.ResolvePath() and container.GetResourcePath()
-	// The purpose of these functions are to provide absolute paths to the remote machine, which
-	// can then be manipulated through os aware filepath functions (package pathutils) for things like
-	// setting up the Tar Rebase params.
-	// TODO @gupta-ak. Can probably clean this up to something like ResolvePath, ResolvePathExceptLast,
-	// and Abs.
-	ResolvePath(name string) (string, string, error)
-	GetResourcePath(name string) (string, error)
+	// ResolveFullPath resolves the given path as an absolute path on the target machine.
+	ResolveFullPath(name string) (string, error)
+
+	// Platform returns the OS of the remote filesystem
+	// TODO @gupta-ak. Remove this later since John Howard has a Platform field in the
+	// container.
+	Platform() string
 
 	// ExtractArchive takes in an archive and extracts it to the given path.
 	ExtractArchive(input io.Reader, path string, options *archive.TarOptions) error

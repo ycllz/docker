@@ -114,23 +114,7 @@ func (rfs *remotefs) Lstat(name string) (os.FileInfo, error) {
 	return hdr.FileInfo(), nil
 }
 
-func (rfs *remotefs) ResolvePath(name string) (string, string, error) {
-	logrus.Debugf("LCOW: remotefs.ResolvePath(). Not implemented yet. path=%s", name)
-	resolvedPath, absPath, err := scopedpath.EvalScopedPathAbs(name, rfs.dummyPath)
-	resolvedPath, err = toUnix(resolvedPath)
-	if err != nil {
-		return "", "", err
-	}
-	absPath, err = toUnix(absPath)
-	if err != nil {
-		return "", "", err
-	}
-	resolvedPath, absPath = addSlash(name, resolvedPath), addSlash(name, absPath)
-	logrus.Debugf("LCOW: remotefs.ResolvePath(). Converted paths: path=%s -> %s %s", name, resolvedPath, absPath)
-	return resolvedPath, absPath, nil
-}
-
-func (rfs *remotefs) GetResourcePath(name string) (string, error) {
+func (rfs *remotefs) ResolveFullPath(name string) (string, error) {
 	logrus.Debugf("LCOW: remotefs.GetResourcePath(). Not implemented yet. path=%s", name)
 	path, err := scopedpath.EvalScopedPath(name, rfs.dummyPath)
 	if err != nil {
@@ -159,4 +143,8 @@ func addSlash(oldpath, newpath string) string {
 		newpath += "/"
 	}
 	return newpath
+}
+
+func (*remotefs) Platform() string {
+	return "linux"
 }

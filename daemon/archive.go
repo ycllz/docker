@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -116,50 +115,12 @@ func (daemon *Daemon) containerStatPath(container *container.Container, path str
 		return nil, err
 	}
 
-	osType, err := daemon.getContainerOS(container)
+	resolvedPath, absPath, err := container.ResolvePath(path)
 	if err != nil {
 		return nil, err
 	}
 
-	return containerStatPathNoLock(container, path, osType)
-}
-
-func containerStatPathNoLock(container *container.Container, path string, osType string) (*types.ContainerPathStat, error) {
-
-	resolvedPath, absPath, err := container.BaseFS.ResolvePath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	info, err := container.BaseFS.Lstat(resolvedPath)
-	if err != nil {
-		return nil, err
-	}
-
-	var linkTarget string
-	if info.Mode()&os.ModeSymlink != 0 {
-		// Fully evaluate the symlink in the scope of the container rootfs.
-		hostPath, err := container.BaseFS.GetResourcePath(absPath)
-		if err != nil {
-			return nil, err
-		}
-
-		linkTarget, err = pathutils.Rel(container.BaseFS.HostPathName(), hostPath, osType)
-		if err != nil {
-			return nil, err
-		}
-
-		// Make it an absolute path.
-		linkTarget = pathutils.Join(osType, string(filepath.Separator), linkTarget)
-	}
-
-	return &types.ContainerPathStat{
-		Name:       info.Name(),
-		Size:       info.Size(),
-		Mode:       info.Mode(),
-		Mtime:      info.ModTime(),
-		LinkTarget: linkTarget,
-	}, nil
+	return container.StatPath(resolvedPath, absPath)
 }
 
 // containerArchivePath creates an archive of the filesystem resource at the specified
@@ -201,12 +162,12 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 
 	path = toImagePath(path, osType)
 
-	stat, err = containerStatPathNoLock(container, path, osType)
+	resolvedPath, absPath, err := container.ResolvePath(path)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	resolvedPath, absPath, err := container.BaseFS.ResolvePath(path)
+	stat, err = container.StatPath(resolvedPath, absPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -287,7 +248,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	cleanedPath := pathutils.Join(osType, string(pathutils.Separator(osType)), path)
 	absPath := archive.PreserveTrailingDotOrSeparatorOS(cleanedPath, path, osType)
 
-	resolvedPath, err := container.BaseFS.GetResourcePath(absPath)
+	resolvedPath, err := container.GetResourcePath(absPath)
 	if err != nil {
 		return err
 	}
@@ -403,7 +364,7 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 
 	resource = toImagePath(resource, osType)
 
-	basePath, err := container.BaseFS.GetResourcePath(resource)
+	basePath, err := container.GetResourcePath(resource)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +432,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 	separator := pathutils.Separator(osType)
 	destPath = toImagePath(destPath, osType)
 
-	dest, err := c.BaseFS.GetResourcePath(destPath)
+	dest, err := c.GetResourcePath(destPath)
 	if err != nil {
 		return err
 	}

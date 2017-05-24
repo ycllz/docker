@@ -3,6 +3,7 @@ package fs
 import (
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
@@ -37,10 +38,10 @@ func (lfs *localfs) Lstat(name string) (os.FileInfo, error) {
 	return os.Lstat(name)
 }
 
-func (lfs *localfs) ResolvePath(name string) (string, string, error) {
-	return scopedpath.EvalScopedPathAbs(name, lfs.root)
+func (lfs *localfs) ResolveFullPath(name string) (string, error) {
+	return scopedpath.EvalScopedPath(name, lfs.root)
 }
 
-func (lfs *localfs) GetResourcePath(name string) (string, error) {
-	return scopedpath.EvalScopedPath(name, lfs.root)
+func (*localfs) Platform() string {
+	return runtime.GOOS
 }
