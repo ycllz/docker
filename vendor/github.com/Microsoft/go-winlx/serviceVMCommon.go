@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/rneugeba/virtsock/pkg/hvsock"
+    "github.com/Sirupsen/logrus"
 )
 
 // The protocol between the service VM and docker is very simple:
@@ -72,13 +73,39 @@ func SendData(hdr *ServiceVMHeader, payload io.Reader, dest io.Writer) error {
 	if err != nil {
 		return err
 	}
+    logrus.Infof("[SendData] Total bytes to send %d", hdr.PayloadSize)
 
 	_, err = dest.Write(hdrBytes)
 	if err != nil {
 		return err
 	}
 
-	_, err = io.CopyN(dest, payload, hdr.PayloadSize)
+    // break into 4Kb chunks
+    var max_transfer_size int64
+    var bytes_to_transfer int64
+    var total_bytes_transfered int64
+
+    bytes_left := hdr.PayloadSize
+    max_transfer_size = 4096
+    total_bytes_transfered = 0
+    bytes_to_transfer =0
+
+	for bytes_left > 0 {
+        if bytes_left >= max_transfer_size {
+            bytes_to_transfer = max_transfer_size
+        } else {
+            bytes_to_transfer = bytes_left
+        }
+
+  	    bytes_transfered, err := io.CopyN(dest, payload, bytes_to_transfer)
+        if err != nil && err != io.EOF {
+            logrus.Errorf("[SendData] io.Copy failed with %s", err)
+		    return err
+	    }
+        total_bytes_transfered += bytes_transfered
+		bytes_left -= bytes_transfered
+	}
+    logrus.Infof("[SendData] total_bytes_transfered = %d bytes sent to the LinuxServiceVM successfully", total_bytes_transfered)
 	return err
 }
 
@@ -91,6 +118,7 @@ func ReadHeader(r io.Reader) (*ServiceVMHeader, error) {
 
 	_, err = io.ReadFull(r, buf)
 	if err != nil {
+        logrus.Errorf("[DeserializeHeader]io.ReadFull %s", err)
 		return nil, err
 	}
 
@@ -100,6 +128,7 @@ func ReadHeader(r io.Reader) (*ServiceVMHeader, error) {
 func SerializeHeader(hdr *ServiceVMHeader) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
+        logrus.Errorf("[DeserializeHeader]binary.Write failed with %s", err)
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -109,6 +138,7 @@ func DeserializeHeader(hdr []byte) (*ServiceVMHeader, error) {
 	buf := bytes.NewBuffer(hdr)
 	hdrPtr := &ServiceVMHeader{}
 	if err := binary.Read(buf, binary.BigEndian, hdrPtr); err != nil {
+        logrus.Errorf("[DeserializeHeader]binary.Read failed with %s", err)
 		return nil, err
 	}
 	return hdrPtr, nil

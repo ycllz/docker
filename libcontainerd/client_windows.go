@@ -323,7 +323,7 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 
 	// HvRuntime (Image path + Enable console)
 	if os.Getenv("BOOT_FROM_VHD") == "" {
-	    logrus.Debugln("Booting from initrd:")
+        logrus.Debugln("Booting from initrd:")
 	    configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
 	} else {
         logrus.Debugln("Booting from Vhd: c:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx")
@@ -736,3 +736,4 @@ func (clnt *client) ListCheckpoints(containerID string, checkpointDir string) (*
 func (clnt *client) GetServerVersion(ctx context.Context) (*ServerVersion, error) {
 	return &ServerVersion{}, nil
 }
+

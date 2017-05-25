@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +66,11 @@ func init() {
 	} else {
 		reexec.Register("docker-windows-write-layer", writeLayerReexec)
 	}
+
+	// Launch the linux service VM
+    go func() {
+        winlx.CreateLinuxServiceVM("LinuxServiceVM");
+    }()
 }
 
 type checker struct {
@@ -93,7 +97,6 @@ func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap)
 	logrus.Debugf("Options: %v", options)
 	logrus.Debugf("Uid Map : %v", uidMaps)
 	logrus.Debugf("Gid Map: %v", gidMaps)
-
 	fsType, err := getFileSystemType(string(home[0]))
 	if err != nil {
 		return nil, err
@@ -201,7 +204,6 @@ func (d *Driver) Exists(id string) bool {
 // CreateReadWrite creates a layer that is writable for use as a container
 // file system.
 func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts) error {
-	debug.PrintStack()
 	osType := getOSFromOpts(opts)
 	fmt.Println("CreateReadWrite:", id, parent, osType)
 	if opts != nil {
@@ -503,7 +505,6 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 // Put adds a new layer to the driver.
 func (d *Driver) Put(id string) error {
 	logrus.Debugf("WindowsGraphDriver Put() id %s", id)
-
 	rID, err := d.resolveID(id)
 	if err != nil {
 		return err
@@ -540,7 +541,6 @@ func (d *Driver) Put(id string) error {
 // We use this opportunity to cleanup any -removing folders which may be
 // still left if the daemon was killed while it was removing a layer.
 func (d *Driver) Cleanup() error {
-
 	items, err := ioutil.ReadDir(d.info.HomeDir)
 	if err != nil {
 		return err
@@ -608,6 +608,7 @@ func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
 // and its parent layer. If parent is "", then all changes will be ADD changes.
 // The layer should not be mounted when calling this function.
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
+
 	rID, err := d.resolveID(id)
 	if err != nil {
 		return nil, err
@@ -666,7 +667,6 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // The layer should not be mounted when calling this function
 func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	var layerChain []string
-
 	if parent != "" {
 		rPId, err := d.resolveID(parent)
 		if err != nil {
