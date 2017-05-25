@@ -32,7 +32,6 @@ import (
 	"github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/scopedpath"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/docker/docker/restartmanager"
 	"github.com/docker/docker/runconfig"
@@ -294,7 +293,7 @@ func (container *Container) GetResourcePath(path string) (string, error) {
 func (container *Container) GetRootResourcePath(path string) (string, error) {
 	// IMPORTANT - These are paths on the OS where the daemon is running, hence
 	// any filepath operations must be done in an OS agnostic way.
-	return scopedpath.EvalScopedPath(path, container.Root)
+	return container.BaseFS.ResolveFullPath(path)
 }
 
 // ExitOnNext signals to the monitor that it should not restart the container

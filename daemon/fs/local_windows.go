@@ -1,6 +1,6 @@
 // +build windows
 
-package scopedpath
+package fs
 
 import (
 	"os"

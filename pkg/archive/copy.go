@@ -7,11 +7,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/docker/docker/pkg/pathutils"
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/pkg/system"
 )
 
@@ -31,19 +30,19 @@ var (
 // path already ends in a `.` path segment, then another is not added. If the
 // clean path already ends in a path separator, then another is not added.
 func PreserveTrailingDotOrSeparator(cleanedPath, originalPath string) string {
-	return PreserveTrailingDotOrSeparatorOS(cleanedPath, originalPath, runtime.GOOS)
+	return PreserveTrailingDotOrSeparatorOS(cleanedPath, originalPath, fsdriver.BasicDriver)
 }
 
 // PreserveTrailingDotOrSeparatorOS works the same way as PreserveTrailingDotOrSeperator,
 // but can modify Linux paths on Windows and vice versa.
-func PreserveTrailingDotOrSeparatorOS(cleanedPath, originalPath, osType string) string {
+func PreserveTrailingDotOrSeparatorOS(cleanedPath string, originalPath string, driver fsdriver.Driver) string {
 	// Ensure paths are in platform semantics
-	cleanedPath = pathutils.NormalizePath(cleanedPath, osType)
-	originalPath = pathutils.NormalizePath(originalPath, osType)
-	sep := pathutils.Separator(osType)
+	cleanedPath = driver.NormalizePath(cleanedPath)
+	originalPath = driver.NormalizePath(originalPath)
+	sep := driver.Separator()
 
-	if !specifiesCurrentDirOS(cleanedPath, osType) && specifiesCurrentDirOS(originalPath, osType) {
-		if !hasTrailingPathSeparatorOS(cleanedPath, osType) {
+	if !specifiesCurrentDirOS(cleanedPath, driver) && specifiesCurrentDirOS(originalPath, driver) {
+		if !hasTrailingPathSeparatorOS(cleanedPath, driver) {
 			// Add a separator if it doesn't already end with one (a cleaned
 			// path would only end in a separator if it is the root).
 			cleanedPath += string(sep)
@@ -51,7 +50,7 @@ func PreserveTrailingDotOrSeparatorOS(cleanedPath, originalPath, osType string) 
 		cleanedPath += "."
 	}
 
-	if !hasTrailingPathSeparatorOS(cleanedPath, osType) && hasTrailingPathSeparatorOS(originalPath, osType) {
+	if !hasTrailingPathSeparatorOS(cleanedPath, driver) && hasTrailingPathSeparatorOS(originalPath, driver) {
 		cleanedPath += string(sep)
 	}
 
@@ -62,59 +61,59 @@ func PreserveTrailingDotOrSeparatorOS(cleanedPath, originalPath, osType string) 
 // asserted to be a directory, i.e., the path ends with
 // a trailing '/' or `/.`, assuming a path separator of `/`.
 func assertsDirectory(path string) bool {
-	return assertsDirectoryOS(path, runtime.GOOS)
+	return assertsDirectoryOS(path, fsdriver.BasicDriver)
 }
 
 // assertsDirectoryOS returns whether the given path is
 // asserted to be a directory, i.e., the path ends with
 // a trailing '/' or `/.`, assuming a path separator of `/`.
-func assertsDirectoryOS(path string, osType string) bool {
-	return hasTrailingPathSeparatorOS(path, runtime.GOOS) || specifiesCurrentDirOS(path, runtime.GOOS)
+func assertsDirectoryOS(path string, driver fsdriver.Driver) bool {
+	return hasTrailingPathSeparatorOS(path, driver) || specifiesCurrentDirOS(path, driver)
 }
 
 // hasTrailingPathSeparator returns whether the given
 // path ends with the system's path separator character.
 func hasTrailingPathSeparator(path string) bool {
-	return hasTrailingPathSeparatorOS(path, runtime.GOOS)
+	return hasTrailingPathSeparatorOS(path, fsdriver.BasicDriver)
 }
 
 // hasTrailingPathSeperatorOS returns whether the given
 // path ends with the osseparator character.
-func hasTrailingPathSeparatorOS(path string, osType string) bool {
-	separator := pathutils.Separator(osType)
+func hasTrailingPathSeparatorOS(path string, driver fsdriver.Driver) bool {
+	separator := driver.Separator()
 	return len(path) > 0 && path[len(path)-1] == separator
 }
 
 // specifiesCurrentDir returns whether the given path specifies
 // a "current directory", i.e., the last path segment is `.`.
 func specifiesCurrentDir(path string) bool {
-	return specifiesCurrentDirOS(path, runtime.GOOS)
+	return specifiesCurrentDirOS(path, fsdriver.BasicDriver)
 }
 
 // specifiesCurrentDirOS is specifiesCurrentDir, but calls the os agnostic
-// filepath library called pathutils.
-func specifiesCurrentDirOS(path, osType string) bool {
-	return pathutils.Base(path, osType) == "."
+// filepath.
+func specifiesCurrentDirOS(path string, driver fsdriver.Driver) bool {
+	return driver.Base(path) == "."
 }
 
 // SplitPathDirEntry splits the given path between its directory name and its
 // basename by first cleaning the path but preserves a trailing "." if the
 // original path specified the current directory.
 func SplitPathDirEntry(path string) (dir, base string) {
-	return SplitPathDirEntryOS(path, runtime.GOOS)
+	return SplitPathDirEntryOS(path, fsdriver.BasicDriver)
 }
 
 // SplitPathDirEntryOS splits the given path between its directory name and its
 // basename by first cleaning the path but preserves a trailing "." if the
 // original path specified the current directory.
-func SplitPathDirEntryOS(path, osType string) (dir, base string) {
-	cleanedPath := pathutils.Clean(pathutils.NormalizePath(path, osType), osType)
+func SplitPathDirEntryOS(path string, driver fsdriver.Driver) (dir, base string) {
+	cleanedPath := driver.Clean(driver.NormalizePath(path))
 
-	if specifiesCurrentDirOS(path, osType) {
-		cleanedPath += string(pathutils.Separator(osType)) + "."
+	if specifiesCurrentDirOS(path, driver) {
+		cleanedPath += string(driver.Separator()) + "."
 	}
 
-	return pathutils.Dir(cleanedPath, osType), pathutils.Base(cleanedPath, osType)
+	return driver.Dir(cleanedPath), driver.Base(cleanedPath)
 }
 
 // TarResource archives the resource described by the given CopyInfo to a Tar
@@ -139,7 +138,7 @@ func TarResourceRebase(sourcePath, rebaseName string) (content io.ReadCloser, er
 		return
 	}
 
-	sourceDir, opts := TarResourceRebaseOpts(sourcePath, rebaseName, runtime.GOOS)
+	sourceDir, opts := TarResourceRebaseOpts(sourcePath, rebaseName, fsdriver.BasicDriver)
 
 	logrus.Debugf("copying %v from %q", opts.IncludeFiles, sourceDir)
 
@@ -148,12 +147,12 @@ func TarResourceRebase(sourcePath, rebaseName string) (content io.ReadCloser, er
 
 // TarResourceRebaseOpts does not preform the Tar, but instead just creates the parameters
 // to be sent to TarWithOptions (the source directory and the TarOptions struct)
-func TarResourceRebaseOpts(sourcePath, rebaseName, osType string) (string, *TarOptions) {
-	sourcePath = pathutils.NormalizePath(sourcePath, osType)
+func TarResourceRebaseOpts(sourcePath string, rebaseName string, driver fsdriver.Driver) (string, *TarOptions) {
+	sourcePath = driver.NormalizePath(sourcePath)
 
 	// Separate the source path between its directory and
 	// the entry in that directory which we are archiving.
-	sourceDir, sourceBase := SplitPathDirEntryOS(sourcePath, osType)
+	sourceDir, sourceBase := SplitPathDirEntryOS(sourcePath, driver)
 
 	filter := []string{sourceBase}
 

@@ -25,6 +25,7 @@ import (
 	"github.com/Microsoft/go-winio/backuptar"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
@@ -349,7 +350,7 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 		return nil, err
 	}
 	if count := d.ctr.Increment(rID); count > 1 {
-		return fs.NewFilesystemOperator(false, d.cache[rID]), nil
+		return fs.NewFilesystemOperator(fsdriver.Basic, d.cache[rID])
 	}
 
 	// Getting the layer paths must be done outside of the lock.
@@ -394,7 +395,7 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 		dir = d.dir(id)
 	}
 
-	return fs.NewFilesystemOperator(false, dir), nil
+	return fs.NewFilesystemOperator(fsdriver.Basic, dir)
 }
 
 // Put adds a new layer to the driver.

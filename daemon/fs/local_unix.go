@@ -1,6 +1,6 @@
-// +build linux freebsd solaris
+// +build !windows
 
-package scopedpath
+package fs
 
 import (
 	"os"

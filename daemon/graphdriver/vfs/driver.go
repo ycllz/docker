@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/idtools"
 
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/opencontainers/runc/libcontainer/label"
 )
 
@@ -135,7 +136,7 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 	} else if !st.IsDir() {
 		return nil, fmt.Errorf("%s: not a directory", dir)
 	}
-	return fs.NewFilesystemOperator(false, dir), nil
+	return fs.NewFilesystemOperator(fsdriver.Basic, dir)
 }
 
 // Put is a noop for vfs that return nil for the error, since this driver has no runtime resources to clean up.

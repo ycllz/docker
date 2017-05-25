@@ -8,15 +8,17 @@ import (
 	"path/filepath"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/scopedpath"
+	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/pkg/system"
 )
 
 // @gupta-ak. TODO: Implement this. Just have dummmy implementations for now.
 type remotefs struct {
 	// Service VM Client?
-	dummyPath string
+	root string
+	fsdriver.Driver
 }
 
 func (rfs *remotefs) Remote() bool {
@@ -24,7 +26,7 @@ func (rfs *remotefs) Remote() bool {
 }
 
 func (rfs *remotefs) HostPathName() string {
-	return rfs.dummyPath
+	return rfs.root
 }
 
 func (rfs *remotefs) ExtractArchive(input io.Reader, path string, options *archive.TarOptions) error {
@@ -116,7 +118,8 @@ func (rfs *remotefs) Lstat(name string) (os.FileInfo, error) {
 
 func (rfs *remotefs) ResolveFullPath(name string) (string, error) {
 	logrus.Debugf("LCOW: remotefs.GetResourcePath(). Not implemented yet. path=%s", name)
-	path, err := scopedpath.EvalScopedPath(name, rfs.dummyPath)
+	cleanPath := cleanResourcePath(name)
+	path, err := symlink.FollowSymlinkInScope(rfs.Join(rfs.root, cleanPath), rfs.root)
 	if err != nil {
 		return "", err
 	}
@@ -143,8 +146,4 @@ func addSlash(oldpath, newpath string) string {
 		newpath += "/"
 	}
 	return newpath
-}
-
-func (*remotefs) Platform() string {
-	return "linux"
 }

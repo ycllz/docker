@@ -2,9 +2,7 @@
 
 package system
 
-import (
-	"runtime"
-)
+import "github.com/containerd/continuity/fsdriver"
 
 // DefaultPathEnv is deliberately empty on Windows as the default path will be set by
 // the container. Docker has no context of what the default path should be.
@@ -22,5 +20,5 @@ const DefaultPathEnv = ""
 // /a			--> \a
 // d:\			--> Fail
 func CheckSystemDriveAndRemoveDriveLetter(path string) (string, error) {
-	return CheckSystemDriveAndRemoveDriveLetterOS(path, runtime.GOOS)
+	return CheckSystemDriveAndRemoveDriveLetterOS(path, fsdriver.BasicDriver)
 }

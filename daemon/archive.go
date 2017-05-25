@@ -14,7 +14,6 @@ import (
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/pathutils"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/pkg/system"
 	"github.com/pkg/errors"
@@ -155,12 +154,8 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 		return nil, nil, err
 	}
 
-	osType, err := daemon.getContainerOS(container)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	path = toImagePath(path, osType)
+	driver := container.BaseFS
+	path = driver.NormalizePath(path)
 
 	resolvedPath, absPath, err := container.ResolvePath(path)
 	if err != nil {
@@ -180,11 +175,11 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 	// also catches the case when the root directory of the container is
 	// requested: we want the archive entries to start with "/" and not the
 	// container ID.
-	fmt.Println("Resolved path:", resolvedPath, absPath, pathutils.Base(absPath, osType), osType)
-	sourceDir, opts := archive.TarResourceRebaseOpts(resolvedPath, pathutils.Base(absPath, osType), osType)
+	fmt.Println("Resolved path:", resolvedPath, absPath, driver.Base(absPath))
+	sourceDir, opts := archive.TarResourceRebaseOpts(resolvedPath, driver.Base(absPath), driver)
 	fmt.Println(sourceDir, *opts)
 
-	data, err := container.BaseFS.ArchivePath(sourceDir, opts)
+	data, err := driver.ArchivePath(sourceDir, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -223,17 +218,12 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 		return err
 	}
 
-	osType, err := daemon.getContainerOS(container)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(path, osType)
-	path = toImagePath(path, osType)
-	fmt.Println(path, osType)
+	driver := container.BaseFS
+	path = driver.NormalizePath(path)
+	fmt.Println(path)
 
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
-	path, err = system.CheckSystemDriveAndRemoveDriveLetterOS(path, osType)
+	path, err = system.CheckSystemDriveAndRemoveDriveLetterOS(path, driver)
 	if err != nil {
 		return err
 	}
@@ -245,15 +235,15 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// that you can extract an archive to a symlink that points to a directory.
 
 	// Consider the given path as an absolute path in the container.
-	cleanedPath := pathutils.Join(osType, string(pathutils.Separator(osType)), path)
-	absPath := archive.PreserveTrailingDotOrSeparatorOS(cleanedPath, path, osType)
+	cleanedPath := driver.Join(string(driver.Separator()), path)
+	absPath := archive.PreserveTrailingDotOrSeparatorOS(cleanedPath, path, driver)
 
 	resolvedPath, err := container.GetResourcePath(absPath)
 	if err != nil {
 		return err
 	}
 
-	stat, err := container.BaseFS.Lstat(resolvedPath)
+	stat, err := driver.Lstat(resolvedPath)
 
 	if err != nil {
 		return err
@@ -277,20 +267,20 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// a volume file path.
 	var baseRel string
 	if strings.HasPrefix(resolvedPath, `\\?\Volume{`) {
-		if strings.HasPrefix(resolvedPath, container.BaseFS.HostPathName()) {
-			baseRel = resolvedPath[len(container.BaseFS.HostPathName()):]
+		if strings.HasPrefix(resolvedPath, driver.HostPathName()) {
+			baseRel = resolvedPath[len(driver.HostPathName()):]
 			if baseRel[:1] == `\` {
 				baseRel = baseRel[1:]
 			}
 		}
 	} else {
-		baseRel, err = pathutils.Rel(container.BaseFS.HostPathName(), resolvedPath, osType)
+		baseRel, err = driver.Rel(driver.HostPathName(), resolvedPath)
 	}
 	if err != nil {
 		return err
 	}
 	// Make it an absolute path.
-	absPath = pathutils.Join(osType, string(pathutils.Separator(osType)), baseRel)
+	absPath = driver.Join(string(driver.Separator()), baseRel)
 
 	// Windows doesn't support copying from a voluem and non Windows platforms
 	// do not support remote container fs, so right now, we can assume
@@ -298,7 +288,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// TODO @gupta-ak: Once Windows supports it, we would need to change the
 	// functions to understand Windows/Linux OS
 	var toVolume bool
-	if !container.BaseFS.Remote() {
+	if !driver.Remote() {
 		toVolume, err = checkIfPathIsInAVolume(container, absPath)
 		if err != nil {
 			return err
@@ -320,7 +310,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 		}
 	}
 
-	if err := container.BaseFS.ExtractArchive(content, resolvedPath, options); err != nil {
+	if err := driver.ExtractArchive(content, resolvedPath, options); err != nil {
 		return err
 	}
 
@@ -357,34 +347,30 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 		return nil, err
 	}
 
-	osType, err := daemon.getContainerOS(container)
-	if err != nil {
-		return nil, err
-	}
-
-	resource = toImagePath(resource, osType)
+	driver := container.BaseFS
+	resource = driver.NormalizePath(resource)
 
 	basePath, err := container.GetResourcePath(resource)
 	if err != nil {
 		return nil, err
 	}
 
-	stat, err := container.BaseFS.Stat(basePath)
+	stat, err := driver.Stat(basePath)
 	if err != nil {
 		return nil, err
 	}
 
 	var filter []string
 	if !stat.IsDir() {
-		d, f := pathutils.Split(basePath, osType)
+		d, f := driver.Split(basePath)
 		basePath = d
 		filter = []string{f}
 	} else {
-		filter = []string{pathutils.Base(basePath, osType)}
-		basePath = pathutils.Dir(basePath, osType)
+		filter = []string{driver.Base(basePath)}
+		basePath = driver.Dir(basePath)
 	}
 
-	archive, err := container.BaseFS.ArchivePath(basePath, &archive.TarOptions{
+	archive, err := driver.ArchivePath(basePath, &archive.TarOptions{
 		Compression:  archive.Uncompressed,
 		IncludeFiles: filter,
 	})
@@ -423,14 +409,10 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 	}
 	defer daemon.Unmount(c)
 
-	osType, err := daemon.getContainerOS(c)
-	if err != nil {
-		return err
-	}
-
 	// Work in image OS specific file paths
-	separator := pathutils.Separator(osType)
-	destPath = toImagePath(destPath, osType)
+	driver := c.BaseFS
+	separator := driver.Separator()
+	destPath = driver.NormalizePath(destPath)
 
 	dest, err := c.GetResourcePath(destPath)
 	if err != nil {
@@ -445,7 +427,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 	}
 	destPath = dest
 
-	destStat, err := c.BaseFS.Stat(destPath)
+	destStat, err := driver.Stat(destPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			//logrus.Errorf("Error performing os.Stat on %s. %s", destPath, err)
@@ -462,7 +444,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 	}
 
 	// @TODO gupta-ak. Implement this part with the remote file system API
-	if c.BaseFS.Remote() {
+	if driver.Remote() {
 		return fmt.Errorf("Docker build not supported on remote file systems yet.")
 	}
 
@@ -482,7 +464,7 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 		// filename from the path but this is only added if it does not end in slash
 		tarDest := destPath
 		if strings.HasSuffix(tarDest, string(separator)) {
-			tarDest = pathutils.Dir(destPath, osType)
+			tarDest = driver.Dir(destPath)
 		}
 
 		// try to successfully untar the orig
@@ -497,10 +479,10 @@ func (daemon *Daemon) CopyOnBuild(cID string, destPath string, src builder.FileI
 
 	// only needed for fixPermissions, but might as well put it before CopyFileWithTar
 	if destDir || (destExists && destStat.IsDir()) {
-		destPath = pathutils.Join(osType, destPath, pathutils.Base(srcPath, osType))
+		destPath = driver.Join(destPath, driver.Base(srcPath))
 	}
 
-	if err := idtools.MkdirAllNewAs(pathutils.Dir(destPath, osType), 0755, rootUID, rootGID); err != nil {
+	if err := idtools.MkdirAllNewAs(driver.Dir(destPath), 0755, rootUID, rootGID); err != nil {
 		return err
 	}
 	if err := archiver.CopyFileWithTar(srcPath, destPath); err != nil {
@@ -542,8 +524,4 @@ func (daemon *Daemon) MountImage(name string) (string, func() error, error) {
 		layer.LogReleaseMetadata(metadata)
 		return err
 	}, nil
-}
-
-func toImagePath(path string, osType string) string {
-	return strings.Replace(path, "/", string(pathutils.Separator(osType)), -1)
 }

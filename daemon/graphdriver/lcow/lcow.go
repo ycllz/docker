@@ -16,6 +16,7 @@ import (
 
 	"github.com/Microsoft/servicevm"
 	"github.com/Sirupsen/logrus"
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
@@ -142,7 +143,7 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 	logrus.Debugf("LCOWDriver Get() id %s", id)
 	// TODO @gupta-ak. graphdriver.Get() needs to return an interface
 	// instead of just a string, since the mount point doesn't exist on the host
-	return fs.NewFilesystemOperator(true, "/does/not/exist/"), nil
+	return fs.NewFilesystemOperator(fsdriver.LOW, "/does/not/exist/")
 }
 
 // Put adds a new layer to the driver.

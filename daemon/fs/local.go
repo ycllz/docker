@@ -2,16 +2,16 @@ package fs
 
 import (
 	"io"
-	"os"
-	"runtime"
 
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
-	"github.com/docker/docker/pkg/scopedpath"
+	"github.com/docker/docker/pkg/symlink"
 )
 
 type localfs struct {
 	root string
+	fsdriver.Driver
 }
 
 func (lfs *localfs) Remote() bool {
@@ -30,18 +30,7 @@ func (lfs *localfs) ArchivePath(path string, options *archive.TarOptions) (io.Re
 	return archive.TarWithOptions(path, options)
 }
 
-func (lfs *localfs) Stat(name string) (os.FileInfo, error) {
-	return os.Stat(name)
-}
-
-func (lfs *localfs) Lstat(name string) (os.FileInfo, error) {
-	return os.Lstat(name)
-}
-
-func (lfs *localfs) ResolveFullPath(name string) (string, error) {
-	return scopedpath.EvalScopedPath(name, lfs.root)
-}
-
-func (*localfs) Platform() string {
-	return runtime.GOOS
+func (lfs *localfs) ResolveFullPath(path string) (string, error) {
+	cleanPath := cleanResourcePath(path)
+	return symlink.FollowSymlinkInScope(lfs.Join(lfs.root, cleanPath), lfs.root)
 }
