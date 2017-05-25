@@ -12,8 +12,8 @@ import (
 
 	"time"
 
-	winlx "github.com/Microsoft/go-winlx"
 	"github.com/Microsoft/hcsshim"
+	"github.com/Microsoft/servicevm"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/sysinfo"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -317,7 +317,7 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 		}
 		configuration.Layers = append(configuration.Layers, hcsshim.Layer{
 			ID:   g.ToString(),
-			Path: filepath.Join(layerPath, winlx.LayerVHDName),
+			Path: filepath.Join(layerPath, servicevm.LayerVHDName),
 		})
 	}
 

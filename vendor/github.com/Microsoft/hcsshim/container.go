@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"sync"
+    "sync"
 	"syscall"
 	"time"
-
 	"github.com/Sirupsen/logrus"
 )
 
@@ -171,20 +170,24 @@ func createContainerWithJSON(id string, c *ContainerConfig, additionalJSON strin
 		resultp  *uint16
 		identity syscall.Handle
 	)
+    logrus.Infof("Calling hcsCreateComputeSystem %s", id)
+
 	createError := hcsCreateComputeSystem(id, configuration, identity, &container.handle, &resultp)
 
 	if createError == nil || IsPending(createError) {
+        logrus.Infof("container.registerCallback() %s", id)
 		if err := container.registerCallback(); err != nil {
 			return nil, makeContainerError(container, operation, "", err)
 		}
 	}
+    logrus.Infof("After calling hcsCreateComputeSystem %s container.callbackNumber=%d", id, container.callbackNumber)
 
 	err = processAsyncHcsResult(createError, resultp, container.callbackNumber, hcsNotificationSystemCreateCompleted, &defaultTimeout)
+    logrus.Infof(" back from processAsyncHcsResult err =%s", err)
 	if err != nil {
 		return nil, makeContainerError(container, operation, configuration, err)
 	}
-
-	logrus.Debugf(title+" succeeded id=%s handle=%d", id, container.handle)
+    logrus.Infof(title+" succeeded id=%s handle=%d", id, container.handle)
 	runtime.SetFinalizer(container, closeContainer)
 	return container, nil
 }
@@ -289,20 +292,21 @@ func (container *container) Start() error {
 	defer container.handleLock.RUnlock()
 	operation := "Start"
 	title := "HCSShim::Container::" + operation
-	logrus.Debugf(title+" id=%s", container.id)
+	logrus.Infof(title+" id=%s", container.id)
 
 	if container.handle == 0 {
 		return makeContainerError(container, operation, "", ErrAlreadyClosed)
 	}
 
 	var resultp *uint16
+	logrus.Infof("Creating  hcsStartComputeSystem id=%s", container.id)
 	err := hcsStartComputeSystem(container.handle, "", &resultp)
 	err = processAsyncHcsResult(err, resultp, container.callbackNumber, hcsNotificationSystemStartCompleted, &defaultTimeout)
 	if err != nil {
 		return makeContainerError(container, operation, "", err)
 	}
 
-	logrus.Debugf(title+" succeeded id=%s", container.id)
+	logrus.Infof(title+" succeeded id=%s", container.id)
 	return nil
 }
 

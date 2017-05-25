@@ -57,6 +57,9 @@ func waitForNotification(callbackNumber uintptr, expectedNotification hcsNotific
 		// it does not need the same handling as hcsNotificationSystemExited
 		return ErrUnexpectedProcessAbort
 	case <-c:
+        logrus.Infof(" IN waitForNotification: ErrTimeout")
+
 		return ErrTimeout
 	}
+    return nil
 }
