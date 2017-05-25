@@ -3,17 +3,20 @@
 package system
 
 import "testing"
+import "github.com/containerd/continuity/fsdriver"
 
 // TestCheckSystemDriveAndRemoveDriveLetter tests CheckSystemDriveAndRemoveDriveLetter
 func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
+	driver := fsdriver.BasicDriver
+
 	// Fails if not C drive.
-	path, err := CheckSystemDriveAndRemoveDriveLetter(`d:\`)
+	path, err := CheckSystemDriveAndRemoveDriveLetter(`d:\`, driver)
 	if err == nil || (err != nil && err.Error() != "The specified path is not on the system drive (C:)") {
 		t.Fatalf("Expected error for d:")
 	}
 
 	// Single character is unchanged
-	if path, err = CheckSystemDriveAndRemoveDriveLetter("z"); err != nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter("z", driver); err != nil {
 		t.Fatalf("Single character should pass")
 	}
 	if path != "z" {
@@ -21,7 +24,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Two characters without colon is unchanged
-	if path, err = CheckSystemDriveAndRemoveDriveLetter("AB"); err != nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter("AB", driver); err != nil {
 		t.Fatalf("2 characters without colon should pass")
 	}
 	if path != "AB" {
@@ -29,7 +32,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Abs path without drive letter
-	if path, err = CheckSystemDriveAndRemoveDriveLetter(`\l`); err != nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter(`\l`, driver); err != nil {
 		t.Fatalf("abs path no drive letter should pass")
 	}
 	if path != `\l` {
@@ -37,7 +40,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Abs path without drive letter, linux style
-	if path, err = CheckSystemDriveAndRemoveDriveLetter(`/l`); err != nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter(`/l`, driver); err != nil {
 		t.Fatalf("abs path no drive letter linux style should pass")
 	}
 	if path != `\l` {
@@ -45,7 +48,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Drive-colon should be stripped
-	if path, err = CheckSystemDriveAndRemoveDriveLetter(`c:\`); err != nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter(`c:\`, driver); err != nil {
 		t.Fatalf("An absolute path should pass")
 	}
 	if path != `\` {
@@ -53,7 +56,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Verify with a linux-style path
-	if path, err = CheckSystemDriveAndRemoveDriveLetter(`c:/`); err != nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter(`c:/`, driver); err != nil {
 		t.Fatalf("An absolute path should pass")
 	}
 	if path != `\` {
@@ -61,7 +64,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Failure on c:
-	if path, err = CheckSystemDriveAndRemoveDriveLetter(`c:`); err == nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter(`c:`, driver); err == nil {
 		t.Fatalf("c: should fail")
 	}
 	if err.Error() != `No relative path specified in "c:"` {
@@ -69,7 +72,7 @@ func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
 	}
 
 	// Failure on d:
-	if path, err = CheckSystemDriveAndRemoveDriveLetter(`d:`); err == nil {
+	if path, err = CheckSystemDriveAndRemoveDriveLetter(`d:`, driver); err == nil {
 		t.Fatalf("c: should fail")
 	}
 	if err.Error() != `No relative path specified in "d:"` {

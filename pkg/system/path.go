@@ -10,9 +10,21 @@ import (
 	"github.com/containerd/continuity/fsdriver"
 )
 
-// CheckSystemDriveAndRemoveDriveLetterOS verifies and manipulates a Windows or
+// CheckSystemDriveAndRemoveDriveLetter verifies and manipulates a Windows or
 // Linux path.
-func CheckSystemDriveAndRemoveDriveLetterOS(path string, driver fsdriver.Driver) (string, error) {
+// On Linux paths, it noops.
+// On Windows paths, it verifies and manipulates a Windows path.
+// This is used, for example, when validating a user provided path in docker cp.
+// If a drive letter is supplied, it must be the system drive. The drive letter
+// is always removed. Also, it translates it to OS semantics (IOW / to \). We
+// need the path in this syntax so that it can ultimately be contatenated with
+// a Windows long-path which doesn't support drive-letters. Examples:
+// C:			--> Fail
+// C:\			--> \
+// a			--> a
+// /a			--> \a
+// d:\			--> Fail
+func CheckSystemDriveAndRemoveDriveLetter(path string, driver fsdriver.Driver) (string, error) {
 	if runtime.GOOS != "windows" {
 		return path, nil
 	}

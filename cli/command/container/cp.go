@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/continuity/fsdriver"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/cli"
 	"github.com/docker/docker/cli/command"
@@ -113,9 +114,10 @@ func resolveLocalPath(localPath string) (absPath string, err error) {
 		return
 	}
 
-	return archive.PreserveTrailingDotOrSeparator(absPath, localPath), nil
+	return archive.PreserveTrailingDotOrSeparator(absPath, localPath, fsdriver.BasicDriver), nil
 }
 
+// TODO @gupta-ak. These also probably need to be modified
 func copyFromContainer(ctx context.Context, dockerCli *command.DockerCli, srcContainer, srcPath, dstPath string, cpParam *cpConfig) (err error) {
 	if dstPath != "-" {
 		// Get an absolute destination path.
@@ -135,7 +137,7 @@ func copyFromContainer(ctx context.Context, dockerCli *command.DockerCli, srcCon
 			linkTarget := srcStat.LinkTarget
 			if !system.IsAbs(linkTarget) {
 				// Join with the parent directory.
-				srcParent, _ := archive.SplitPathDirEntry(srcPath)
+				srcParent, _ := archive.SplitPathDirEntry(srcPath, fsdriver.BasicDriver)
 				linkTarget = filepath.Join(srcParent, linkTarget)
 			}
 
@@ -168,7 +170,7 @@ func copyFromContainer(ctx context.Context, dockerCli *command.DockerCli, srcCon
 
 	preArchive := content
 	if len(srcInfo.RebaseName) != 0 {
-		_, srcBase := archive.SplitPathDirEntry(srcInfo.Path)
+		_, srcBase := archive.SplitPathDirEntry(srcInfo.Path, fsdriver.BasicDriver)
 		preArchive = archive.RebaseArchiveEntries(content, srcBase, srcInfo.RebaseName)
 	}
 	// See comments in the implementation of `archive.CopyTo` for exactly what
@@ -200,7 +202,7 @@ func copyToContainer(ctx context.Context, dockerCli *command.DockerCli, srcPath,
 		linkTarget := dstStat.LinkTarget
 		if !system.IsAbs(linkTarget) {
 			// Join with the parent directory.
-			dstParent, _ := archive.SplitPathDirEntry(dstPath)
+			dstParent, _ := archive.SplitPathDirEntry(dstPath, fsdriver.BasicDriver)
 			linkTarget = filepath.Join(dstParent, linkTarget)
 		}
 

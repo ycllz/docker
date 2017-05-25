@@ -223,7 +223,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	fmt.Println(path)
 
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
-	path, err = system.CheckSystemDriveAndRemoveDriveLetterOS(path, driver)
+	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path, driver)
 	if err != nil {
 		return err
 	}
@@ -236,7 +236,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 
 	// Consider the given path as an absolute path in the container.
 	cleanedPath := driver.Join(string(driver.Separator()), path)
-	absPath := archive.PreserveTrailingDotOrSeparatorOS(cleanedPath, path, driver)
+	absPath := archive.PreserveTrailingDotOrSeparator(cleanedPath, path, driver)
 
 	resolvedPath, err := container.GetResourcePath(absPath)
 	if err != nil {
