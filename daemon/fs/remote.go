@@ -133,7 +133,7 @@ func (rfs *remotefs) ResolveFullPath(name string) (string, error) {
 }
 
 func toUnix(path string) (string, error) {
-	path, err := system.CheckSystemDriveAndRemoveDriveLetter(path)
+	path, err := system.CheckSystemDriveAndRemoveDriveLetter(path, fsdriver.BasicDriver)
 	if err != nil {
 		return "", err
 	}

@@ -12,17 +12,17 @@ import (
 // host. Returns a resolved path (absolute path to the resource on the host),
 // the absolute path to the resource relative to the container's rootfs, and
 // an error if the path points to outside the container's rootfs.
-func (container *Container) ResolvePath(path string) (resolvedPath, absPath string, err error) {
+func (container *Container) ResolvePath(path string) (resolvedPath string, absPath string, err error) {
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
 	driver := container.BaseFS
-	path, err = system.CheckSystemDriveAndRemoveDriveLetterOS(path, driver)
+	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path, driver)
 	if err != nil {
 		return "", "", err
 	}
 
 	// Consider the given path as an absolute path in the container.
 	absPath = driver.Join(string(driver.Separator()), path)
-	absPath = archive.PreserveTrailingDotOrSeparatorOS(absPath, path, driver)
+	absPath = archive.PreserveTrailingDotOrSeparator(absPath, path, driver)
 
 	// Split the absPath into its Directory and Base components. We will
 	// resolve the dir in the scope of the container then append the base.
