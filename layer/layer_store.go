@@ -751,5 +751,10 @@ func (n *naiveDiffPathDriver) DiffGetter(id string) (graphdriver.FileGetCloser, 
 	if err != nil {
 		return nil, err
 	}
-	return &fileGetPutter{storage.NewPathFileGetter(p), n.Driver, id}, nil
+
+	// TODO @gupta-ak: Decided if NaiveDiffGet will work with remote graph driver.
+	if p.Remote() {
+		return nil, fmt.Errorf("Remote graph driver not supported on naive")
+	}
+	return &fileGetPutter{storage.NewPathFileGetter(p.HostPathName()), n.Driver, id}, nil
 }

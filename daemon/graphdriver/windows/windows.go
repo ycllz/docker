@@ -25,6 +25,8 @@ import (
 	"github.com/Microsoft/go-winio/backuptar"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
+	"github.com/containerd/continuity/fsdriver"
+	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
@@ -340,35 +342,35 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get returns the rootfs path for the id. This will mount the dir at its given path.
-func (d *Driver) Get(id, mountLabel string) (string, error) {
+func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 	logrus.Debugf("WindowsGraphDriver Get() id %s mountLabel %s", id, mountLabel)
 	var dir string
 
 	rID, err := d.resolveID(id)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if count := d.ctr.Increment(rID); count > 1 {
-		return d.cache[rID], nil
+		return fs.NewFilesystemOperator(fsdriver.Basic, d.cache[rID])
 	}
 
 	// Getting the layer paths must be done outside of the lock.
 	layerChain, err := d.getLayerChain(rID)
 	if err != nil {
 		d.ctr.Decrement(rID)
-		return "", err
+		return nil, err
 	}
 
 	if err := hcsshim.ActivateLayer(d.info, rID); err != nil {
 		d.ctr.Decrement(rID)
-		return "", err
+		return nil, err
 	}
 	if err := hcsshim.PrepareLayer(d.info, rID, layerChain); err != nil {
 		d.ctr.Decrement(rID)
 		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 		}
-		return "", err
+		return nil, err
 	}
 
 	mountPath, err := hcsshim.GetLayerMountPath(d.info, rID)
@@ -380,7 +382,7 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 		if err2 := hcsshim.DeactivateLayer(d.info, rID); err2 != nil {
 			logrus.Warnf("Failed to Deactivate %s: %s", id, err)
 		}
-		return "", err
+		return nil, err
 	}
 	d.cacheMu.Lock()
 	d.cache[rID] = mountPath
@@ -394,7 +396,7 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 		dir = d.dir(id)
 	}
 
-	return dir, nil
+	return fs.NewFilesystemOperator(fsdriver.Basic, dir)
 }
 
 // Put adds a new layer to the driver.
@@ -455,7 +457,7 @@ func (d *Driver) Cleanup() error {
 }
 
 // Diff produces an archive of the changes between the specified
-// layer and its parent layer which may be "".
+// layer and its parent layer which may be nil.
 // The layer should be mounted when calling this function
 func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
 	rID, err := d.resolveID(id)
@@ -491,7 +493,7 @@ func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
 }
 
 // Changes produces a list of changes between the specified layer
-// and its parent layer. If parent is "", then all changes will be ADD changes.
+// and its parent layer. If parent is nil, then all changes will be ADD changes.
 // The layer should not be mounted when calling this function.
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 	rID, err := d.resolveID(id)
@@ -599,7 +601,7 @@ func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
 	}
 	defer d.Put(id)
 
-	return archive.ChangesSize(layerFs, changes), nil
+	return archive.ChangesSize(layerFs.HostPathName(), changes), nil
 }
 
 // GetMetadata returns custom driver information.

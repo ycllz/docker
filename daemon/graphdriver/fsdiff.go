@@ -4,6 +4,8 @@ import (
 	"io"
 	"time"
 
+	"fmt"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
@@ -47,7 +49,7 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 	startTime := time.Now()
 	driver := gdw.ProtoDriver
 
-	layerFs, err := driver.Get(id, "")
+	layerFsOp, err := driver.Get(id, "")
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +59,12 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 			driver.Put(id)
 		}
 	}()
+
+	// TODO @gupta-ak: Decide if this should be implemented
+	if layerFsOp.Remote() {
+		return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
+	}
+	layerFs := layerFsOp.HostPathName()
 
 	if parent == "" {
 		archive, err := archive.Tar(layerFs, archive.Uncompressed)
@@ -70,11 +78,17 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 		}), nil
 	}
 
-	parentFs, err := driver.Get(parent, "")
+	parentFsOp, err := driver.Get(parent, "")
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Put(parent)
+
+	// TODO @gupta-ak: Decide if this should be implemented
+	if parentFsOp.Remote() {
+		return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
+	}
+	parentFs := parentFsOp.HostPathName()
 
 	changes, err := archive.ChangesDirs(layerFs, parentFs)
 	if err != nil {
@@ -104,20 +118,32 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 func (gdw *NaiveDiffDriver) Changes(id, parent string) ([]archive.Change, error) {
 	driver := gdw.ProtoDriver
 
-	layerFs, err := driver.Get(id, "")
+	layerFsOp, err := driver.Get(id, "")
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Put(id)
 
+	// TODO @gupta-ak: Decide if this should be implemented
+	if layerFsOp.Remote() {
+		return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
+	}
+	layerFs := layerFsOp.HostPathName()
+
 	parentFs := ""
 
 	if parent != "" {
-		parentFs, err = driver.Get(parent, "")
+		parentFsOp, err := driver.Get(parent, "")
 		if err != nil {
 			return nil, err
 		}
 		defer driver.Put(parent)
+
+		// TODO @gupta-ak: Decide if this should be implemented
+		if parentFsOp.Remote() {
+			return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
+		}
+		parentFs = parentFsOp.HostPathName()
 	}
 
 	return archive.ChangesDirs(layerFs, parentFs)
@@ -130,11 +156,17 @@ func (gdw *NaiveDiffDriver) ApplyDiff(id, parent string, diff io.Reader) (size i
 	driver := gdw.ProtoDriver
 
 	// Mount the root filesystem so we can apply the diff/layer.
-	layerFs, err := driver.Get(id, "")
+	layerFsOp, err := driver.Get(id, "")
 	if err != nil {
 		return
 	}
 	defer driver.Put(id)
+
+	// TODO @gupta-ak: Decide if this should be implemented
+	if layerFsOp.Remote() {
+		return 0, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
+	}
+	layerFs := layerFsOp.HostPathName()
 
 	options := &archive.TarOptions{UIDMaps: gdw.uidMaps,
 		GIDMaps: gdw.gidMaps}
@@ -159,11 +191,17 @@ func (gdw *NaiveDiffDriver) DiffSize(id, parent string) (size int64, err error) 
 		return
 	}
 
-	layerFs, err := driver.Get(id, "")
+	layerFsOp, err := driver.Get(id, "")
 	if err != nil {
 		return
 	}
 	defer driver.Put(id)
+
+	// TODO @gupta-ak: Decide if this should be implemented
+	if layerFsOp.Remote() {
+		return 0, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
+	}
+	layerFs := layerFsOp.HostPathName()
 
 	return archive.ChangesSize(layerFs, changes), nil
 }

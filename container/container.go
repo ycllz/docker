@@ -23,6 +23,7 @@ import (
 	swarmtypes "github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/container/stream"
 	"github.com/docker/docker/daemon/exec"
+	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/logger/jsonfilelog"
 	"github.com/docker/docker/daemon/network"
@@ -63,10 +64,10 @@ var (
 type Container struct {
 	StreamConfig *stream.Config
 	// embed for Container to support states directly.
-	*State          `json:"State"` // Needed for Engine API version <= 1.11
-	Root            string         `json:"-"` // Path to the "home" of the container, including metadata.
-	BaseFS          string         `json:"-"` // Path to the graphdriver mountpoint
-	RWLayer         layer.RWLayer  `json:"-"`
+	*State          `json:"State"`        // Needed for Engine API version <= 1.11
+	Root            string                `json:"-"` // Path to the "home" of the container, including metadata.
+	BaseFS          fs.FilesystemOperator `json:"-"` // Path to the graphdriver mountpoint
+	RWLayer         layer.RWLayer         `json:"-"`
 	ID              string
 	Created         time.Time
 	Managed         bool
@@ -274,15 +275,13 @@ func (container *Container) SetupWorkingDirectory(rootUID, rootGID int) error {
 func (container *Container) GetResourcePath(path string) (string, error) {
 	// IMPORTANT - These are paths on the OS where the daemon is running, hence
 	// any filepath operations must be done in an OS agnostic way.
-
-	cleanPath := cleanResourcePath(path)
-	r, e := symlink.FollowSymlinkInScope(filepath.Join(container.BaseFS, cleanPath), container.BaseFS)
+	r, e := container.BaseFS.ResolveFullPath(path)
 
 	// Log this here on the daemon side as there's otherwise no indication apart
 	// from the error being propagated all the way back to the client. This makes
 	// debugging significantly easier and clearly indicates the error comes from the daemon.
 	if e != nil {
-		logrus.Errorf("Failed to FollowSymlinkInScope BaseFS %s cleanPath %s path %s %s\n", container.BaseFS, cleanPath, path, e)
+		logrus.Errorf("Failed to ResolveFullPath BaseFS %s path %s %s\n", container.BaseFS, path, e)
 	}
 	return r, e
 }
@@ -302,6 +301,7 @@ func (container *Container) GetResourcePath(path string) (string, error) {
 func (container *Container) GetRootResourcePath(path string) (string, error) {
 	// IMPORTANT - These are paths on the OS where the daemon is running, hence
 	// any filepath operations must be done in an OS agnostic way.
+	// TODO: @gupta-ak. How would this work for LCOW?
 	cleanPath := filepath.Join(string(os.PathSeparator), path)
 	return symlink.FollowSymlinkInScope(filepath.Join(container.Root, cleanPath), container.Root)
 }

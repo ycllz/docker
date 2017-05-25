@@ -8,9 +8,11 @@ import (
 	"strconv"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/cloudflare/cfssl/config"
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/container"
+	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/idtools"
@@ -96,7 +98,7 @@ func setupDaemonRoot(config *Config, rootDir string, rootUID, rootGID int) error
 	return nil
 }
 
-func (daemon *Daemon) getLayerInit() func(string) error {
+func (daemon *Daemon) getLayerInit() func(fs.FilesystemOperator) error {
 	return nil
 }
 

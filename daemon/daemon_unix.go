@@ -937,7 +937,7 @@ func removeDefaultBridgeInterface() {
 	}
 }
 
-func (daemon *Daemon) getLayerInit() func(string) error {
+func (daemon *Daemon) getLayerInit() func(fs.FileSystemOperator) error {
 	return daemon.setupInitLayer
 }
 

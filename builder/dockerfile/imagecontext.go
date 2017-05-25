@@ -1,6 +1,7 @@
 package dockerfile
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -163,10 +164,17 @@ func (im *imageMount) Source() (builder.Source, error) {
 		if im.layer == nil {
 			return nil, errors.Errorf("empty context")
 		}
-		mountPath, err := im.layer.Mount()
+		mountPathFs, err := im.layer.Mount()
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to mount %s", im.image.ImageID())
 		}
+
+		// TODO @gupta-ak. Implement this later.
+		if mountPathFs.Remote() {
+			return nil, fmt.Errorf("Remote file system not supported.")
+		}
+		mountPath := mountPathFs.HostPathName()
+
 		source, err := remotecontext.NewLazyContext(mountPath)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create lazycontext for %s", mountPath)

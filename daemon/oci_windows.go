@@ -114,7 +114,8 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 
 	// In spec.Root. This is not set for Hyper-V containers
 	if !isHyperV {
-		s.Root.Path = c.BaseFS
+		// Not hyperv, so it's always local, so HostPathName() works.
+		s.Root.Path = c.BaseFS.HostPathName()
 	}
 	s.Root.Readonly = false // Windows does not support a read-only root filesystem
 

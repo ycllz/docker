@@ -2,11 +2,7 @@
 
 package system
 
-import (
-	"fmt"
-	"path/filepath"
-	"strings"
-)
+import "github.com/containerd/continuity/fsdriver"
 
 // DefaultPathEnv is deliberately empty on Windows as the default path will be set by
 // the container. Docker has no context of what the default path should be.
@@ -24,14 +20,5 @@ const DefaultPathEnv = ""
 // /a			--> \a
 // d:\			--> Fail
 func CheckSystemDriveAndRemoveDriveLetter(path string) (string, error) {
-	if len(path) == 2 && string(path[1]) == ":" {
-		return "", fmt.Errorf("No relative path specified in %q", path)
-	}
-	if !filepath.IsAbs(path) || len(path) < 2 {
-		return filepath.FromSlash(path), nil
-	}
-	if string(path[1]) == ":" && !strings.EqualFold(string(path[0]), "c") {
-		return "", fmt.Errorf("The specified path is not on the system drive (C:)")
-	}
-	return filepath.FromSlash(path[2:]), nil
+	return CheckSystemDriveAndRemoveDriveLetterOS(path, fsdriver.BasicDriver)
 }
