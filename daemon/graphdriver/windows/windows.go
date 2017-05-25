@@ -87,7 +87,9 @@ type Driver struct {
 // InitFilter returns a new Windows storage filter driver.
 func InitFilter(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
 	logrus.Debugf("WindowsGraphDriver InitFilter at %s", home)
-
+	logrus.Debugf("Options: %v", options)
+	logrus.Debugf("Uid Map : %v", uidMaps)
+	logrus.Debugf("Gid Map: %v", gidMaps)
 	fsType, err := getFileSystemType(string(home[0]))
 	if err != nil {
 		return nil, err
@@ -402,7 +404,6 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 // Put adds a new layer to the driver.
 func (d *Driver) Put(id string) error {
 	logrus.Debugf("WindowsGraphDriver Put() id %s", id)
-
 	rID, err := d.resolveID(id)
 	if err != nil {
 		return err
@@ -430,7 +431,6 @@ func (d *Driver) Put(id string) error {
 // We use this opportunity to cleanup any -removing folders which may be
 // still left if the daemon was killed while it was removing a layer.
 func (d *Driver) Cleanup() error {
-
 	items, err := ioutil.ReadDir(d.info.HomeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -496,6 +496,7 @@ func (d *Driver) Diff(id, parent string) (_ io.ReadCloser, err error) {
 // and its parent layer. If parent is nil, then all changes will be ADD changes.
 // The layer should not be mounted when calling this function.
 func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
+
 	rID, err := d.resolveID(id)
 	if err != nil {
 		return nil, err

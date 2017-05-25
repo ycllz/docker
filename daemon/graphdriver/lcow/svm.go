@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/rneugeba/virtsock/pkg/hvsock"
 )
@@ -72,12 +73,95 @@ func init() {
 	logrus.Debugf("LCOW graphdriver: serviceVMID %s", serviceVMId)
 }
 
-// importLayer inports a layer to a service VM
+// Process contains information to start a specific application inside the container.
+type Process hcsshim.Process
+
+var ServiceVMContainer hcsshim.Container
+
+//------------------------ Exported functions --------------------------
+
+func CreateLinuxServiceVM(containerID string) (hcsshim.Container, error) {
+	logrus.Infof("[graphdriver::CreateLinuxServiceVM] Start creating LinuxServiceVM (%s)", containerID)
+
+	// prepare configuration for ComputeSystem
+	configuration := &hcsshim.ContainerConfig{
+		HvPartition:                 true,
+		Name:                        containerID,
+		SystemType:                  "Container",
+		ContainerType:               "Linux",
+		Servicing:                   true, // for notifiy the GCS that it's serving the Linux Service Vm
+		TerminateOnLastHandleClosed: true,
+	}
+
+	// The HCS hardcoded the sandbox name to be sandbox.vhdx
+	// we can only specify LayerFolderPath. For ServiceVM,
+	// we need separate sandbox file.
+	// eg: configuration.LayerFolderPath = "C:\\Linux\\sandbox"
+	configuration.LayerFolderPath = "C:\\Linux\\ServiceVM"
+
+	// Setup layers, a list of storage layers.
+	// A dummy layer is required the Linux Service VM
+	// Format ID=GUID;Path=%root%\windowsfilter\layerID
+	configuration.Layers = append(configuration.Layers, hcsshim.Layer{
+		ID:   "11111111-2222-2222-3333-567891234567",
+		Path: "C:\\Linux\\Layers\\Layer1.vhdx"})
+
+	// boot from initrd
+	logrus.Infof("booting from initrd (%s)", containerID)
+	configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel", EnableConsole: true}
+	/*
+		    // Settings for booting from VHD
+			//vhdfile := "C:\\Linux\\Kernel\\LinuxServiceVM.vhdx"
+			vhdfile := "C:\\Linux\\Kernel\\LCOWBaseOSImage.vhdx"
+			logrus.Infof("LinuxServiceVM booting from %s", vhdfile)
+
+			configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: vhdfile,
+		                                                 EnableConsole: true,
+		                                                 LayersUseVPMEM:  false,
+		                                                 BootSource:  "Vhd",
+		                                                 WritableBootSource: true}
+	*/
+
+	logrus.Infof("configuration={%s} ServiceVMContainer 0x%0x", configuration, ServiceVMContainer)
+	svmContainer, err := hcsshim.CreateContainer(containerID, configuration)
+	if err != nil {
+		return nil, err
+	}
+	logrus.Infof("hcsshim.CreateContainer %s succeeded. ServiceVMContainer 0x%0x ", containerID, ServiceVMContainer)
+
+	err = svmContainer.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	ServiceVMContainer = svmContainer
+	logrus.Infof("LinuxServiceVM hcsContainer.Start(id=%s) succeeded and CreateLinuxServiceVM completed successfully", containerID)
+	return nil, nil
+}
+
+func DeleteLinuxServiceVM(containerID string) error {
+	logrus.Infof("[graphdriver] Deleting LinuxServiceVM")
+
+	// Shutdown will do a clean shutdown, send a message to the GCS,
+	// and is valid only after a successful Start.
+	// If Shutdown returns successfully, the compute system is completely
+	// cleaned up and no further action is needed.
+	err := ServiceVMContainer.Shutdown()
+	if err != nil {
+		return err
+	}
+
+	// Call Terminiate() if a *successful* Start has not been performed.
+	// Terminate can be called at any time, but it will not communicate with the GCS, the VM is killed.
+	//err = ServiceVMContainer.Terminate();
+	return nil
+}
+
+// Convert a tar stream, coming fom the "reader", into a fixed vhd file
 func importLayer(layerPath string, reader io.Reader) (int64, error) {
-	// Hv sockets don't support graceful/unidirectional shutdown, and the
-	// hvsock wrapper works weirdly with the tar reader, so we first write the
-	// contents to a temp file.
-	logrus.Debugf("importLayer path %s", layerPath)
+	logrus.Infof("[ServiceVMImportLayer] Calling tar2vhdName in ServiceVM for converting %s to a vhd file", layerPath)
+	// copy down the tar stream and store it to a temp file
+	// for preparing to write teo stdin pipe into the ServiceVM
 	tmpFile, fileSize, err := storeReader(reader)
 	if err != nil {
 		return 0, err
@@ -85,13 +169,20 @@ func importLayer(layerPath string, reader io.Reader) (int64, error) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	logrus.Debugf("importLayer connecting")
-	conn, err := connect()
+	// Execute tar_to_vhd as a external process in the ServiceVM for
+	// converting a tar into a fixed VHD file
+	process, err := launchProcessInServiceVM("./svm_utils")
 	if err != nil {
-		logrus.Debugf("importLayer failed to connect: %v", err)
+		logrus.Errorf("launchProcessInServiceVM failed with %s", err)
 		return 0, err
 	}
-	defer closeConnection(conn)
+
+	// get the std io pipes from the newly created process
+	stdin, stdout, _, err := process.Stdio()
+	if err != nil {
+		logrus.Errorf("[ServiceVMImportLayer]  getting std pipes failed %s", err)
+		return 0, err
+	}
 
 	header := &serviceVMHeader{
 		command:     cmdImport,
@@ -99,98 +190,26 @@ func importLayer(layerPath string, reader io.Reader) (int64, error) {
 		payloadSize: fileSize,
 	}
 
-	err = sendData(header, tmpFile, conn)
+	logrus.Infof("[ServiceVMImportLayer] Sending the tar file (%d bytes) stream to the LinuxServiceVM", fileSize)
+	err = sendData(header, tmpFile, stdin)
 	if err != nil {
 		return 0, err
 	}
 
-	resultSize, err := waitForResponse(conn)
+	logrus.Infof("[ServiceVMImportLayer] waiting response from the LinuxServiceVM")
+	payloadSize, err := waitForResponse(stdout)
 	if err != nil {
 		return 0, err
 	}
 
+	logrus.Infof("[ServiceVMImportLayer] reading back vhd stream (%d bytes) and write to VHD", payloadSize)
 	// We are getting the VHD stream, so write it to file
-	logrus.Debugf("importLayer path %s, writing to %s", layerPath, layerVHDName)
-	err = writeVHDFile(path.Join(layerPath, layerVHDName), resultSize, conn)
-	return resultSize, err
-}
-
-func storeReader(r io.Reader) (*os.File, int64, error) {
-	tmpFile, err := ioutil.TempFile("", "docker-reader")
-	if err != nil {
-		return nil, 0, err
-	}
-
-	fileSize, err := io.Copy(tmpFile, r)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	_, err = tmpFile.Seek(0, 0)
-	if err != nil {
-		return nil, 0, err
-	}
-	return tmpFile, fileSize, nil
-}
-
-func connect() (hvsock.Conn, error) {
-	hvAddr := hvsock.HypervAddr{VMID: serviceVMId, ServiceID: serviceVMSocketID}
-	return hvsock.Dial(hvAddr)
-}
-
-func waitForResponse(r io.Reader) (int64, error) {
-	// Does this need a timeout?
-	buf := make([]byte, serviceVMHeaderSize)
-	_, err := io.ReadFull(r, buf)
+	err = writeVHDFile(path.Join(layerPath, layerVHDName), payloadSize, stdout)
 	if err != nil {
 		return 0, err
 	}
-
-	hdr, err := deserializeHeader(buf)
-	if err != nil {
-		return 0, err
-	}
-
-	if hdr.command != cmdResponseOK {
-		return 0, fmt.Errorf("Service VM failed")
-	}
-	return hdr.payloadSize, nil
-}
-
-func writeVHDFile(path string, bytesToRead int64, r io.Reader) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-
-	_, err = io.CopyN(f, r, bytesToRead)
-	if err != nil {
-		return err
-	}
-
-	return f.Close()
-}
-
-func closeConnection(rc io.WriteCloser) error {
-	logrus.Debugf("closing connection to service VM")
-	header := &serviceVMHeader{
-		command:     cmdTerminate,
-		version:     version1,
-		payloadSize: 0,
-	}
-
-	buf, err := serializeHeader(header)
-	if err != nil {
-		rc.Close()
-		return err
-	}
-
-	_, err = rc.Write(buf)
-	if err != nil {
-		rc.Close()
-		return err
-	}
-	return rc.Close()
+	logrus.Infof("[ServiceVMImportLayer] new vhd file was created: [%s] ", path.Join(layerPath, layerVHDName))
+	return payloadSize, err
 }
 
 // exportLayer exports a sandbox layer
@@ -215,8 +234,18 @@ func exportLayer(vhdPath string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	conn, err := connect()
+	// Execute tar_to_vhd as a external process in the ServiceVM for
+	// converting a tar into a fixed VHD file
+	process, err := launchProcessInServiceVM("./svm_utils")
 	if err != nil {
+		logrus.Errorf("launchProcessInServiceVM failed with %s", err)
+		return nil, err
+	}
+
+	// get the std io pipes from the newly created process
+	stdin, stdout, _, err := process.Stdio()
+	if err != nil {
+		logrus.Errorf("[ServiceVMExportLayer]  getting std pipes failed %s", err)
 		return nil, err
 	}
 
@@ -226,39 +255,49 @@ func exportLayer(vhdPath string) (io.ReadCloser, error) {
 		payloadSize: fileInfo.Size(),
 	}
 
-	err = sendData(header, vhdFile, conn)
+	err = sendData(header, vhdFile, stdin)
 	if err != nil {
-		closeConnection(conn)
+		logrus.Errorf("[ServiceVMExportLayer]  getting std pipes failed %s", err)
 		return nil, err
 	}
 
-	payloadSize, err := waitForResponse(conn)
+	payloadSize, err := waitForResponse(stdout)
 	if err != nil {
-		closeConnection(conn)
 		return nil, err
 	}
 
 	reader, writer := io.Pipe()
 	go func() {
-		io.CopyN(writer, conn, payloadSize)
-		closeConnection(conn)
-		writer.Close()
+		defer writer.Close()
+		//defer sendClose(stdout)
+		logrus.Infof("Copying result over hvsock")
+		io.CopyN(writer, stdout, payloadSize)
 	}()
 	return reader, nil
 }
 
-// createSandbox creates a r/w sandbox layer
+// Create a sandbox file named LayerSandboxName under sandboxFolder on the host
+// This is donee by copying a prebuilt-sandbox from the ServiceVM
+//
 func createSandbox(sandboxFolder string) error {
 	sandboxPath := path.Join(sandboxFolder, layerSandboxName)
-	fmt.Printf("Soccerl: ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
+	fmt.Printf("ServiceVMCreateSandbox: Creating sandbox path: %s\n", sandboxPath)
 
-	// connect to the service VM
-	conn, err := connect()
+	// launch a process in the ServiceVM for handling the sandbox creation
+	process, err := launchProcessInServiceVM("./svm_utils")
 	if err != nil {
+		logrus.Infof("launchProcessInServiceVM failed with %s", err)
 		return err
 	}
-	defer conn.Close()
 
+	// get the std io pipes from the newly created process
+	stdin, stdout, _, err := process.Stdio()
+	if err != nil {
+		logrus.Errorf("[ServiceVMCreateSandbox] getting std pipes from the newly created process failed %s", err)
+		return err
+	}
+
+	// Prepare payload data for CreateSandboxCmd command
 	hdr := &serviceVMHeader{
 		command:     cmdCreateSandbox,
 		version:     version1,
@@ -268,43 +307,134 @@ func createSandbox(sandboxFolder string) error {
 	hdrSandboxInfo := &sandboxInfoHeader{
 		maxSandboxSizeInMB: 19264, // in MB, 16*1024MB = 16 GB
 	}
-
-	// Send the cmd header and data playload to the service VM
+	// Send ServiceVMHeader and SandboxInfoHeader to the Service VM
 	buf := &bytes.Buffer{}
 	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
 		return err
 	}
-
 	if err := binary.Write(buf, binary.BigEndian, hdrSandboxInfo); err != nil {
 		return err
 	}
 
-	fmt.Println(buf.Bytes())
-	_, err = conn.Write(buf.Bytes())
+	logrus.Infof("[ServiceVMCreateSandbox] Writing (%d) bytes to the Service VM", buf.Bytes())
+	_, err = stdin.Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
 
-	// wait for response
-	resultSize, err := waitForResponse(conn)
+	// wait for ServiceVM to response
+	logrus.Infof("[ServiceVMCreateSandbox] wait response from ServiceVM")
+	resultSize, err := waitForResponse(stdout)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("writing vhdx stream to file.")
+	logrus.Infof("writing vhdx stream to file")
 	// Get back the sandbox VHDx stream from the service VM and write it to file
-	err = writeVHDFile(sandboxPath, resultSize, conn)
+	err = writeVHDFile(sandboxPath, resultSize, stdout)
 	if err != nil {
 		return err
 	}
 
-	err = closeConnection(conn)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Soccerl: ServiceVMCreateSandbox: done creating %s\n", sandboxPath)
-
+	fmt.Printf("[ServiceVMCreateSandbox]: done creating %s\n", sandboxPath)
 	return err
+}
+
+//----------------------------- internal utility routines ------------------------
+
+func launchProcessInServiceVM(commandline string) (Process, error) {
+
+	logrus.Infof("launchProcessInServiceVM :[%s]", commandline)
+
+	createProcessParms := hcsshim.ProcessConfig{
+		EmulateConsole:    false,
+		CreateStdInPipe:   true,
+		CreateStdOutPipe:  true,
+		CreateStdErrPipe:  true,
+		CreateInUtilityVm: true,
+	}
+
+	// Temporary setting root as working directory
+	createProcessParms.WorkingDirectory = "/mnt/gcs/LinuxServiceVM/scratch/bin"
+
+	// Configure the environment for the process
+	pathValue := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/gcs/LinuxServiceVM/scratch/bin"
+	createProcessParms.Environment = map[string]string{"PATH": pathValue}
+
+	createProcessParms.CommandLine = commandline
+	createProcessParms.User = "" // what to put here? procToAdd.User.Username
+	logrus.Debugf("before CreateProcess:commandLine: %s", createProcessParms.CommandLine)
+
+	// Start the command running in the service VM.
+	newProcess, err := ServiceVMContainer.CreateProcess(&createProcessParms)
+	if err != nil {
+		logrus.Errorf("launchProcessInServiceVM: CreateProcess() failed %s", err)
+		return nil, err
+	}
+	logrus.Debugf("after CreateProcess: %s", createProcessParms.CommandLine)
+
+	pid := newProcess.Pid()
+	logrus.Infof("newProcess id is 0x%0x", pid)
+
+	// TO DO: when to cleanup
+	// need to find a place to call Close on newProcess hcsProcess.Close()
+	// Spin up a go routine waiting for exit to handle cleanup
+	//go container.waitExit(proc, false)
+
+	return newProcess, nil
+}
+
+func storeReader(r io.Reader) (*os.File, int64, error) {
+	tmpFile, err := ioutil.TempFile("", "docker-reader")
+	if err != nil {
+		return nil, 0, err
+	}
+
+	fileSize, err := io.Copy(tmpFile, r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	_, err = tmpFile.Seek(0, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	return tmpFile, fileSize, nil
+}
+
+func waitForResponse(r io.Reader) (int64, error) {
+	buf := make([]byte, serviceVMHeaderSize)
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return 0, err
+	}
+
+	hdr, err := deserializeHeader(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	if hdr.command != cmdResponseOK {
+		logrus.Infof("[waitForResponse] hdr.Command = 0x%0x", hdr.command)
+		return 0, fmt.Errorf("Service VM failed")
+	}
+	return hdr.payloadSize, nil
+}
+
+func writeVHDFile(path string, bytesToRead int64, r io.Reader) error {
+	fmt.Println(path)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.CopyN(f, r, bytesToRead)
+	if err != nil {
+		return err
+	}
+
+	return f.Close()
 }
 
 func newVHDX(pathName string) error {
@@ -372,14 +502,14 @@ func serializeSCSI(header *serviceVMHeader, scsiHeader *scsiCodeHeader) ([]byte,
 
 func exportSandbox(sandboxFolder string) (io.ReadCloser, error) {
 	sandboxPath := path.Join(sandboxFolder, layerSandboxName)
-	logrus.Debugf("exportSandbox creating sandbox at %s", sandboxPath)
+	fmt.Printf("ServiceVMAttachSandbox: Creating sandbox path: %s\n", sandboxPath)
 
 	controllerNumber, controllerLocation, err := attachVHDX(sandboxPath)
 	if err != nil {
 		return nil, err
 	}
 	defer detachVHDX(controllerNumber, controllerLocation)
-	logrus.Debugf("exportSandbox controllerNumber %d controllerLocation %d", controllerNumber, controllerLocation)
+	fmt.Printf("ServiceVMExportSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
 
 	hdr := &serviceVMHeader{
 		command:     cmdExportSandbox,
@@ -402,7 +532,9 @@ func exportSandbox(sandboxFolder string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	if _, err = conn.Write(data); err != nil {
+	fmt.Println("EXPORTING SANDBOX TO TAR", data)
+	_, err = conn.Write(data)
+	if err != nil {
 		return nil, err
 	}
 
@@ -413,6 +545,7 @@ func exportSandbox(sandboxFolder string) (io.ReadCloser, error) {
 
 	reader, writer := io.Pipe()
 	go func() {
+		fmt.Println("Copying result over hvsock")
 		io.CopyN(writer, conn, payloadSize)
 		closeConnection(conn)
 		writer.Close()
@@ -425,13 +558,39 @@ func sendData(hdr *serviceVMHeader, payload io.Reader, dest io.Writer) error {
 	if err != nil {
 		return err
 	}
+	logrus.Infof("[SendData] Total bytes to send %d", hdr.payloadSize)
 
 	_, err = dest.Write(hdrBytes)
 	if err != nil {
 		return err
 	}
 
-	_, err = io.CopyN(dest, payload, hdr.payloadSize)
+	// break into 4Kb chunks
+	var max_transfer_size int64
+	var bytes_to_transfer int64
+	var total_bytes_transfered int64
+
+	bytes_left := hdr.payloadSize
+	max_transfer_size = 4096
+	total_bytes_transfered = 0
+	bytes_to_transfer = 0
+
+	for bytes_left > 0 {
+		if bytes_left >= max_transfer_size {
+			bytes_to_transfer = max_transfer_size
+		} else {
+			bytes_to_transfer = bytes_left
+		}
+
+		bytes_transfered, err := io.CopyN(dest, payload, bytes_to_transfer)
+		if err != nil && err != io.EOF {
+			logrus.Errorf("[SendData] io.Copy failed with %s", err)
+			return err
+		}
+		total_bytes_transfered += bytes_transfered
+		bytes_left -= bytes_transfered
+	}
+	logrus.Infof("[SendData] total_bytes_transfered = %d bytes sent to the LinuxServiceVM successfully", total_bytes_transfered)
 	return err
 }
 
@@ -465,4 +624,30 @@ func deserializeHeader(hdr []byte) (*serviceVMHeader, error) {
 		return nil, err
 	}
 	return hdrPtr, nil
+}
+
+func connect() (hvsock.Conn, error) {
+	hvAddr := hvsock.HypervAddr{VMID: serviceVMId, ServiceID: serviceVMSocketID}
+	return hvsock.Dial(hvAddr)
+}
+
+func closeConnection(rc io.WriteCloser) error {
+	header := &serviceVMHeader{
+		command:     cmdTerminate,
+		version:     version1,
+		payloadSize: 0,
+	}
+
+	buf, err := serializeHeader(header)
+	if err != nil {
+		rc.Close()
+		return err
+	}
+
+	_, err = rc.Write(buf)
+	if err != nil {
+		rc.Close()
+		return err
+	}
+	return rc.Close()
 }

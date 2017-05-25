@@ -27,6 +27,11 @@ import (
 // init registers the LCOW driver to the register.
 func init() {
 	graphdriver.Register("lcow", InitLCOW)
+
+	// Launch the linux service VM
+	go func() {
+		CreateLinuxServiceVM("LinuxServiceVM")
+	}()
 }
 
 // Driver represents a windows graph driver.
