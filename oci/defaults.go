@@ -30,8 +30,46 @@ func defaultCapabilities() []string {
 	}
 }
 
-// DefaultSpec returns default oci spec used by docker.
+// DefaultSpec returns the default spec used by docker for the current Platform
 func DefaultSpec() specs.Spec {
+	return DefaultOSSpec(runtime.GOOS)
+}
+
+// DefaultOSSpec returns the spec for a given OS
+func DefaultOSSpec(osName string) specs.Spec {
+	if osName == "windows" {
+		return DefaultWindowsSpec()
+	} else if osName == "solaris" {
+		return DefaultSolarisSpec()
+	} else {
+		return DefaultLinuxSpec()
+	}
+}
+
+func DefaultWindowsSpec() specs.Spec {
+	return specs.Spec{
+		Version: specs.Version,
+		Platform: specs.Platform{
+			OS:   runtime.GOOS,
+			Arch: runtime.GOARCH,
+		},
+		Windows: &specs.Windows{},
+	}
+}
+
+func DefaultSolarisSpec() specs.Spec {
+	s := specs.Spec{
+		Version: "0.6.0",
+		Platform: specs.Platform{
+			OS:   "SunOS",
+			Arch: runtime.GOARCH,
+		},
+	}
+	s.Solaris = &specs.Solaris{}
+	return s
+}
+
+func DefaultLinuxSpec() specs.Spec {
 	s := specs.Spec{
 		Version: specs.Version,
 		Platform: specs.Platform{
@@ -91,7 +129,6 @@ func DefaultSpec() specs.Spec {
 			"/proc/timer_list",
 			"/proc/timer_stats",
 			"/proc/sched_debug",
-			"/sys/firmware",
 		},
 		ReadonlyPaths: []string{
 			"/proc/asound",
@@ -170,6 +207,10 @@ func DefaultSpec() specs.Spec {
 				},
 			},
 		},
+	}
+
+	if runtime.GOOS != "windows" {
+		s.Linux.MaskedPaths = append(s.Linux.MaskedPaths, "/sys/firmware")
 	}
 
 	return s

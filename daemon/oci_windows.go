@@ -10,12 +10,32 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
+func (daemon *Daemon) updateLinuxConfig(c *container.Container, s *specs.Spec) error {
+	// TODO:
+	// For Linux, there a bunch of stuff you have to do for the OCI spec.
+	// But ignore then for now.
+	// We can do the basic things to translate hsot config to windows
+	s.Root.Path = "rootfs"
+	s.Root.Readonly = c.HostConfig.ReadonlyRootfs
+	return nil
+}
+
 func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
-	s := oci.DefaultSpec()
+	img, err := daemon.GetImage(string(c.ImageID))
+	if err != nil {
+		return nil, err
+	}
+
+	s := oci.DefaultOSSpec(img.OS)
+	s.Windows = &specs.Windows{}
 
 	linkedEnv, err := daemon.setupLinkedContainers(c)
 	if err != nil {
 		return nil, err
+	}
+
+	if img.OS == "linux" {
+		linkedEnv = append(linkedEnv, "TERM=xterm")
 	}
 
 	// Note, unlike Unix, we do NOT call into SetupWorkingDirectory as
@@ -95,16 +115,21 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 	if !c.Config.ArgsEscaped {
 		s.Process.Args = escapeArgs(s.Process.Args)
 	}
+
 	s.Process.Cwd = c.Config.WorkingDir
 	if len(s.Process.Cwd) == 0 {
-		// We default to C:\ to workaround the oddity of the case that the
-		// default directory for cmd running as LocalSystem (or
-		// ContainerAdministrator) is c:\windows\system32. Hence docker run
-		// <image> cmd will by default end in c:\windows\system32, rather
-		// than 'root' (/) on Linux. The oddity is that if you have a dockerfile
-		// which has no WORKDIR and has a COPY file ., . will be interpreted
-		// as c:\. Hence, setting it to default of c:\ makes for consistency.
-		s.Process.Cwd = `C:\`
+		if img.OS == "windows" {
+			// We default to C:\ to workaround the oddity of the case that the
+			// default directory for cmd running as LocalSystem (or
+			// ContainerAdministrator) is c:\windows\system32. Hence docker run
+			// <image> cmd will by default end in c:\windows\system32, rather
+			// than 'root' (/) on Linux. The oddity is that if you have a dockerfile
+			// which has no WORKDIR and has a COPY file ., . will be interpreted
+			// as c:\. Hence, setting it to default of c:\ makes for consistency.
+			s.Process.Cwd = `C:\`
+		} else {
+			s.Process.Cwd = `/`
+		}
 	}
 	s.Process.Env = c.CreateDaemonEnvironment(c.Config.Tty, linkedEnv)
 	s.Process.ConsoleSize.Height = c.HostConfig.ConsoleSize[0]
@@ -118,6 +143,10 @@ func (daemon *Daemon) createSpec(c *container.Container) (*specs.Spec, error) {
 		s.Root.Path = c.BaseFS.HostPathName()
 	}
 	s.Root.Readonly = false // Windows does not support a read-only root filesystem
+
+	if img.OS == "linux" {
+		daemon.updateLinuxConfig(c, &s)
+	}
 
 	// In s.Windows.Resources
 	cpuShares := uint16(c.HostConfig.CPUShares)

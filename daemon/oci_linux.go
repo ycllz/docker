@@ -638,6 +638,9 @@ func (daemon *Daemon) populateCommonSpec(s *specs.Spec, c *container.Container) 
 			if daemon.configStore.InitPath != "" {
 				path = daemon.configStore.InitPath
 			}
+			if c.HostConfig.InitPath != "" {
+				path = c.HostConfig.InitPath
+			}
 			s.Mounts = append(s.Mounts, specs.Mount{
 				Destination: "/dev/init",
 				Type:        "bind",
