@@ -3,8 +3,8 @@ package graphdriver
 var (
 	// Slice of drivers that should be used in order
 	priority = []string{
+		"lcow", // make the Linux graph driver as default for the LOCW testign purpose, TODO: need to switch it back
 		"windowsfilter",
-		"lcow",
 	}
 )
 
