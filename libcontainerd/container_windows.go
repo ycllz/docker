@@ -1,6 +1,7 @@
 package libcontainerd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -82,6 +83,16 @@ func (ctr *container) start(attachStdio StdioCallback) error {
 	createProcessParms.Environment = setupEnvironmentVariables(ctr.ociSpec.Process.Env)
 	createProcessParms.CommandLine = strings.Join(ctr.ociSpec.Process.Args, " ")
 	createProcessParms.User = ctr.ociSpec.Process.User.Username
+
+	// configure Linux oc spec
+	if ctr.ociSpec.Platform.OS == "linux" {
+		ociBuf, err := json.Marshal(ctr.ociSpec)
+		if err != nil {
+			return err
+		}
+		ociRaw := json.RawMessage(ociBuf)
+		createProcessParms.OCISpecification = &ociRaw
+	}
 
 	// Start the command running in the container.
 	newProcess, err := ctr.hcsContainer.CreateProcess(createProcessParms)
