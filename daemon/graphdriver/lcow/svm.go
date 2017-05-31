@@ -65,6 +65,7 @@ func init() {
 	cmd := fmt.Sprintf("$(Get-ComputeProcess %s).Id", serviceVMName)
 	result, _ := exec.Command("powershell", cmd).Output()
 	serviceVMId, _ = hvsock.GUIDFromString(strings.TrimSpace(string(result)))
+	logrus.Debugf("LCOW graphdriver: serviceVMID %s", serviceVMId)
 }
 
 // importLayer inports a layer to a service VM
@@ -83,6 +84,7 @@ func importLayer(layerPath string, reader io.Reader) (int64, error) {
 	logrus.Debugf("importLayer connecting")
 	conn, err := connect()
 	if err != nil {
+		logrus.Debugf("importLayer failed to connect: %v", err)
 		return 0, err
 	}
 	defer closeConnection(conn)
