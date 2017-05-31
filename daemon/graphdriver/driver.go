@@ -11,10 +11,10 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/vbatts/tar-split/tar/storage"
 
+	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
-	"github.com/docker/docker/daemon/fs"
 )
 
 // FsMagic unsigned id of the filesystem in use.
@@ -111,6 +111,12 @@ type DiffDriver interface {
 type Driver interface {
 	ProtoDriver
 	DiffDriver
+}
+
+type LayerGetter interface {
+	// GetLayerPath gets the path for the layer. This is different from Get()
+	// since that returns an interface to account for umountable layers.
+	GetLayerPath(id string) (string, error)
 }
 
 // Capabilities defines a list of capabilities a driver may implement.

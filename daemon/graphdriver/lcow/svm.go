@@ -46,9 +46,9 @@ const (
 )
 
 type serviceVMHeader struct {
-	command     uint32
-	version     uint32
-	payloadSize int64
+	Command     uint32
+	Version     uint32
+	PayloadSize int64
 }
 
 type scsiCodeHeader struct {
@@ -185,9 +185,9 @@ func importLayer(layerPath string, reader io.Reader) (int64, error) {
 	}
 
 	header := &serviceVMHeader{
-		command:     cmdImport,
-		version:     version1,
-		payloadSize: fileSize,
+		Command:     cmdImport,
+		Version:     version1,
+		PayloadSize: fileSize,
 	}
 
 	logrus.Infof("[ServiceVMImportLayer] Sending the tar file (%d bytes) stream to the LinuxServiceVM", fileSize)
@@ -250,9 +250,9 @@ func exportLayer(vhdPath string) (io.ReadCloser, error) {
 	}
 
 	header := &serviceVMHeader{
-		command:     cmdExport,
-		version:     0,
-		payloadSize: fileInfo.Size(),
+		Command:     cmdExport,
+		Version:     0,
+		PayloadSize: fileInfo.Size(),
 	}
 
 	err = sendData(header, vhdFile, stdin)
@@ -297,11 +297,11 @@ func createSandbox(sandboxFolder string) error {
 		return err
 	}
 
-	// Prepare payload data for CreateSandboxCmd command
+	// Prepare payload data for CreateSandboxCmd Command
 	hdr := &serviceVMHeader{
-		command:     cmdCreateSandbox,
-		version:     version1,
-		payloadSize: sandboxInfoHeaderSize,
+		Command:     cmdCreateSandbox,
+		Version:     version1,
+		PayloadSize: sandboxInfoHeaderSize,
 	}
 
 	hdrSandboxInfo := &sandboxInfoHeader{
@@ -414,11 +414,11 @@ func waitForResponse(r io.Reader) (int64, error) {
 		return 0, err
 	}
 
-	if hdr.command != cmdResponseOK {
-		logrus.Infof("[waitForResponse] hdr.Command = 0x%0x", hdr.command)
+	if hdr.Command != cmdResponseOK {
+		logrus.Infof("[waitForResponse] hdr.Command = 0x%0x", hdr.Command)
 		return 0, fmt.Errorf("Service VM failed")
 	}
-	return hdr.payloadSize, nil
+	return hdr.PayloadSize, nil
 }
 
 func writeVHDFile(path string, bytesToRead int64, r io.Reader) error {
@@ -512,9 +512,9 @@ func exportSandbox(sandboxFolder string) (io.ReadCloser, error) {
 	fmt.Printf("ServiceVMExportSandbox: Got Controller number: %d controllerLocation: %d\n", controllerNumber, controllerLocation)
 
 	hdr := &serviceVMHeader{
-		command:     cmdExportSandbox,
-		version:     version1,
-		payloadSize: scsiCodeHeaderSize,
+		Command:     cmdExportSandbox,
+		Version:     version1,
+		PayloadSize: scsiCodeHeaderSize,
 	}
 
 	scsiHeader := &scsiCodeHeader{
@@ -558,7 +558,7 @@ func sendData(hdr *serviceVMHeader, payload io.Reader, dest io.Writer) error {
 	if err != nil {
 		return err
 	}
-	logrus.Infof("[SendData] Total bytes to send %d", hdr.payloadSize)
+	logrus.Infof("[SendData] Total bytes to send %d", hdr.PayloadSize)
 
 	_, err = dest.Write(hdrBytes)
 	if err != nil {
@@ -570,7 +570,7 @@ func sendData(hdr *serviceVMHeader, payload io.Reader, dest io.Writer) error {
 	var bytes_to_transfer int64
 	var total_bytes_transfered int64
 
-	bytes_left := hdr.payloadSize
+	bytes_left := hdr.PayloadSize
 	max_transfer_size = 4096
 	total_bytes_transfered = 0
 	bytes_to_transfer = 0
@@ -633,9 +633,9 @@ func connect() (hvsock.Conn, error) {
 
 func closeConnection(rc io.WriteCloser) error {
 	header := &serviceVMHeader{
-		command:     cmdTerminate,
-		version:     version1,
-		payloadSize: 0,
+		Command:     cmdTerminate,
+		Version:     version1,
+		PayloadSize: 0,
 	}
 
 	buf, err := serializeHeader(header)

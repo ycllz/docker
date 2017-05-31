@@ -50,7 +50,7 @@ func DefaultWindowsSpec() specs.Spec {
 	return specs.Spec{
 		Version: specs.Version,
 		Platform: specs.Platform{
-			OS:   runtime.GOOS,
+			OS:   "windows",
 			Arch: runtime.GOARCH,
 		},
 		Windows: &specs.Windows{},
@@ -73,7 +73,7 @@ func DefaultLinuxSpec() specs.Spec {
 	s := specs.Spec{
 		Version: specs.Version,
 		Platform: specs.Platform{
-			OS:   runtime.GOOS,
+			OS:   "linux",
 			Arch: runtime.GOARCH,
 		},
 	}

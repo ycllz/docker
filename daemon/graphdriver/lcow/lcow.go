@@ -40,6 +40,10 @@ type Driver struct {
 	dummyMode bool
 }
 
+// Compile time checks to ensure that the interfaces are met.
+var _ graphdriver.Driver = &Driver{}
+var _ graphdriver.LayerGetter = &Driver{}
+
 // InitLCOW returns a new Windows storage filter driver.
 func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
 	logrus.Debugf("lcow InitLCOW at %s", home)
@@ -250,6 +254,10 @@ func (d *Driver) GetMetadata(id string) (map[string]string, error) {
 // dir returns the absolute path to the layer.
 func (d *Driver) dir(id string) string {
 	return filepath.Join(d.homeDir, filepath.Base(id))
+}
+
+func (d *Driver) GetLayerPath(id string) (string, error) {
+	return d.dir(id), nil
 }
 
 // getLayerChain returns the layer chain information.

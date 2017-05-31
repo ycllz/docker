@@ -1,6 +1,7 @@
 package layer
 
 import "errors"
+import "github.com/docker/docker/daemon/graphdriver"
 
 // GetLayerPath returns the path to a layer
 func GetLayerPath(s Store, layer ChainID) (string, error) {
@@ -14,6 +15,10 @@ func GetLayerPath(s Store, layer ChainID) (string, error) {
 	rl, ok := ls.layerMap[layer]
 	if !ok {
 		return "", ErrLayerDoesNotExist
+	}
+
+	if layerGetter, ok := ls.driver.(graphdriver.LayerGetter); ok {
+		return layerGetter.GetLayerPath(rl.cacheID)
 	}
 
 	path, err := ls.driver.Get(rl.cacheID, "")
