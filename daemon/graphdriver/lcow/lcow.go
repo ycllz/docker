@@ -13,7 +13,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"unsafe"
 
+	winio "github.com/Microsoft/go-winio"
 	"github.com/Microsoft/servicevm"
 	"github.com/Sirupsen/logrus"
 	"github.com/containerd/continuity/fsdriver"
@@ -106,7 +109,10 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
 	layerChain = append(layerChain, parentChain...)
 
 	layerPath := d.dir(id)
-	if err := os.Mkdir(layerPath, 755); err != nil {
+	logrus.Debugf("LCOWDriver Create id %s layerPath %s", id, layerPath)
+
+	// Need to create layer with the proper ACLs so VMs can access the layers
+	if err := mkdirWithACL(layerPath); err != nil {
 		return err
 	}
 
@@ -117,6 +123,33 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
 		return err
 	}
 	return nil
+}
+
+func mkdirWithACL(path string) error {
+	sa := syscall.SecurityAttributes{Length: 0}
+
+	// SID S-1-5-83-0 is NT VIRTUAL MACHINE\Virtual Machines
+	// Also give full access to admins + system.
+	sddl := "D:P(A;OICI;GA;;;S-1-5-83-0)(A;OICI;GA;;;BA)(A;OICI;GA;;;SY)"
+	sd, err := winio.SddlToSecurityDescriptor(sddl)
+	if err != nil {
+		return &os.PathError{Op: "mkdir", Path: path, Err: err}
+	}
+	sa.Length = uint32(unsafe.Sizeof(sa))
+	sa.InheritHandle = 1
+	sa.SecurityDescriptor = uintptr(unsafe.Pointer(&sd[0]))
+
+	namep, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return &os.PathError{Op: "mkdir", Path: path, Err: err}
+	}
+
+	e := syscall.CreateDirectory(namep, &sa)
+	if e != nil {
+		return &os.PathError{Op: "mkdir", Path: path, Err: e}
+	}
+	return nil
+
 }
 
 // Remove unmounts and removes the dir information.
