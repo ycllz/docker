@@ -16,7 +16,7 @@ var (
 	// Note: This feature is in development (04/17) and enabled through an
 	// environment variable. At a future time, it will be enabled based
 	// on build number. @jhowardmsft
-	lcowSupported = false
+	lcowSupported = true
 )
 
 func init() {
