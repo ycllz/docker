@@ -80,36 +80,31 @@ type Process hcsshim.Process
 var ServiceVMContainer hcsshim.Container
 
 // CreateLinuxServiceVM starts the linux service VM
-func CreateLinuxServiceVM(containerID string) (hcsshim.Container, error) {
+func CreateLinuxServiceVM(d *Driver, containerID string) (hcsshim.Container, error) {
 	logrus.Debugf("[graphdriver::CreateLinuxServiceVM] Start creating LinuxServiceVM (%s)", containerID)
 
 	// prepare configuration for ComputeSystem
 	configuration := &hcsshim.ContainerConfig{
 		HvPartition:                 true,
 		Name:                        containerID,
-		SystemType:                  "Container",
-		ContainerType:               "Linux",
+		SystemType:                  "container",
+		ContainerType:               "linux",
 		Servicing:                   true, // TODO @jhowardmsft Need to stop overloading this field but needs platform change
 		TerminateOnLastHandleClosed: true,
 	}
 
 	// The HCS hardcoded the sandbox name to be sandbox.vhdx
-	// we can only specify LayerFolderPath. For ServiceVM,
-	// we need separate sandbox file.
-	// eg: configuration.LayerFolderPath = "C:\\Linux\\sandbox"
-	configuration.LayerFolderPath = "C:\\Linux\\ServiceVM"
+	// we can only specify LayerFolderPath.
+	// TODO @jhowardmsft. With a platform change, we can remove this and use
+	// .Layers instead pointing to the explicit service VM utilities VHD
+	dir, _ := filepath.Split(d.uvmUtilities)
+	configuration.LayerFolderPath = dir
 
-	// Setup layers, a list of storage layers.
-	// A dummy layer is required the Linux Service VM
-	// Format ID=GUID;Path=%root%\lcow\layerID
-	// TODO @jhowardmsft - need to calculate the ID.
-	configuration.Layers = append(configuration.Layers, hcsshim.Layer{
-		ID:   "11111111-2222-2222-3333-567891234567",
-		Path: "C:\\Linux\\Layers\\Layer1.vhdx"})
-
-	// boot from initrd
-	logrus.Debugf("booting from initrd (%s)", containerID)
-	configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: "C:\\Linux\\Kernel"}
+	// TODO @jhowardmsft - with a platform change, we should have explicit
+	// paths to both the kernel (boot loader) and the initrd image. For now,
+	// HCS only accepts ImagePath.
+	dir, _ = filepath.Split(d.uvmInitrd)
+	configuration.HvRuntime = &hcsshim.HvRuntime{ImagePath: dir}
 
 	logrus.Debugf("configuration={%s} ServiceVMContainer 0x%0x", configuration, ServiceVMContainer)
 	svmContainer, err := hcsshim.CreateContainer(containerID, configuration)

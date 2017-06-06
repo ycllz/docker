@@ -21,16 +21,15 @@ import (
 // init registers the LCOW driver to the register.
 func init() {
 	graphdriver.Register("lcow", InitLCOW)
-
-	// Launch the service utility-VM
-	go func() {
-		CreateLinuxServiceVM("LinuxServiceVM")
-	}()
 }
 
 // Driver represents an LCOW graph driver.
 type Driver struct {
-	homeDir string
+	homeDir      string
+	uvmKernel    string // Kernel for Utility VM (embedded in a UEFI bootloader)
+	uvmInitrd    string // Initrd image for Utility VM
+	uvmUtilities string // VHD containing the utilities for the service VM
+
 }
 
 // InitLCOW returns a new LCOW storage filter driver.
@@ -41,9 +40,40 @@ func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (
 		homeDir: home,
 	}
 
+	pf := os.Getenv("ProgramFiles")
+	d.uvmKernel = filepath.Join(pf, `lcow\bootx64.efi`)
+	d.uvmInitrd = filepath.Join(pf, `lcow\initrd.img`)
+	// TODO @jhowardmsft. With a platform change, we can remove the restriction of needing to
+	// be called sandbox.vhdx and use a more appropriate name such as uvmutilities.vhdx.
+	d.uvmUtilities = filepath.Join(pf, `lcow\sandbox.vhdx`)
+
+	for _, v := range options {
+		opt := strings.SplitN(v, "=", 2)
+		if len(opt) == 2 {
+			switch strings.ToLower(opt[0]) {
+			case "lcowuvmkernel":
+				d.uvmKernel = opt[1]
+			case "lcowuvminitrd":
+				d.uvmInitrd = opt[1]
+			case "lcowsuvmutilities":
+				d.uvmUtilities = opt[1]
+			}
+		}
+	}
+	logrus.Debugf("lcow: defaults: kernel '%s' initrd '%s' svmSandbox '%s'", d.uvmKernel, d.uvmInitrd, d.uvmUtilities)
+
 	if err := idtools.MkdirAllAs(home, 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
 	}
+
+	// Launch the service utility-VM
+	// TODO @jhowardmsft. This will have to change in a future iteration.
+	// a) We shouldn't be launching on daemon start. We should start on-demand
+	// b) We will probably split to an SVM per container, not global, for RTM. That requires platform work though.
+	go func() {
+		CreateLinuxServiceVM(d, "LinuxServiceVM")
+	}()
+
 	return d, nil
 }
 
@@ -212,16 +242,6 @@ func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
 	// TODO @gupta-ak. graphdriver.Get() on the parent and then
 	// Have the service vm take the difference between the two files.
 	return 0, nil
-}
-
-// DiffGetter returns a FileGetCloser that can read files from the directory that
-// contains files for the layer differences. Used for direct access for tar-split.
-func (d *Driver) DiffGetter(id string) (graphdriver.FileGetCloser, error) {
-	logrus.Debugf("LCOWDriver DiffGetter() id %s", id)
-	// TODO @gupta-ak. Since we only have a VHD, we need to mount the
-	// VHD to the Service VM. The Service VM can stream a tar file that
-	// we wrap a FileGetCloser interface around.
-	return nil, nil
 }
 
 // GetMetadata returns custom driver information.

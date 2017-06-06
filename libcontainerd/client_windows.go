@@ -296,11 +296,11 @@ func (clnt *client) createLinux(containerID string, checkpoint string, checkpoin
 	configuration := &hcsshim.ContainerConfig{
 		HvPartition:                 true,
 		Name:                        containerID,
-		SystemType:                  "Container",
-		ContainerType:               "Linux",
+		SystemType:                  "container",
+		ContainerType:               "linux",
 		TerminateOnLastHandleClosed: true,
 		HvRuntime: &hcsshim.HvRuntime{
-			ImagePath: `c:\linux\kernel`,
+			ImagePath: `c:\program files\lcow`,
 		},
 	}
 
