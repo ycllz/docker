@@ -20,8 +20,6 @@ import (
 
 	winio "github.com/Microsoft/go-winio"
 	"github.com/Sirupsen/logrus"
-	"github.com/containerd/continuity/fsdriver"
-	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
@@ -178,11 +176,11 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get returns the rootfs path for the id. This will mount the dir at its given path.
-func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
+func (d *Driver) Get(id, mountLabel string) (graphdriver.Mount, error) {
 	logrus.Debugf("LCOWDriver Get() id %s mountLabel %s", id, mountLabel)
 	// TODO @gupta-ak. graphdriver.Get() needs to return an interface
 	// instead of just a string, since the mount point doesn't exist on the host
-	return fs.NewFilesystemOperator(fsdriver.LOW, "/does/not/exist/")
+	return graphdriver.NewLocalMount("/does/not/exist/"), nil
 }
 
 // Put adds a new layer to the driver.

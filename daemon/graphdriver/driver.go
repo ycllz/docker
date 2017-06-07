@@ -11,7 +11,6 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/vbatts/tar-split/tar/storage"
 
-	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
@@ -68,8 +67,10 @@ type ProtoDriver interface {
 	Remove(id string) error
 	// Get returns the mountpoint for the layered filesystem referred
 	// to by this id. You can optionally specify a mountLabel or "".
+	// Also, continuity's Driver and PathDriver interface allow for
+	// manipulating files + paths on the mountpoint.
 	// Returns the absolute path to the mounted layered filesystem.
-	Get(id, mountLabel string) (fs.FilesystemOperator, error)
+	Get(id, mountLabel string) (Mount, error)
 	// Put releases the system resources for the specified id,
 	// e.g, unmounting layered filesystem.
 	Put(id string) error
@@ -113,6 +114,7 @@ type Driver interface {
 	DiffDriver
 }
 
+// LayerGetter is an interface to get the path to a layer on the host.
 type LayerGetter interface {
 	// GetLayerPath gets the path for the layer. This is different from Get()
 	// since that returns an interface to account for umountable layers.

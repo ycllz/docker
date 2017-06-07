@@ -8,7 +8,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/builder"
-	"github.com/docker/docker/daemon/fs"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/stringid"
@@ -23,7 +23,7 @@ type releaseableLayer struct {
 	rwLayer    layer.RWLayer
 }
 
-func (rl *releaseableLayer) Mount() (fs.FilesystemOperator, error) {
+func (rl *releaseableLayer) Mount() (graphdriver.Mount, error) {
 	if rl.roLayer == nil {
 		return nil, errors.New("can not mount an image with no root FS")
 	}

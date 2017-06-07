@@ -41,7 +41,7 @@ func (daemon *Daemon) containerExport(container *container.Container) (io.ReadCl
 	}
 
 	uidMaps, gidMaps := daemon.GetUIDGIDMaps()
-	archive, err := container.BaseFS.ArchivePath("/", &archive.TarOptions{
+	archive, err := archivePath(container.BaseFS, "/", &archive.TarOptions{
 		Compression: archive.Uncompressed,
 		UIDMaps:     uidMaps,
 		GIDMaps:     gidMaps,

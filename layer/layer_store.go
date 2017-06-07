@@ -752,9 +752,7 @@ func (n *naiveDiffPathDriver) DiffGetter(id string) (graphdriver.FileGetCloser, 
 		return nil, err
 	}
 
-	// TODO @gupta-ak: Decided if NaiveDiffGet will work with remote graph driver.
-	if p.Remote() {
-		return nil, fmt.Errorf("Remote graph driver not supported on naive")
-	}
-	return &fileGetPutter{storage.NewPathFileGetter(p.HostPathName()), n.Driver, id}, nil
+	// TODO @gupta-ak: LCOW should implement this, so we should be able to assume
+	// it is local.
+	return &fileGetPutter{storage.NewPathFileGetter(p.Path()), n.Driver, id}, nil
 }

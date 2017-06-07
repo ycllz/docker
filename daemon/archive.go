@@ -23,6 +23,31 @@ import (
 // path does not refer to a directory.
 var ErrExtractPointNotDirectory = errors.New("extraction point is not a directory")
 
+// The daemon will use the following interfaces if the container fs implements
+// these for optimized copies to and from the container.
+type extractor interface {
+	ExtractArchive(src io.Reader, dst string, opts *archive.TarOptions) error
+}
+
+type archiver interface {
+	ArchivePath(src string, opts *archive.TarOptions) (io.ReadCloser, error)
+}
+
+// helper functions to extract or archive
+func extractArchive(i interface{}, src io.Reader, dst string, opts *archive.TarOptions) error {
+	if ea, ok := i.(extractor); ok {
+		return ea.ExtractArchive(src, dst, opts)
+	}
+	return chrootarchive.Untar(src, dst, opts)
+}
+
+func archivePath(i interface{}, src string, opts *archive.TarOptions) (io.ReadCloser, error) {
+	if ap, ok := i.(archiver); ok {
+		return ap.ArchivePath(src, opts)
+	}
+	return archive.TarWithOptions(src, opts)
+}
+
 // ContainerCopy performs a deprecated operation of archiving the resource at
 // the specified path in the container identified by the given name.
 func (daemon *Daemon) ContainerCopy(name string, res string) (io.ReadCloser, error) {
@@ -154,9 +179,7 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 	}
 
 	driver := container.BaseFS
-	path = driver.NormalizePath(path)
-
-	resolvedPath, absPath, err := container.ResolvePath(path)
+	resolvedPath, absPath, err := container.ResolvePath(driver.FromSlash(path))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -178,7 +201,7 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 	sourceDir, opts := archive.TarResourceRebaseOpts(resolvedPath, driver.Base(absPath), driver)
 	fmt.Println(sourceDir, *opts)
 
-	data, err := driver.ArchivePath(sourceDir, opts)
+	data, err := archivePath(driver, sourceDir, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -218,7 +241,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	}
 
 	driver := container.BaseFS
-	path = driver.NormalizePath(path)
+	path = driver.FromSlash(path)
 	fmt.Println(path)
 
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
@@ -267,14 +290,14 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// a volume file path.
 	var baseRel string
 	if strings.HasPrefix(resolvedPath, `\\?\Volume{`) {
-		if strings.HasPrefix(resolvedPath, driver.HostPathName()) {
-			baseRel = resolvedPath[len(driver.HostPathName()):]
+		if strings.HasPrefix(resolvedPath, driver.Path()) {
+			baseRel = resolvedPath[len(driver.Path()):]
 			if baseRel[:1] == `\` {
 				baseRel = baseRel[1:]
 			}
 		}
 	} else {
-		baseRel, err = driver.Rel(driver.HostPathName(), resolvedPath)
+		baseRel, err = driver.Rel(driver.Path(), resolvedPath)
 	}
 	if err != nil {
 		return err
@@ -287,12 +310,9 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// that it's a local file system.
 	// TODO @gupta-ak: Once Windows supports it, we would need to change the
 	// functions to understand Windows/Linux OS
-	var toVolume bool
-	if !driver.Remote() {
-		toVolume, err = checkIfPathIsInAVolume(container, absPath)
-		if err != nil {
-			return err
-		}
+	toVolume, err := checkIfPathIsInAVolume(container, absPath)
+	if err != nil {
+		return err
 	}
 
 	if !toVolume && container.HostConfig.ReadonlyRootfs {
@@ -311,9 +331,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 		}
 	}
 
-	if err := driver.ExtractArchive(content, resolvedPath, options); err != nil {
-		return err
-	}
+	err = extractArchive(driver, content, resolvedPath, options)
 
 	daemon.LogContainerEvent(container, "extract-to-dir")
 
@@ -350,7 +368,7 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 	}
 
 	driver := container.BaseFS
-	resource = driver.NormalizePath(resource)
+	resource = driver.FromSlash(resource)
 
 	basePath, err := container.GetResourcePath(resource)
 	if err != nil {
@@ -371,7 +389,7 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 		basePath = driver.Dir(basePath)
 	}
 
-	archive, err := driver.ArchivePath(basePath, &archive.TarOptions{
+	archive, err := archivePath(driver, basePath, &archive.TarOptions{
 		Compression:  archive.Uncompressed,
 		IncludeFiles: filter,
 	})
@@ -404,9 +422,6 @@ func (daemon *Daemon) CopyOnBuild(cID, destPath, srcRoot, srcPath string, decomp
 	destDir := false
 	rootUID, rootGID := daemon.GetRemappedUIDGID()
 
-	// Work in daemon-local OS specific file paths
-	destPath = filepath.FromSlash(destPath)
-
 	c, err := daemon.GetContainer(cID)
 	if err != nil {
 		return err
@@ -419,13 +434,8 @@ func (daemon *Daemon) CopyOnBuild(cID, destPath, srcRoot, srcPath string, decomp
 
 	// Work in image OS specific file paths
 	driver := c.BaseFS
-	// @TODO gupta-ak. Implement this part with the remote file system API
-	if driver.Remote() {
-		return fmt.Errorf("Docker build not supported on remote file systems yet.")
-	}
-
-	separator := driver.Separator()
-	destPath = driver.NormalizePath(destPath)
+	destPath = driver.FromSlash(destPath)
+	separator := string(driver.Separator())
 
 	dest, err := c.GetResourcePath(destPath)
 	if err != nil {
@@ -434,9 +444,9 @@ func (daemon *Daemon) CopyOnBuild(cID, destPath, srcRoot, srcPath string, decomp
 
 	// Preserve the trailing slash
 	// TODO: why are we appending another path separator if there was already one?
-	if strings.HasSuffix(destPath, string(os.PathSeparator)) || destPath == "." {
+	if strings.HasSuffix(destPath, separator) || destPath == "." {
 		destDir = true
-		dest += string(os.PathSeparator)
+		dest += separator
 	}
 
 	destPath = dest

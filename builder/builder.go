@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	containerpkg "github.com/docker/docker/container"
-	"github.com/docker/docker/daemon/fs"
+	"github.com/docker/docker/daemon/graphdriver"
 	"golang.org/x/net/context"
 )
 
@@ -102,5 +102,5 @@ type Image interface {
 // ReleaseableLayer is an image layer that can be mounted and released
 type ReleaseableLayer interface {
 	Release() error
-	Mount() (fs.FilesystemOperator, error)
+	Mount() (graphdriver.Mount, error)
 }

@@ -6,8 +6,6 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/containerd/continuity/fsdriver"
-	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
@@ -131,7 +129,7 @@ func (d *graphDriverProxy) Remove(id string) error {
 	return nil
 }
 
-func (d *graphDriverProxy) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
+func (d *graphDriverProxy) Get(id, mountLabel string) (Mount, error) {
 	args := &graphDriverRequest{
 		ID:         id,
 		MountLabel: mountLabel,
@@ -148,7 +146,7 @@ func (d *graphDriverProxy) Get(id, mountLabel string) (fs.FilesystemOperator, er
 		return nil, err
 	}
 
-	return fs.NewFilesystemOperator(fsdriver.Basic, filepath.Join(d.p.BasePath(), ret.Dir))
+	return NewLocalMount(filepath.Join(d.p.BasePath(), ret.Dir)), nil
 }
 
 func (d *graphDriverProxy) Put(id string) error {
