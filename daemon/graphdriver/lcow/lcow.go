@@ -35,16 +35,13 @@ type Driver struct {
 // InitLCOW returns a new LCOW storage filter driver.
 func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
 	logrus.Debugf("lcow InitLCOW at %s", home)
-
-	d := &Driver{
-		homeDir: home,
-	}
+	d := &Driver{homeDir: home}
 
 	pf := os.Getenv("ProgramFiles")
 	d.uvmKernel = filepath.Join(pf, `lcow\bootx64.efi`)
 	d.uvmInitrd = filepath.Join(pf, `lcow\initrd.img`)
 	// TODO @jhowardmsft. With a platform change, we can remove the restriction of needing to
-	// be called sandbox.vhdx and use a more appropriate name such as uvmutilities.vhdx.
+	// be called sandbox.vhdx and use a more appropriate name such as uvmutils.vhdx.
 	d.uvmUtilities = filepath.Join(pf, `lcow\sandbox.vhdx`)
 
 	for _, v := range options {
@@ -60,7 +57,7 @@ func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (
 			}
 		}
 	}
-	logrus.Debugf("lcow: defaults: kernel '%s' initrd '%s' svmSandbox '%s'", d.uvmKernel, d.uvmInitrd, d.uvmUtilities)
+	logrus.Debugf("lcow: defaults: kernel '%s' initrd '%s' utilities '%s'", d.uvmKernel, d.uvmInitrd, d.uvmUtilities)
 
 	if err := idtools.MkdirAllAs(home, 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
@@ -276,7 +273,7 @@ func (d *Driver) getLayerChain(id string) ([]string, error) {
 	return layerChain, nil
 }
 
-// setLayerChain stores the layer chain information in disk.
+// setLayerChain stores the layer chain information on disk.
 func (d *Driver) setLayerChain(id string, chain []string) error {
 	content, err := json.Marshal(&chain)
 	if err != nil {

@@ -289,6 +289,7 @@ func createSandbox(sandboxFolder string) error {
 		PayloadSize: sandboxInfoHeaderSize,
 	}
 
+	// TODO @jhowardmsft. Stop doing this hard coding.
 	hdrSandboxInfo := &sandboxInfoHeader{
 		maxSandboxSizeInMB: 19264, // in MB, 16*1024MB = 16 GB
 	}
