@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/docker/docker/pkg/opengcs"
 	"github.com/docker/docker/pkg/system"
 )
 
@@ -25,39 +27,42 @@ func init() {
 
 // Driver represents an LCOW graph driver.
 type Driver struct {
-	homeDir      string
-	uvmKernel    string // Kernel for Utility VM (embedded in a UEFI bootloader)
-	uvmInitrd    string // Initrd image for Utility VM
-	uvmUtilities string // VHD containing the utilities for the service VM
-
+	homeDir string
+	config  opengcs.Config
+	uvm     hcsshim.Container
 }
 
 // InitLCOW returns a new LCOW storage filter driver.
 func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
-	logrus.Debugf("lcow InitLCOW at %s", home)
-	d := &Driver{homeDir: home}
+	logrus.Debugf("lcow driver init: %s", home)
 
-	pf := os.Getenv("ProgramFiles")
-	d.uvmKernel = filepath.Join(pf, `lcow\bootx64.efi`)
-	d.uvmInitrd = filepath.Join(pf, `lcow\initrd.img`)
-	// TODO @jhowardmsft. With a platform change, we can remove the restriction of needing to
-	// be called sandbox.vhdx and use a more appropriate name such as uvmutils.vhdx.
-	d.uvmUtilities = filepath.Join(pf, `lcow\sandbox.vhdx`)
+	config, err := opengcs.DefaultConfig(filepath.Join(os.Getenv("ProgramFiles"), "lcow"), options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init LCOW driver - could not generate opengcs configuration: %s", err)
+	}
 
-	for _, v := range options {
-		opt := strings.SplitN(v, "=", 2)
-		if len(opt) == 2 {
-			switch strings.ToLower(opt[0]) {
-			case "lcowuvmkernel":
-				d.uvmKernel = opt[1]
-			case "lcowuvminitrd":
-				d.uvmInitrd = opt[1]
-			case "lcowsuvmutilities":
-				d.uvmUtilities = opt[1]
-			}
+	config.Name = "LinuxServiceVM"
+	config.Svm = true
+
+	d := &Driver{
+		homeDir: home,
+		config:  config,
+	}
+
+	mode, warnings, err := config.Validate()
+	if err != nil {
+		// This is not fatal, as other drivers (eg WCOW) may still work.
+		logrus.Warnf("LCOW driver does not have a valid configuration for communicating with the utility VM: %s.", err)
+		return d, nil
+	}
+	if len(warnings) > 0 {
+		for _, v := range warnings {
+			// Again, these are not fatal as a) other drivers may still work, and
+			// b) users can rectify the issue without the need to re-init the driver.
+			logrus.Warnf("LCOW driver may not be fully operational: The following warning was generated during startup: %s", v)
 		}
 	}
-	logrus.Debugf("lcow: defaults: kernel '%s' initrd '%s' utilities '%s'", d.uvmKernel, d.uvmInitrd, d.uvmUtilities)
+	logrus.Infof("Default mode for LCOW driver: %s", mode)
 
 	if err := idtools.MkdirAllAs(home, 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
@@ -67,9 +72,9 @@ func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (
 	// TODO @jhowardmsft. This will have to change in a future iteration.
 	// a) We shouldn't be launching on daemon start. We should start on-demand
 	// b) We will probably split to an SVM per container, not global, for RTM. That requires platform work though.
-	go func() {
-		CreateLinuxServiceVM(d, "LinuxServiceVM")
-	}()
+	if d.uvm, err = config.Create(); err != nil {
+		return nil, fmt.Errorf("failed to init LCOW driver - could not create utility VM: %s", err)
+	}
 
 	return d, nil
 }
@@ -101,7 +106,7 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 	if err := d.Create(id, parent, opts); err != nil {
 		return err
 	}
-	return createSandbox(d.dir(id))
+	return opengcs.CreateSandbox(d.uvm, filepath.Join(d.dir(id), "sandbox.vhdx"), 0)
 }
 
 // Create creates a new read-only layer with the given id.
@@ -228,7 +233,7 @@ func (d *Driver) Changes(id, parent string) ([]archive.Change, error) {
 // The layer should not be mounted when calling this function
 func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	logrus.Debugf("LCOWDriver ApplyDiff() id %s parent %s", id, parent)
-	return importLayer(filepath.Join(d.homeDir, id), diff)
+	return opengcs.TarStreamToVHD(d.uvm, filepath.Join(d.homeDir, id, "layer.vhd"), diff)
 }
 
 // DiffSize calculates the changes between the specified layer
