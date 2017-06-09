@@ -1,8 +1,11 @@
 package opengcs
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 )
@@ -25,6 +28,8 @@ const (
 	socketID              = "E9447876-BA98-444F-8C14-6A2FFF773E87"
 )
 
+var protocolTimeout = (5 * time.Minute)
+
 type scsiCodeHeader struct {
 	controllerNumber   uint32
 	controllerLocation uint32
@@ -41,9 +46,22 @@ type protocolCommandHeader struct {
 
 func waitForResponse(r io.Reader) (int64, error) {
 	buf := make([]byte, serviceVMHeaderSize)
-	_, err := io.ReadFull(r, buf)
-	if err != nil {
-		return 0, err
+	var err error
+
+	done := make(chan error, 1)
+	go func() {
+		_, err = io.ReadFull(r, buf)
+		done <- err
+	}()
+
+	timeout := time.After(protocolTimeout)
+	select {
+	case <-timeout:
+		return 0, fmt.Errorf("opengcs: waitForResponse: operation timed out")
+	case err = <-done:
+		if err != nil {
+			return 0, fmt.Errorf("opengcs: waitForResponse: Failed to receive from utility VM: %s", err)
+		}
 	}
 
 	hdr, err := deserializeHeader(buf)
@@ -58,15 +76,11 @@ func waitForResponse(r io.Reader) (int64, error) {
 	return hdr.PayloadSize, nil
 }
 
+// sendData sends a header and a payload to a service VM.
 func sendData(hdr *protocolCommandHeader, payload io.Reader, dest io.Writer) error {
-	hdrBytes, err := serializeHeader(hdr)
-	if err != nil {
-		return err
-	}
-	logrus.Debugf("[SendData] Total bytes to send %d", hdr.PayloadSize)
-
-	_, err = dest.Write(hdrBytes)
-	if err != nil {
+	// Send the header
+	logrus.Debugf("opengcs: sendData: sending header command=%d version=%d size=%d", hdr.Command, hdr.Command, hdr.PayloadSize)
+	if err := sendSerializedData(hdr, dest); err != nil {
 		return err
 	}
 
@@ -77,23 +91,113 @@ func sendData(hdr *protocolCommandHeader, payload io.Reader, dest io.Writer) err
 		totalBytesTransferred int64
 	)
 
-	bytesLeft := hdr.PayloadSize
+	type result struct {
+		bytesTransferred int64
+		err              error
+	}
 
+	bytesLeft := hdr.PayloadSize
 	for bytesLeft > 0 {
 		if bytesLeft >= maxTransferSize {
 			bytesToTransfer = maxTransferSize
 		} else {
 			bytesToTransfer = bytesLeft
 		}
+		logrus.Debugf("opengcs: sendData: sending chunk of %d bytes", bytesToTransfer)
 
-		bytesTransferred, err := io.CopyN(dest, payload, bytesToTransfer)
-		if err != nil && err != io.EOF {
-			logrus.Errorf("[SendData] io.Copy failed with %s", err)
-			return err
+		done := make(chan result, 1)
+		go func() {
+			r := result{}
+			r.bytesTransferred, r.err = io.CopyN(dest, payload, bytesToTransfer)
+			done <- r
+		}()
+
+		var r result
+		timeout := time.After(protocolTimeout)
+		select {
+		case <-timeout:
+			return fmt.Errorf("opengcs: sendData: operation timed out")
+		case r = <-done:
+			if r.err != nil && r.err != io.EOF {
+				return fmt.Errorf("opengcs: sendData: after sending %d bytes with %d remaining, failed to send a chunk of %d bytes to the utility vm: %s", totalBytesTransferred, bytesLeft, bytesToTransfer, r.err)
+			}
 		}
-		totalBytesTransferred += bytesTransferred
-		bytesLeft -= bytesTransferred
+
+		totalBytesTransferred += r.bytesTransferred
+		bytesLeft -= r.bytesTransferred
+		logrus.Debugf("opengcs: sendData bytes sent so far: %d remaining %d", totalBytesTransferred, bytesLeft)
 	}
-	logrus.Debugf("[SendData] totalBytesTransferred = %d bytes sent to the LinuxServiceVM successfully", totalBytesTransferred)
-	return err
+	logrus.Debugf("opengcs: sendData successful")
+	return nil
+}
+
+// readHeader reads a header from a service VM.
+func readHeader(r io.Reader) (*protocolCommandHeader, error) {
+	hdr := &protocolCommandHeader{}
+	buf, err := serialize(hdr)
+	if err != nil {
+		return nil, err
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err = io.ReadFull(r, buf)
+		done <- err
+	}()
+
+	timeout := time.After(protocolTimeout)
+	select {
+	case <-timeout:
+		return nil, fmt.Errorf("opengcs: readHeader: operation timed out")
+	case err = <-done:
+		if err != nil {
+			return nil, fmt.Errorf("opengcs: readHeader: Failed to receive from utility VM: %s", err)
+		}
+	}
+	return deserializeHeader(buf)
+}
+
+// deserializeHeader converts a byte array (from the service VM) into
+// a go-structure for a protocol command header.
+func deserializeHeader(hdr []byte) (*protocolCommandHeader, error) {
+	buf := bytes.NewBuffer(hdr)
+	hdrPtr := &protocolCommandHeader{}
+	if err := binary.Read(buf, binary.BigEndian, hdrPtr); err != nil {
+		return nil, err
+	}
+	return hdrPtr, nil
+}
+
+// sendSerializedData sends a go-structure to a service VM after serializing it.
+func sendSerializedData(data interface{}, dest io.Writer) error {
+	dataBytes, err := serialize(data)
+	if err != nil {
+		return err
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err = dest.Write(dataBytes)
+		done <- err
+	}()
+
+	timeout := time.After(protocolTimeout)
+	select {
+	case <-timeout:
+		return fmt.Errorf("opengcs: sendSerializedData: operation timed out")
+	case err = <-done:
+		if err != nil {
+			return fmt.Errorf("opengcs: sendSerializedData: Failed to send: %s", err)
+		}
+	}
+	return nil
+}
+
+// serialize converts a go-structure into a byte array
+func serialize(data interface{}) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.BigEndian, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

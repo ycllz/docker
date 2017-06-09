@@ -5,8 +5,6 @@ package opengcs
 // TODO @jhowardmsft - This will move to Microsoft/opengcs soon
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"os/exec"
@@ -94,18 +92,6 @@ func init() {
 //	return reader, nil
 //}
 
-func serializeSCSI(header *protocolCommandHeader, scsiHeader *scsiCodeHeader) ([]byte, error) {
-	buf := &bytes.Buffer{}
-	if err := binary.Write(buf, binary.BigEndian, header); err != nil {
-		return nil, err
-	}
-
-	if err := binary.Write(buf, binary.BigEndian, scsiHeader); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
 //func exportSandbox(sandboxFolder string) (io.ReadCloser, error) {
 //	sandboxPath := path.Join(sandboxFolder, layerSandboxName)
 //	logrus.Debugf("ServiceVMAttachSandbox: Creating sandbox path: %s", sandboxPath)
@@ -128,6 +114,7 @@ func serializeSCSI(header *protocolCommandHeader, scsiHeader *scsiCodeHeader) ([
 //		controllerLocation: controllerLocation,
 //	}
 
+// @jhoward - no just call serialize on each in turn and append them in order: hdr, scsiHeader
 //	data, err := serializeSCSI(hdr, scsiHeader)
 //	if err != nil {
 //		return nil, err
@@ -160,60 +147,23 @@ func serializeSCSI(header *protocolCommandHeader, scsiHeader *scsiCodeHeader) ([
 //	return reader, nil
 //}
 
-func readHeader(r io.Reader) (*protocolCommandHeader, error) {
-	hdr := &protocolCommandHeader{}
-	buf, err := serializeHeader(hdr)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = io.ReadFull(r, buf)
-	if err != nil {
-		return nil, err
-	}
-
-	return deserializeHeader(buf)
-}
-
-func serializeHeader(hdr *protocolCommandHeader) ([]byte, error) {
-	buf := &bytes.Buffer{}
-	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func deserializeHeader(hdr []byte) (*protocolCommandHeader, error) {
-	buf := bytes.NewBuffer(hdr)
-	hdrPtr := &protocolCommandHeader{}
-	if err := binary.Read(buf, binary.BigEndian, hdrPtr); err != nil {
-		return nil, err
-	}
-	return hdrPtr, nil
-}
-
 func connect() (hvsock.Conn, error) {
 	hvAddr := hvsock.HypervAddr{VMID: serviceVMId, ServiceID: serviceVMSocketID}
 	return hvsock.Dial(hvAddr)
 }
 
+// closeConnection closes a connection to a utility VM
 func closeConnection(rc io.WriteCloser) error {
-	header := &protocolCommandHeader{
+	err := sendSerializedData(&protocolCommandHeader{
 		Command:     cmdTerminate,
 		Version:     version1,
 		PayloadSize: 0,
-	}
+	}, rc)
 
-	buf, err := serializeHeader(header)
-	if err != nil {
-		rc.Close()
-		return err
-	}
-
-	_, err = rc.Write(buf)
 	if err != nil {
 		rc.Close()
 		return err
 	}
 	return rc.Close()
+
 }

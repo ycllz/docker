@@ -44,8 +44,6 @@ func CreateSandbox(uvm hcsshim.Container, filename string, maxSizeInMB uint32) e
 
 	// Send protocolCommandHeader and SandboxInfoHeader to the Service VM
 
-	// TODO @jhowardmsft Use serializeSCSI here?
-
 	buf := &bytes.Buffer{}
 	if err := binary.Write(buf, binary.BigEndian, hdr); err != nil {
 		return fmt.Errorf("opengcs: CreateSandbox: %s: failed sending protocol header to utility VM: %s", filename, err)
