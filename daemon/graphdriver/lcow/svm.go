@@ -76,6 +76,7 @@ func init() {
 // Process contains information to start a specific application inside the container.
 type Process hcsshim.Process
 
+var CurrentTaskProcess hcsshim.Process
 var ServiceVMContainer hcsshim.Container
 
 //------------------------ Exported functions --------------------------
@@ -105,6 +106,7 @@ func CreateLinuxServiceVM(containerID string) (hcsshim.Container, error) {
 	configuration.Layers = append(configuration.Layers, hcsshim.Layer{
 		ID:   "11111111-2222-2222-3333-567891234567",
 		Path: "C:\\Linux\\Layers\\Layer1.vhdx"})
+	//logrus.Infof("No c:Linux:Layers provided")
 
 	// boot from initrd
 	logrus.Infof("booting from initrd (%s)", containerID)
@@ -177,6 +179,8 @@ func importLayer(layerPath string, reader io.Reader) (int64, error) {
 		return 0, err
 	}
 
+	CurrentTaskProcess = process
+
 	// get the std io pipes from the newly created process
 	stdin, stdout, _, err := process.Stdio()
 	if err != nil {
@@ -199,16 +203,26 @@ func importLayer(layerPath string, reader io.Reader) (int64, error) {
 	logrus.Infof("[ServiceVMImportLayer] waiting response from the LinuxServiceVM")
 	payloadSize, err := waitForResponse(stdout)
 	if err != nil {
+		logrus.Infof("[ServiceVMImportLayer] waitForResponse failed with (%s)", err)
 		return 0, err
 	}
 
-	logrus.Infof("[ServiceVMImportLayer] reading back vhd stream (%d bytes) and write to VHD", payloadSize)
+	logrus.Infof("[ServiceVMImportLayer] reading back vhd stream (expecting %d bytes)", payloadSize)
 	// We are getting the VHD stream, so write it to file
 	err = writeVHDFile(path.Join(layerPath, layerVHDName), payloadSize, stdout)
 	if err != nil {
 		return 0, err
 	}
-	logrus.Infof("[ServiceVMImportLayer] new vhd file was created: [%s] ", path.Join(layerPath, layerVHDName))
+	logrus.Infof("[ServiceVMImportLayer] wrote (%d bytes) to VHD", payloadSize)
+
+	// Close process
+	err = process.Close()
+	if err != nil {
+		logrus.Infof("[ServiceVMImportLayer] process.Close failed with (%s)", err)
+		return 0, err
+	}
+
+	logrus.Infof("[ServiceVMImportLayer] process.Close() and new vhd file was created: [%s] ", path.Join(layerPath, layerVHDName))
 	return payloadSize, err
 }
 
@@ -355,10 +369,11 @@ func launchProcessInServiceVM(commandline string) (Process, error) {
 	}
 
 	// Temporary setting root as working directory
-	createProcessParms.WorkingDirectory = "/mnt/gcs/LinuxServiceVM/scratch/bin"
+	createProcessParms.WorkingDirectory = "/root/integration"
 
 	// Configure the environment for the process
-	pathValue := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/gcs/LinuxServiceVM/scratch/bin"
+	//pathValue := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/gcs/LinuxServiceVM/scratch/bin"
+	pathValue := "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/integration"
 	createProcessParms.Environment = map[string]string{"PATH": pathValue}
 
 	createProcessParms.CommandLine = commandline
@@ -406,11 +421,13 @@ func waitForResponse(r io.Reader) (int64, error) {
 	buf := make([]byte, serviceVMHeaderSize)
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
+		logrus.Infof("[waitForResponse] io.ReadFull failed with %s", err)
 		return 0, err
 	}
 
 	hdr, err := deserializeHeader(buf)
 	if err != nil {
+		logrus.Infof("[waitForResponse] deserializeHeader failed with %s", err)
 		return 0, err
 	}
 
@@ -426,11 +443,13 @@ func writeVHDFile(path string, bytesToRead int64, r io.Reader) error {
 
 	f, err := os.Create(path)
 	if err != nil {
+		fmt.Errorf("os.Create(%s) failed %s", path, err)
 		return err
 	}
 
 	_, err = io.CopyN(f, r, bytesToRead)
 	if err != nil {
+		fmt.Errorf("io.CopyN failed %s", err)
 		return err
 	}
 
@@ -571,7 +590,9 @@ func sendData(hdr *serviceVMHeader, payload io.Reader, dest io.Writer) error {
 	var total_bytes_transfered int64
 
 	bytes_left := hdr.PayloadSize
-	max_transfer_size = 4096
+	//max_transfer_size = 4096
+	max_transfer_size = bytes_left
+
 	total_bytes_transfered = 0
 	bytes_to_transfer = 0
 
@@ -587,6 +608,8 @@ func sendData(hdr *serviceVMHeader, payload io.Reader, dest io.Writer) error {
 			logrus.Errorf("[SendData] io.Copy failed with %s", err)
 			return err
 		}
+		logrus.Infof("[SendData] bytes_transfered = %d bytes", bytes_transfered)
+
 		total_bytes_transfered += bytes_transfered
 		bytes_left -= bytes_transfered
 	}
