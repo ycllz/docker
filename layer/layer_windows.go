@@ -30,7 +30,7 @@ func GetLayerPath(s Store, layer ChainID) (string, error) {
 		return "", err
 	}
 
-	return path.HostPathName(), nil
+	return path.Path(), nil
 }
 
 func (ls *layerStore) mountID(name string) string {

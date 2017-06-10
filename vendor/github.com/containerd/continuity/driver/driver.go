@@ -1,25 +1,11 @@
-package fsdriver
+package driver
 
 import (
+	"fmt"
 	"os"
-	"runtime"
-
-	"github.com/containerd/continuity/common"
 )
 
-type DriverType int
-
-const (
-	// Basic is essentially a wrapper around the golang os package.
-	// LOW is the Linux on Windows driver that lets the user manipulate remote
-	// Linux filesystem files on Windows.
-	Basic DriverType = iota
-	LOW
-)
-
-// BasicDriver is exported as a global since it's just a wrapper around
-// the os + filepath functions, so it has no internal state.
-var BasicDriver Driver = &basicDriver{}
+var ErrNotSupported = fmt.Errorf("not supported")
 
 // Driver provides all of the system-level functions in a common interface.
 // The context should call these with full paths and should never use the `os`
@@ -32,7 +18,7 @@ var BasicDriver Driver = &basicDriver{}
 // example, it is not required to wrap os.FileInfo to return correct paths for
 // the call to Name().
 type Driver interface {
-	Open(path string) (File, error)
+	Open(path string) (*os.File, error)
 	Stat(path string) (os.FileInfo, error)
 	Lstat(path string) (os.FileInfo, error)
 	Readlink(p string) (string, error)
@@ -41,69 +27,20 @@ type Driver interface {
 
 	Link(oldname, newname string) error
 	Lchmod(path string, mode os.FileMode) error
-	Lchown(path, uid, gid string) error
+	Lchown(path string, uid, gid int64) error
 	Symlink(oldname, newname string) error
 
 	// TODO(aaronl): These methods might move outside the main Driver
 	// interface in the future as more platforms are added.
 	Mknod(path string, mode os.FileMode, major int, minor int) error
 	Mkfifo(path string, mode os.FileMode) error
-
-	// NOTE(stevvooe): We may want to actually include the path manipulation
-	// functions here, as well. They have been listed below to make the
-	// discovery process easier.
-	Join(pathName ...string) string
-	IsAbs(pathName string) bool
-	Rel(base, target string) (string, error)
-	Base(pathName string) string
-	Dir(pathName string) string
-	Clean(pathName string) string
-	Split(pathName string) (dir, file string)
-	Separator() byte
-	NormalizePath(pathName string) string
-	// Abs(pathName string) (string, error)
-	// Walk(string, filepath.WalkFunc) error
 }
 
-// Unfortunately, os.File is a struct instead of an interface, an interface
-// has to be manually defined.
-var _ File = &os.File{}
-
-type File interface {
-	Chdir() error
-	Chmod(mode os.FileMode) error
-	Chown(uid, gid int) error
-	Close() error
-	Fd() uintptr
-	Name() string
-	Read(b []byte) (n int, err error)
-	ReadAt(b []byte, off int64) (n int, err error)
-	Readdir(n int) ([]os.FileInfo, error)
-	Readdirnames(n int) (names []string, err error)
-	Seek(offset int64, whence int) (ret int64, err error)
-	Stat() (os.FileInfo, error)
-	Sync() error
-	Truncate(size int64) error
-	Write(b []byte) (n int, err error)
-	WriteAt(b []byte, off int64) (n int, err error)
-	WriteString(s string) (n int, err error)
-}
-
-func NewSystemDriver(driverType DriverType) (Driver, error) {
+func NewSystemDriver() (Driver, error) {
 	// TODO(stevvooe): Consider having this take a "hint" path argument, which
 	// would be the context root. The hint could be used to resolve required
 	// filesystem support when assembling the driver to use.
-	switch driverType {
-	case Basic:
-		return BasicDriver, nil
-	case LOW:
-		if runtime.GOOS != "windows" {
-			return nil, common.ErrNotSupported
-		}
-		return &lowDriver{}, nil
-	default:
-		return nil, common.ErrNotSupported
-	}
+	return &driver{}, nil
 }
 
 // XAttrDriver should be implemented on operation systems and filesystems that
@@ -139,4 +76,55 @@ type LXAttrDriver interface {
 
 type DeviceInfoDriver interface {
 	DeviceInfo(fi os.FileInfo) (maj uint64, min uint64, err error)
+}
+
+// driver is a simple default implementation that sends calls out to the "os"
+// package. Extend the "driver" type in system-specific files to add support,
+// such as xattrs, which can add support at compile time.
+type driver struct{}
+
+// LocalDriver is the exported Driver struct for convenience.
+var LocalDriver Driver = &driver{}
+
+func (d *driver) Open(p string) (*os.File, error) {
+	return os.Open(p)
+}
+
+func (d *driver) Stat(p string) (os.FileInfo, error) {
+	return os.Stat(p)
+}
+
+func (d *driver) Lstat(p string) (os.FileInfo, error) {
+	return os.Lstat(p)
+}
+
+func (d *driver) Readlink(p string) (string, error) {
+	return os.Readlink(p)
+}
+
+func (d *driver) Mkdir(p string, mode os.FileMode) error {
+	return os.Mkdir(p, mode)
+}
+
+// Remove is used to unlink files and remove directories.
+// This is following the golang os package api which
+// combines the operations into a higher level Remove
+// function. If explicit unlinking or directory removal
+// to mirror system call is required, they should be
+// split up at that time.
+func (d *driver) Remove(path string) error {
+	return os.Remove(path)
+}
+
+func (d *driver) Link(oldname, newname string) error {
+	return os.Link(oldname, newname)
+}
+
+func (d *driver) Lchown(name string, uid, gid int64) error {
+	// TODO: error out if uid excesses int bit width?
+	return os.Lchown(name, int(uid), int(gid))
+}
+
+func (d *driver) Symlink(oldname, newname string) error {
+	return os.Symlink(oldname, newname)
 }

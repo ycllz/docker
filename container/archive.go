@@ -59,7 +59,7 @@ func (container *Container) StatPath(resolvedPath string, absPath string) (stat 
 			return nil, err
 		}
 
-		linkTarget, err = driver.Rel(container.BaseFS.HostPathName(), hostPath)
+		linkTarget, err = driver.Rel(container.BaseFS.Path(), hostPath)
 		if err != nil {
 			return nil, err
 		}

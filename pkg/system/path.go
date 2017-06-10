@@ -7,7 +7,7 @@ import (
 
 	"runtime"
 
-	"github.com/containerd/continuity/fsdriver"
+	"github.com/containerd/continuity/pathdriver"
 )
 
 // CheckSystemDriveAndRemoveDriveLetter verifies and manipulates a Windows or
@@ -24,7 +24,7 @@ import (
 // a			--> a
 // /a			--> \a
 // d:\			--> Fail
-func CheckSystemDriveAndRemoveDriveLetter(path string, driver fsdriver.Driver) (string, error) {
+func CheckSystemDriveAndRemoveDriveLetter(path string, driver pathdriver.PathDriver) (string, error) {
 	if runtime.GOOS != "windows" {
 		return path, nil
 	}

@@ -5,14 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/system"
 	"github.com/opencontainers/selinux/go-selinux/label"
-
-	"github.com/containerd/continuity/fsdriver"
 )
 
 var (
@@ -105,7 +102,8 @@ func (d *Driver) Create(id, parent string, opts *graphdriver.CreateOpts) error {
 	if err != nil {
 		return fmt.Errorf("%s: %s", parent, err)
 	}
-	if err := CopyWithTar(parentDir.HostPathName(), dir); err != nil {
+
+	if err := CopyWithTar(parentDir.Path(), dir); err != nil {
 		return err
 	}
 	return nil
@@ -124,14 +122,14 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get returns the directory for the given id.
-func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
+func (d *Driver) Get(id, mountLabel string) (graphdriver.Mount, error) {
 	dir := d.dir(id)
 	if st, err := os.Stat(dir); err != nil {
 		return nil, err
 	} else if !st.IsDir() {
 		return nil, fmt.Errorf("%s: not a directory", dir)
 	}
-	return fs.NewFilesystemOperator(fsdriver.Basic, dir)
+	return graphdriver.NewLocalMount(dir), nil
 }
 
 // Put is a noop for vfs that return nil for the error, since this driver has no runtime resources to clean up.

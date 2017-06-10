@@ -23,7 +23,7 @@ import (
 	swarmtypes "github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/container/stream"
 	"github.com/docker/docker/daemon/exec"
-	"github.com/docker/docker/daemon/fs"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/logger/jsonfilelog"
 	"github.com/docker/docker/daemon/network"
@@ -64,10 +64,10 @@ var (
 type Container struct {
 	StreamConfig *stream.Config
 	// embed for Container to support states directly.
-	*State          `json:"State"`        // Needed for Engine API version <= 1.11
-	Root            string                `json:"-"` // Path to the "home" of the container, including metadata.
-	BaseFS          fs.FilesystemOperator `json:"-"` // Path to the graphdriver mountpoint
-	RWLayer         layer.RWLayer         `json:"-"`
+	*State          `json:"State"`    // Needed for Engine API version <= 1.11
+	Root            string            `json:"-"` // Path to the "home" of the container, including metadata.
+	BaseFS          graphdriver.Mount `json:"-"` // interface containing graphdriver mount
+	RWLayer         layer.RWLayer     `json:"-"`
 	ID              string
 	Created         time.Time
 	Managed         bool
@@ -109,6 +109,13 @@ type Container struct {
 
 	// Fields here are specific to Windows
 	NetworkSharedContainerID string
+}
+
+// PathResolver resolves a path scoped to the container rooted
+// at the container's BaseFS.Path(). If the underlying graphdriver
+// Mount interface implements this method, the container will call it.
+type PathResolver interface {
+	ResolveScopedPath(path string) (string, error)
 }
 
 // NewBaseContainer creates a new container with its
@@ -275,15 +282,45 @@ func (container *Container) SetupWorkingDirectory(rootUID, rootGID int) error {
 func (container *Container) GetResourcePath(path string) (string, error) {
 	// IMPORTANT - These are paths on the OS where the daemon is running, hence
 	// any filepath operations must be done in an OS agnostic way.
-	r, e := container.BaseFS.ResolveFullPath(path)
+
+	var resolvedPath string
+	var err error
+
+	cleanPath := container.cleanResourcePath(path)
+	fullPath := container.BaseFS.Join(container.BaseFS.Path(), cleanPath)
+
+	if pr, ok := container.BaseFS.(PathResolver); ok {
+		resolvedPath, err = pr.ResolveScopedPath(fullPath)
+	} else {
+		resolvedPath, err = symlink.FollowSymlinkInScope(fullPath, container.BaseFS.Path())
+	}
 
 	// Log this here on the daemon side as there's otherwise no indication apart
 	// from the error being propagated all the way back to the client. This makes
 	// debugging significantly easier and clearly indicates the error comes from the daemon.
-	if e != nil {
-		logrus.Errorf("Failed to ResolveFullPath BaseFS %s path %s %s\n", container.BaseFS, path, e)
+	if err != nil {
+		logrus.Errorf("Failed to ResolveFullPath BaseFS %s path %s %s\n", container.BaseFS.Path(), path, err)
 	}
-	return r, e
+	return resolvedPath, err
+}
+
+// cleanResourcePath cleans a resource path.
+// For linux containers, it prepares to combine with a mnt path.
+// For windows containers, it removes the C:\ syntax, and prepares
+// to combine with a volume path
+func (container *Container) cleanResourcePath(path string) string {
+	driver := container.BaseFS
+	if container.Platform != "windows" {
+		return driver.Join(string(driver.Separator()), path)
+	}
+
+	if len(path) >= 2 {
+		c := path[0]
+		if path[1] == ':' && ('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z') {
+			path = path[2:]
+		}
+	}
+	return driver.Join(string(driver.Separator()), path)
 }
 
 // GetRootResourcePath evaluates `path` in the scope of the container's root, with proper path

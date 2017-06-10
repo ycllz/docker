@@ -1,7 +1,6 @@
 package dockerfile
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -169,11 +168,10 @@ func (im *imageMount) Source() (builder.Source, error) {
 			return nil, errors.Wrapf(err, "failed to mount %s", im.image.ImageID())
 		}
 
-		// TODO @gupta-ak. Implement this later.
-		if mountPathFs.Remote() {
-			return nil, fmt.Errorf("Remote file system not supported.")
-		}
-		mountPath := mountPathFs.HostPathName()
+		// TODO @gupta-ak. Implement this later. Since remotecontext.NewLazyContext
+		// returns an interface, we can have our own implementation. Or even have,
+		// it in lcow, and then check for a implements "NewLazyContext" function.
+		mountPath := mountPathFs.Path()
 
 		source, err := remotecontext.NewLazyContext(mountPath)
 		if err != nil {

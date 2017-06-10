@@ -25,8 +25,6 @@ import (
 	"github.com/Microsoft/go-winio/backuptar"
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
-	"github.com/containerd/continuity/fsdriver"
-	"github.com/docker/docker/daemon/fs"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
@@ -344,7 +342,7 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get returns the rootfs path for the id. This will mount the dir at its given path.
-func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
+func (d *Driver) Get(id, mountLabel string) (graphdriver.Mount, error) {
 	logrus.Debugf("WindowsGraphDriver Get() id %s mountLabel %s", id, mountLabel)
 	var dir string
 
@@ -353,7 +351,7 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 		return nil, err
 	}
 	if count := d.ctr.Increment(rID); count > 1 {
-		return fs.NewFilesystemOperator(fsdriver.Basic, d.cache[rID])
+		return graphdriver.NewLocalMount(d.cache[rID]), nil
 	}
 
 	// Getting the layer paths must be done outside of the lock.
@@ -398,7 +396,7 @@ func (d *Driver) Get(id, mountLabel string) (fs.FilesystemOperator, error) {
 		dir = d.dir(id)
 	}
 
-	return fs.NewFilesystemOperator(fsdriver.Basic, dir)
+	return graphdriver.NewLocalMount(dir), nil
 }
 
 // Put adds a new layer to the driver.
@@ -602,7 +600,7 @@ func (d *Driver) DiffSize(id, parent string) (size int64, err error) {
 	}
 	defer d.Put(id)
 
-	return archive.ChangesSize(layerFs.HostPathName(), changes), nil
+	return archive.ChangesSize(layerFs.Path(), changes), nil
 }
 
 // GetMetadata returns custom driver information.

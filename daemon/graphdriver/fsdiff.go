@@ -4,8 +4,6 @@ import (
 	"io"
 	"time"
 
-	"fmt"
-
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
@@ -49,7 +47,7 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 	startTime := time.Now()
 	driver := gdw.ProtoDriver
 
-	layerFsOp, err := driver.Get(id, "")
+	layerMount, err := driver.Get(id, "")
 	if err != nil {
 		return nil, err
 	}
@@ -60,12 +58,10 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 		}
 	}()
 
-	// TODO @gupta-ak: Decide if this should be implemented
-	if layerFsOp.Remote() {
-		return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
-	}
-	layerFs := layerFsOp.HostPathName()
-
+	// TODO @gupta-ak: Right now, assuming the file system is always local
+	// so we don't need to use continuity's abstractions. Might be changed
+	// to use the abstractions in the future.
+	layerFs := layerMount.Path()
 	if parent == "" {
 		archive, err := archive.Tar(layerFs, archive.Uncompressed)
 		if err != nil {
@@ -78,18 +74,16 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 		}), nil
 	}
 
-	parentFsOp, err := driver.Get(parent, "")
+	parentMount, err := driver.Get(parent, "")
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Put(parent)
 
-	// TODO @gupta-ak: Decide if this should be implemented
-	if parentFsOp.Remote() {
-		return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
-	}
-	parentFs := parentFsOp.HostPathName()
-
+	// TODO @gupta-ak: Right now, assuming the file system is always local
+	// so we don't need to use continuity's abstractions. Might be changed
+	// to use the abstractions in the future.
+	parentFs := parentMount.Path()
 	changes, err := archive.ChangesDirs(layerFs, parentFs)
 	if err != nil {
 		return nil, err
@@ -118,32 +112,29 @@ func (gdw *NaiveDiffDriver) Diff(id, parent string) (arch io.ReadCloser, err err
 func (gdw *NaiveDiffDriver) Changes(id, parent string) ([]archive.Change, error) {
 	driver := gdw.ProtoDriver
 
-	layerFsOp, err := driver.Get(id, "")
+	layerMount, err := driver.Get(id, "")
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Put(id)
 
-	// TODO @gupta-ak: Decide if this should be implemented
-	if layerFsOp.Remote() {
-		return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
-	}
-	layerFs := layerFsOp.HostPathName()
+	// TODO @gupta-ak: Right now, assuming the file system is always local
+	// so we don't need to use continuity's abstractions. Might be changed
+	// to use the abstractions in the future.
+	layerFs := layerMount.Path()
 
 	parentFs := ""
-
 	if parent != "" {
-		parentFsOp, err := driver.Get(parent, "")
+		parentMount, err := driver.Get(parent, "")
 		if err != nil {
 			return nil, err
 		}
 		defer driver.Put(parent)
 
-		// TODO @gupta-ak: Decide if this should be implemented
-		if parentFsOp.Remote() {
-			return nil, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
-		}
-		parentFs = parentFsOp.HostPathName()
+		// TODO @gupta-ak: Right now, assuming the file system is always local
+		// so we don't need to use continuity's abstractions. Might be changed
+		// to use the abstractions in the future.
+		parentFs = parentMount.Path()
 	}
 
 	return archive.ChangesDirs(layerFs, parentFs)
@@ -156,17 +147,16 @@ func (gdw *NaiveDiffDriver) ApplyDiff(id, parent string, diff io.Reader) (size i
 	driver := gdw.ProtoDriver
 
 	// Mount the root filesystem so we can apply the diff/layer.
-	layerFsOp, err := driver.Get(id, "")
+	layerMount, err := driver.Get(id, "")
 	if err != nil {
 		return
 	}
 	defer driver.Put(id)
 
-	// TODO @gupta-ak: Decide if this should be implemented
-	if layerFsOp.Remote() {
-		return 0, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
-	}
-	layerFs := layerFsOp.HostPathName()
+	// TODO @gupta-ak: Right now, assuming the file system is always local
+	// so we don't need to use continuity's abstractions. Might be changed
+	// to use the abstractions in the future.
+	layerFs := layerMount.Path()
 
 	options := &archive.TarOptions{UIDMaps: gdw.uidMaps,
 		GIDMaps: gdw.gidMaps}
@@ -191,17 +181,15 @@ func (gdw *NaiveDiffDriver) DiffSize(id, parent string) (size int64, err error) 
 		return
 	}
 
-	layerFsOp, err := driver.Get(id, "")
+	layerMount, err := driver.Get(id, "")
 	if err != nil {
 		return
 	}
 	defer driver.Put(id)
 
-	// TODO @gupta-ak: Decide if this should be implemented
-	if layerFsOp.Remote() {
-		return 0, fmt.Errorf("Remote fs not supported for NaiveDiffDriver")
-	}
-	layerFs := layerFsOp.HostPathName()
-
+	// TODO @gupta-ak: Right now, assuming the file system is always local
+	// so we don't need to use continuity's abstractions. Might be changed
+	// to use the abstractions in the future.
+	layerFs := layerMount.Path()
 	return archive.ChangesSize(layerFs, changes), nil
 }

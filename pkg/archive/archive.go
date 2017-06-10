@@ -18,7 +18,7 @@ import (
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/containerd/continuity/fsdriver"
+	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
@@ -709,7 +709,7 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 				logrus.Warn("Tar: Can't archive a file with includes")
 			}
 
-			dir, base := SplitPathDirEntry(srcPath, fsdriver.BasicDriver)
+			dir, base := SplitPathDirEntry(srcPath, pathdriver.LocalPathDriver)
 			srcPath = dir
 			options.IncludeFiles = []string{base}
 		}
