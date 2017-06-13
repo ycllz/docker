@@ -4,32 +4,49 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
+	"sync"
+	"syscall"
+	"unsafe"
 
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 )
 
 // DefaultSandboxSizeMB is the size of the default sandbox size in MB
+// TODO @jhowardmsft - requires GCS/initrd change in-flight, but the default should be 20GB.
 const DefaultSandboxSizeMB = 16 * 1024 * 1024
 
+var (
+	modkernel32   = syscall.NewLazyDLL("kernel32.dll")
+	procCopyFileW = modkernel32.NewProc("CopyFileW")
+	cacheLock     sync.Mutex
+)
+
 // copyFile is a utility for copying a file - used for the sandbox cache.
+// Uses CopyFileW win32 API for performance
 func copyFile(srcFile, destFile string) error {
-	src, err := os.Open(srcFile)
+	var bFailIfExists uint32 = 1
+
+	lpExistingFileName, err := syscall.UTF16PtrFromString(srcFile)
 	if err != nil {
-		return fmt.Errorf("failed to open '%s': %s", srcFile, err)
+		return err
 	}
-	defer src.Close()
-	dest, err := os.Create(destFile)
+	lpNewFileName, err := syscall.UTF16PtrFromString(destFile)
 	if err != nil {
-		return fmt.Errorf("failed to create '%s': %s", destFile, err)
+		return err
 	}
-	defer dest.Close()
-	if _, err := io.Copy(dest, src); err != nil {
-		return fmt.Errorf("failed to copy from '%s' to %s: %s", srcFile, destFile, err)
+	r1, _, err := syscall.Syscall(
+		procCopyFileW.Addr(),
+		3,
+		uintptr(unsafe.Pointer(lpExistingFileName)),
+		uintptr(unsafe.Pointer(lpNewFileName)),
+		uintptr(bFailIfExists))
+	if r1 == 0 {
+		return fmt.Errorf("failed CopyFileW Win32 call from '%s' to %s: %s", srcFile, destFile, err)
 	}
 	return nil
+
 }
 
 // Create a sandbox file. This is done by copying a prebuilt-sandbox from the ServiceVM
@@ -43,15 +60,18 @@ func CreateSandbox(uvm hcsshim.Container, destFile string, maxSizeInMB uint32, c
 	logrus.Debugf("opengcs: CreateSandbox: %s size:%dMB cache:%s", destFile, maxSizeInMB, cacheFile)
 
 	// Retrieve from cache if the default size and already on disk
-	// TODO @jhowardmsft. Do this under a mutex.
 	if maxSizeInMB == DefaultSandboxSizeMB {
+		cacheLock.Lock()
 		if _, err := os.Stat(cacheFile); err == nil {
 			if err := copyFile(cacheFile, destFile); err != nil {
+				cacheLock.Unlock()
 				return fmt.Errorf("opengcs: CreateSandbox: Failed to copy cached sandbox '%s' to '%s': %s", cacheFile, destFile, err)
 			}
+			cacheLock.Unlock()
 			logrus.Debugf("opengcs: CreateSandbox: %s fulfilled from cache", destFile)
 			return nil
 		}
+		cacheLock.Unlock()
 	}
 
 	if uvm == nil {
@@ -105,11 +125,13 @@ func CreateSandbox(uvm hcsshim.Container, destFile string, maxSizeInMB uint32, c
 	}
 
 	// Populate the cache
-	// TODO @jhowardmsft - do this under a mutex
 	if maxSizeInMB == DefaultSandboxSizeMB {
+		cacheLock.Lock()
 		if err := copyFile(destFile, cacheFile); err != nil {
+			cacheLock.Unlock()
 			return fmt.Errorf("opengcs: CreateSandbox: Failed to seed sandbox cache '%s' from '%s': %s", destFile, cacheFile, err)
 		}
+		cacheLock.Unlock()
 	}
 
 	logrus.Debugf("opengcs: CreateSandbox: %s created (non-cache)", destFile)
