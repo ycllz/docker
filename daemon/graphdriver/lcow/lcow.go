@@ -51,20 +51,12 @@ func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (
 		cachedSandboxFile: filepath.Join(home, `cache\sandbox.vhdx`),
 	}
 
-	mode, warnings, err := config.Validate()
-	if err != nil {
+	if err := config.Validate(); err != nil {
 		// This is not fatal, as other drivers (eg WCOW) may still work.
 		logrus.Warnf("LCOW driver does not have a valid configuration for communicating with the utility VM: %s.", err)
 		return d, nil
 	}
-	if len(warnings) > 0 {
-		for _, v := range warnings {
-			// Again, these are not fatal as a) other drivers may still work, and
-			// b) users can rectify the issue without the need to re-init the driver.
-			logrus.Warnf("LCOW driver may not be fully operational: The following warning was generated during startup: %s", v)
-		}
-	}
-	logrus.Infof("Default mode for LCOW driver: %s", mode)
+	logrus.Infof("Actual mode for LCOW driver: %s", config.ActualMode)
 
 	if err := idtools.MkdirAllAs(home, 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)

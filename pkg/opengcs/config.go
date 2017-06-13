@@ -11,13 +11,23 @@ import (
 	"github.com/Sirupsen/logrus"
 )
 
-type Mode string
+type Mode uint
 
+// Constants for the actual mode after validation
 const (
-	ModeError        = "Invalid configuration mode"
-	ModeVhdx         = "VHDX mode"
-	ModeKernelInitrd = "Kernel/Initrd mode"
+	ModeActualError = iota
+	ModeActualVhdx
+	ModeActualKernelInitrd
 )
+
+// Constants for the requested mode
+const (
+	ModeRequestAuto = iota // VHDX will be priority over kernel+initrd
+	ModeRequestVhdx
+	ModeRequestKernelInitrd
+)
+
+// Constants for the
 
 // Config is the structure used to configuring a utility VM to be used
 // as a service VM. There are two ways of starting. Either supply a VHD,
@@ -28,11 +38,13 @@ const (
 //
 // All paths are full host path-names.
 type Config struct {
-	Kernel string // Kernel for Utility VM (embedded in a UEFI bootloader)
-	Initrd string // Initrd image for Utility VM
-	Vhdx   string // VHD for booting the utility VM
-	Name   string // Name of the utility VM
-	Svm    bool   // Is a service VM
+	Kernel        string // Kernel for Utility VM (embedded in a UEFI bootloader)
+	Initrd        string // Initrd image for Utility VM
+	Vhdx          string // VHD for booting the utility VM
+	Name          string // Name of the utility VM
+	Svm           bool   // Is a service VM
+	RequestedMode Mode   // What mode is preferred when validating
+	ActualMode    Mode   // What mode was obtained during validation
 }
 
 // DefaultConfig generates a default config from a set of options
@@ -71,43 +83,57 @@ func DefaultConfig(baseDir string, options []string) (Config, error) {
 }
 
 // Validate validates a Config structure for starting a utility VM.
-func (config *Config) Validate() (Mode, []string, error) {
-	var warnings []string
+func (config *Config) Validate() error {
+	config.ActualMode = ModeActualError
 
-	// Validate that if VHDX requested, it exists.
-	if config.Vhdx != "" {
+	if config.RequestedMode == ModeRequestVhdx && config.Vhdx == "" {
+		return fmt.Errorf("opengcs: config is invalid - request for VHDX mode did not supply a VHDX")
+	}
+	if config.RequestedMode == ModeRequestKernelInitrd && (config.Kernel == "" || config.Initrd == "") {
+		return fmt.Errorf("opengcs: config is invalid - request for Kernel+Initrd mode must supply both kernel and initrd")
+	}
+
+	// Validate that if VHDX requested or auto, it exists.
+	if config.RequestedMode == ModeRequestAuto || config.RequestedMode == ModeRequestVhdx {
 		if _, err := os.Stat(config.Vhdx); os.IsNotExist(err) {
-			warnings = append(warnings, fmt.Sprintf("opengcs: vhdx for utility VM boot '%s' could not be found", config.Vhdx))
+			if config.RequestedMode == ModeRequestVhdx {
+				return fmt.Errorf("opengcs: mode requested was VHDX but '%s' could not be found", config.Vhdx)
+			}
 		} else {
-			return ModeVhdx, warnings, nil
+			config.ActualMode = ModeActualVhdx
+			return nil
 		}
 	}
 
-	// So must be kernel+initrd
-	if config.Initrd == "" && config.Kernel == "" {
-		return ModeError, warnings, fmt.Errorf("opengcs: both initrd and kernel options for utility VM boot must be supplied")
+	// So must be kernel+initrd, or auto where we fallback as the VHDX doesn't exist
+	if config.Initrd == "" || config.Kernel == "" {
+		if config.RequestedMode == ModeRequestKernelInitrd {
+			return fmt.Errorf("opengcs: both initrd and kernel options for utility VM boot must be supplied")
+		} else {
+			return fmt.Errorf("opengcs: configuration is invalid")
+		}
 	}
 	if _, err := os.Stat(config.Kernel); os.IsNotExist(err) {
-		return ModeError, warnings, fmt.Errorf("opengcs: kernel '%s' was not found", config.Kernel)
+		return fmt.Errorf("opengcs: kernel '%s' was not found", config.Kernel)
 	}
 	if _, err := os.Stat(config.Initrd); os.IsNotExist(err) {
-		return ModeError, warnings, fmt.Errorf("opengcs: initrd '%s' was not found", config.Initrd)
+		return fmt.Errorf("opengcs: initrd '%s' was not found", config.Initrd)
 	}
 	dk, _ := filepath.Split(config.Kernel)
 	di, _ := filepath.Split(config.Initrd)
 	if dk != di {
-		return ModeError, warnings, fmt.Errorf("initrd '%s' and kernel '%s' must be located in the same directory")
+		return fmt.Errorf("initrd '%s' and kernel '%s' must be located in the same directory")
 	}
 
-	return ModeKernelInitrd, warnings, nil
+	config.ActualMode = ModeActualKernelInitrd
+	return nil
 }
 
 // Create creates a utility VM from a configuration.
 func (config *Config) Create() (hcsshim.Container, error) {
 	logrus.Debugf("opengcs Create: %+v", config)
 
-	mode, _, err := config.Validate()
-	if err != nil {
+	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -120,7 +146,7 @@ func (config *Config) Create() (hcsshim.Container, error) {
 		TerminateOnLastHandleClosed: true,
 	}
 
-	if mode == ModeVhdx {
+	if config.ActualMode == ModeActualVhdx {
 		configuration.HvRuntime = &hcsshim.HvRuntime{
 			ImagePath: config.Vhdx,
 		}
