@@ -49,10 +49,8 @@ type Config struct {
 
 // DefaultConfig generates a default config from a set of options
 // If baseDir is not supplied, defaults to $env:ProgramFiles\lcow
-func DefaultConfig(baseDir string, options []string) (Config, error) {
-	if baseDir == "" {
-		baseDir = filepath.Join(os.Getenv("ProgramFiles"), "lcow")
-	}
+func DefaultConfig(options []string) (Config, error) {
+	baseDir := filepath.Join(os.Getenv("ProgramFiles"), "lcow")
 
 	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
 		return Config{}, fmt.Errorf("opengcs: cannot create default utility VM configuration as directory '%s' was not found", baseDir)
@@ -82,8 +80,8 @@ func DefaultConfig(baseDir string, options []string) (Config, error) {
 	return config, nil
 }
 
-// Validate validates a Config structure for starting a utility VM.
-func (config *Config) Validate() error {
+// validate validates a Config structure for starting a utility VM.
+func (config *Config) validate() error {
 	config.ActualMode = ModeActualError
 
 	if config.RequestedMode == ModeRequestVhdx && config.Vhdx == "" {
@@ -133,7 +131,7 @@ func (config *Config) Validate() error {
 func (config *Config) Create() (hcsshim.Container, error) {
 	logrus.Debugf("opengcs Create: %+v", config)
 
-	if err := config.Validate(); err != nil {
+	if err := config.validate(); err != nil {
 		return nil, err
 	}
 

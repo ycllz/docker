@@ -29,50 +29,35 @@ func init() {
 type Driver struct {
 	homeDir           string
 	cachedSandboxFile string
-	config            opengcs.Config
-	uvm               hcsshim.Container
+	options           []string
+	// JJH LIFETIME TODO - Remove this and move up to daemon.
+	uvm hcsshim.Container
 }
 
-// InitLCOW returns a new LCOW storage filter driver.
+// InitLCOW returns a new LCOW storage driver.
 func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
 	logrus.Debugf("lcow driver init: %s", home)
 
-	config, err := opengcs.DefaultConfig(filepath.Join(os.Getenv("ProgramFiles"), "lcow"), options)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init LCOW driver - could not generate opengcs configuration: %s", err)
-	}
-
-	config.Name = "LinuxServiceVM"
-	config.Svm = true
-
 	d := &Driver{
 		homeDir:           home,
-		config:            config,
+		options:           options,
 		cachedSandboxFile: filepath.Join(home, `cache\sandbox.vhdx`),
 	}
-
-	if err := config.Validate(); err != nil {
-		// This is not fatal, as other drivers (eg WCOW) may still work.
-		logrus.Warnf("LCOW driver does not have a valid configuration for communicating with the utility VM: %s.", err)
-		return d, nil
-	}
-	logrus.Infof("Actual mode for LCOW driver: %s", config.ActualMode)
 
 	if err := idtools.MkdirAllAs(home, 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
 	}
 
-	// Cache for blank sandbox so don't have to pull it from the service VM
+	// Cache for blank sandbox so don't have to pull it from the service VM each time
 	if err := idtools.MkdirAllAs(filepath.Dir(d.cachedSandboxFile), 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
 	}
 
-	// Launch the service utility-VM
-	// TODO @jhowardmsft. This will have to change in a future iteration.
-	// a) We shouldn't be launching on daemon start. We should start on-demand
-	// b) We will probably split to an SVM per container, not global, for RTM. That requires platform work though.
-	if d.uvm, err = config.Create(); err != nil {
-		return nil, fmt.Errorf("failed to init LCOW driver - could not create utility VM: %s", err)
+	// JJH LIFETIME TODO
+	var err error
+	d.uvm, err = system.StartUVM(options)
+	if err != nil {
+		return nil, fmt.Errorf("lcow failed to start utility VM: %s", err)
 	}
 
 	return d, nil
