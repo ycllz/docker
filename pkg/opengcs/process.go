@@ -30,14 +30,14 @@ func createUtilsProcess(uvm hcsshim.Container) (process, error) {
 	)
 
 	env := make(map[string]string)
-	env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/gcs/LinuxServiceVM/scratch/bin"
+	env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/integration"
 	config := &hcsshim.ProcessConfig{
 		EmulateConsole:    false,
 		CreateStdInPipe:   true,
 		CreateStdOutPipe:  true,
 		CreateStdErrPipe:  true,
 		CreateInUtilityVm: true,
-		WorkingDirectory:  "/mnt/gcs/LinuxServiceVM/scratch/bin",
+		WorkingDirectory:  "/root/integration",
 		Environment:       env,
 		CommandLine:       "./svm_utils",
 	}
@@ -47,7 +47,7 @@ func createUtilsProcess(uvm hcsshim.Container) (process, error) {
 	}
 
 	if proc.Stdin, proc.Stdout, _, err = proc.Process.Stdio(); err != nil {
-		//proc.Process.Kill() TODO @jhowardmsft - This isn't currently implemented all the way through to GCS. Requires platform change.
+		proc.Process.Kill() // Should this have a timeout?
 		proc.Process.Close()
 		return process{}, fmt.Errorf("opengcs: createUtilsProcess: failed to get Stdio pipes %s", err)
 	}

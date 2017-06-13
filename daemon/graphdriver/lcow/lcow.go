@@ -27,9 +27,10 @@ func init() {
 
 // Driver represents an LCOW graph driver.
 type Driver struct {
-	homeDir string
-	config  opengcs.Config
-	uvm     hcsshim.Container
+	homeDir           string
+	cachedSandboxFile string
+	config            opengcs.Config
+	uvm               hcsshim.Container
 }
 
 // InitLCOW returns a new LCOW storage filter driver.
@@ -45,8 +46,9 @@ func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (
 	config.Svm = true
 
 	d := &Driver{
-		homeDir: home,
-		config:  config,
+		homeDir:           home,
+		config:            config,
+		cachedSandboxFile: filepath.Join(home, `cache\sandbox.vhdx`),
 	}
 
 	mode, warnings, err := config.Validate()
@@ -65,6 +67,11 @@ func InitLCOW(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (
 	logrus.Infof("Default mode for LCOW driver: %s", mode)
 
 	if err := idtools.MkdirAllAs(home, 0700, 0, 0); err != nil {
+		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
+	}
+
+	// Cache for blank sandbox so don't have to pull it from the service VM
+	if err := idtools.MkdirAllAs(filepath.Dir(d.cachedSandboxFile), 0700, 0, 0); err != nil {
 		return nil, fmt.Errorf("lcow failed to create '%s': %v", home, err)
 	}
 
@@ -106,7 +113,7 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 	if err := d.Create(id, parent, opts); err != nil {
 		return err
 	}
-	return opengcs.CreateSandbox(d.uvm, filepath.Join(d.dir(id), "sandbox.vhdx"), 0)
+	return opengcs.CreateSandbox(d.uvm, filepath.Join(d.dir(id), "sandbox.vhdx"), opengcs.DefaultSandboxSizeMB, d.cachedSandboxFile)
 }
 
 // Create creates a new read-only layer with the given id.

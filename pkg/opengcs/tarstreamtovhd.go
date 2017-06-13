@@ -31,7 +31,7 @@ func TarStreamToVHD(uvm hcsshim.Container, targetVHDFile string, reader io.Reade
 	}
 
 	defer func() {
-		//process.Process.Kill() TODO @jhowardmsft - This isn't currently implemented all the way through to GCS. Requires platform change.
+		process.Process.Kill() // TODO @jhowardmsft - Add a timeout?
 		process.Process.Close()
 	}()
 
