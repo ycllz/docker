@@ -311,7 +311,8 @@ func (v *HVsockConn) Read(buf []byte) (int, error) {
 				return n, ErrSocketMsgSize
 			}
 
-			msg := int(binary.LittleEndian.Uint32(b))
+			var msg uint32
+			msg = binary.LittleEndian.Uint32(b)
 			if msg == shutdownwr {
 				// The other end shutdown write. No point reading more
 				v.readClosed = true
@@ -327,7 +328,7 @@ func (v *HVsockConn) Read(buf []byte) (int, error) {
 				prDebug("RX: Close\n")
 				v.Close()
 			} else {
-				v.bytesToRead = msg
+				v.bytesToRead = int(msg)
 				if v.bytesToRead == 0 {
 					// XXX Something is odd. If I don't have this here, this
 					// case is hit. However, with this code in place this
