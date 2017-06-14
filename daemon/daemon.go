@@ -122,6 +122,7 @@ type Daemon struct {
 	diskUsageRunning int32
 	pruneRunning     int32
 	hosts            map[string]bool // hosts stores the addresses the daemon is listening on
+	uvm              interface{}     // Service Utility VM for supporting Linux Containers on Windows
 }
 
 // StoreHosts stores the addresses the daemon is listening on
