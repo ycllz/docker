@@ -2,6 +2,10 @@
 
 package initlayer
 
+import (
+	"github.com/docker/docker/daemon/graphdriver"
+)
+
 // Setup populates a directory with mountpoints suitable
 // for bind-mounting dockerinit into the container. The mountpoint is simply an
 // empty file at /.dockerinit

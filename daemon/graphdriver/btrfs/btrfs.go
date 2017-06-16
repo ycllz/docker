@@ -545,8 +545,12 @@ func (d *Driver) Remove(id string) error {
 	return nil
 }
 
+func (d *Driver) Get(id, mountLabel string) (graphdriver.Mount, error) {
+	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
+}
+
 // Get the requested filesystem id.
-func (d *Driver) Get(id, mountLabel string) (string, error) {
+func (d *Driver) get(id, mountLabel string) (string, error) {
 	dir := d.subvolumesDirID(id)
 	st, err := os.Stat(dir)
 	if err != nil {

@@ -123,13 +123,17 @@ func (d *Driver) Remove(id string) error {
 
 // Get returns the directory for the given id.
 func (d *Driver) Get(id, mountLabel string) (graphdriver.Mount, error) {
+	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
+}
+
+func (d *Driver) get(id, mountLabel string) (string, error) {
 	dir := d.dir(id)
 	if st, err := os.Stat(dir); err != nil {
-		return nil, err
+		return "", err
 	} else if !st.IsDir() {
-		return nil, fmt.Errorf("%s: not a directory", dir)
+		return "", fmt.Errorf("%s: not a directory", dir)
 	}
-	return graphdriver.NewLocalMount(dir), nil
+	return dir, nil
 }
 
 // Put is a noop for vfs that return nil for the error, since this driver has no runtime resources to clean up.

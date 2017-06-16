@@ -13,6 +13,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/daemon/initlayer"
 	"github.com/docker/docker/libcontainerd"
 	"github.com/docker/docker/pkg/mount"
@@ -58,7 +59,8 @@ func (pm *Manager) enable(p *v2.Plugin, c *controller, force bool) error {
 		}
 	}
 
-	if err := initlayer.Setup(filepath.Join(pm.config.Root, p.PluginObj.ID, rootFSFileName), 0, 0); err != nil {
+	pluginPath := filepath.Join(pm.config.Root, p.PluginObj.ID, rootFSFileName)
+	if err := initlayer.Setup(graphdriver.NewLocalMount(pluginPath), 0, 0); err != nil {
 		return errors.WithStack(err)
 	}
 

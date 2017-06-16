@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-
+	
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/idtools"
 )
 
@@ -16,7 +17,8 @@ import (
 //
 // This extra layer is used by all containers as the top-most ro layer. It protects
 // the container from unwanted side-effects on the rw layer.
-func Setup(initLayer string, rootUID, rootGID int) error {
+func Setup(initLayerFS graphdriver.Mount, rootUID, rootGID int) error {
+	initLayer := initLayerFS.Path()
 	for pth, typ := range map[string]string{
 		"/dev/pts":         "dir",
 		"/dev/shm":         "dir",

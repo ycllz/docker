@@ -20,7 +20,6 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/mount"
 	"github.com/docker/docker/pkg/stringutils"
-	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/volume"
 	"github.com/opencontainers/runc/libcontainer/apparmor"
 	"github.com/opencontainers/runc/libcontainer/cgroups"
@@ -187,7 +186,7 @@ func setUser(s *specs.Spec, c *container.Container) error {
 }
 
 func readUserFile(c *container.Container, p string) (io.ReadCloser, error) {
-	fp, err := symlink.FollowSymlinkInScope(filepath.Join(c.BaseFS, p), c.BaseFS)
+	fp, err := c.GetResourcePath(p)
 	if err != nil {
 		return nil, err
 	}
@@ -608,7 +607,7 @@ func (daemon *Daemon) populateCommonSpec(s *specs.Spec, c *container.Container) 
 		return err
 	}
 	s.Root = specs.Root{
-		Path:     c.BaseFS,
+		Path:     c.BaseFS.Path(),
 		Readonly: c.HostConfig.ReadonlyRootfs,
 	}
 	rootUID, rootGID := daemon.GetRemappedUIDGID()
@@ -635,12 +634,11 @@ func (daemon *Daemon) populateCommonSpec(s *specs.Spec, c *container.Container) 
 					return err
 				}
 			}
+			
 			if daemon.configStore.InitPath != "" {
 				path = daemon.configStore.InitPath
 			}
-			if c.HostConfig.InitPath != "" {
-				path = c.HostConfig.InitPath
-			}
+			
 			s.Mounts = append(s.Mounts, specs.Mount{
 				Destination: "/dev/init",
 				Type:        "bind",

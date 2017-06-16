@@ -8,7 +8,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/docker/docker/daemon/fs"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 )
 
@@ -29,9 +29,10 @@ func TestMountInit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// TODO: @gupta-ak add for remote fs
-	mountInit := func(root fs.FilesystemOperator) error {
-		return initfile.ApplyFile(root.HostPathName())
+	// TODO: @gupta-ak add for remote fs. Need to override the ApplyFile
+	// method
+	mountInit := func(root graphdriver.Mount) error {
+		return initfile.ApplyFile(root.Path())
 	}
 
 	rwLayerOpts := &CreateRWLayerOpts{
@@ -48,10 +49,7 @@ func TestMountInit(t *testing.T) {
 	}
 
 	// TODO: @gupta-ak add for remote fs
-	if pathFS.Remote() {
-		t.Skip("remote fs not supported")
-	}
-	path := pathFS.HostPathName()
+	path := pathFS.Path()
 
 	f, err := os.Open(filepath.Join(path, "testfile.txt"))
 	if err != nil {
@@ -97,8 +95,8 @@ func TestMountSize(t *testing.T) {
 	}
 
 	// TODO: @gupta-ak add for remote fs
-	mountInit := func(root fs.FilesystemOperator) error {
-		return newTestFile("file-init", contentInit, 0777).ApplyFile(root.HostPathName())
+	mountInit := func(root graphdriver.Mount) error {
+		return newTestFile("file-init", contentInit, 0777).ApplyFile(root.Path())
 	}
 	rwLayerOpts := &CreateRWLayerOpts{
 		InitFunc: mountInit,
@@ -115,10 +113,7 @@ func TestMountSize(t *testing.T) {
 	}
 
 	// TODO: @gupta-ak add for remote fs
-	if pathFS.Remote() {
-		t.Skip("remote fs not supported")
-	}
-	path := pathFS.HostPathName()
+	path := pathFS.Path()
 
 	if err := ioutil.WriteFile(filepath.Join(path, "file2"), content2, 0755); err != nil {
 		t.Fatal(err)
@@ -156,8 +151,8 @@ func TestMountChanges(t *testing.T) {
 	}
 
 	// TODO: @gupta-ak add for remote fs
-	mountInit := func(root fs.FilesystemOperator) error {
-		return initfile.ApplyFile(root.HostPathName())
+	mountInit := func(root graphdriver.Mount) error {
+		return initfile.ApplyFile(root.Path())
 	}
 	rwLayerOpts := &CreateRWLayerOpts{
 		InitFunc: mountInit,
@@ -174,10 +169,7 @@ func TestMountChanges(t *testing.T) {
 	}
 
 	// TODO: @gupta-ak add for remote fs
-	if pathFS.Remote() {
-		t.Skip("remote fs not supported")
-	}
-	path := pathFS.HostPathName()
+	path := pathFS.Path()
 
 	if err := os.Chmod(filepath.Join(path, "testfile1.txt"), 0755); err != nil {
 		t.Fatal(err)

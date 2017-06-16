@@ -169,7 +169,11 @@ func (d *Driver) Remove(id string) error {
 }
 
 // Get mounts a device with given id into the root filesystem
-func (d *Driver) Get(id, mountLabel string) (string, error) {
+func (d *Driver) Get(id, mountLabel string) (graphdriver.Mount, error) {
+	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
+}
+
+func (d *Driver) get(id, mountLabel string) (string, error) {
 	d.locker.Lock(id)
 	defer d.locker.Unlock(id)
 	mp := path.Join(d.home, "mnt", id)

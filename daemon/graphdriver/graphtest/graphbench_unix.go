@@ -245,7 +245,8 @@ func DriverBenchDeepLayerRead(b *testing.B, layerCount int, drivername string, d
 	for i := 0; i < b.N; i++ {
 
 		// Read content
-		c, err := ioutil.ReadFile(filepath.Join(root, "testfile.txt"))
+		// TODO @gupta-ak: implement this with remote fs
+		c, err := ioutil.ReadFile(filepath.Join(root.Path(), "testfile.txt"))
 		if err != nil {
 			b.Fatal(err)
 		}

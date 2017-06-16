@@ -28,6 +28,7 @@ import (
 	"github.com/docker/docker/daemon/discovery"
 	"github.com/docker/docker/daemon/events"
 	"github.com/docker/docker/daemon/exec"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/daemon/logger"
 	// register graph drivers
 	_ "github.com/docker/docker/daemon/graphdriver/register"
@@ -1062,7 +1063,7 @@ func prepareTempDir(rootDir string, rootUID, rootGID int) (string, error) {
 	return tmpDir, idtools.MkdirAllAs(tmpDir, 0700, rootUID, rootGID)
 }
 
-func (daemon *Daemon) setupInitLayer(initPath string) error {
+func (daemon *Daemon) setupInitLayer(initPath graphdriver.Mount) error {
 	rootUID, rootGID := daemon.GetRemappedUIDGID()
 	return initlayer.Setup(initPath, rootUID, rootGID)
 }

@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"path"
 	"reflect"
 	"syscall"
 	"testing"
@@ -105,7 +104,7 @@ func DriverTestCreateEmpty(t testing.TB, drivername string, driverOptions ...str
 		t.Fatal(err)
 	}
 
-	verifyFile(t, dir, 0755|os.ModeDir, 0, 0)
+	verifyFile(t, dir.Path(),  dir, 0755|os.ModeDir, 0, 0)
 
 	// Verify that the directory is empty
 	fis, err := readDir(dir)
@@ -314,7 +313,7 @@ func DriverTestChanges(t testing.TB, drivername string, driverOptions ...string)
 	}
 }
 
-func writeRandomFile(path string, size uint64) error {
+func writeRandomFile(mount graphdriver.Mount, path string, size uint64) error {
 	buf := make([]int64, size/8)
 
 	r := rand.NewSource(0)
@@ -328,6 +327,7 @@ func writeRandomFile(path string, size uint64) error {
 	header.Cap *= 8
 	data := *(*[]byte)(unsafe.Pointer(&header))
 
+	// TODO @gupta-ak: Need write ability!
 	return ioutil.WriteFile(path, data, 0700)
 }
 
@@ -350,7 +350,7 @@ func DriverTestSetQuota(t *testing.T, drivername string) {
 	}
 
 	quota := uint64(50 * units.MiB)
-	err = writeRandomFile(path.Join(mountPath, "file"), quota*2)
+	err = writeRandomFile(mountPath, mountPath.Join(mountPath.Path(), "file"), quota*2)
 	if pathError, ok := err.(*os.PathError); ok && pathError.Err != syscall.EDQUOT {
 		t.Fatalf("expect write() to fail with %v, got %v", syscall.EDQUOT, err)
 	}

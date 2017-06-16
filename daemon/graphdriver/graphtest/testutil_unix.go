@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"syscall"
 	"testing"
 
@@ -53,8 +52,8 @@ func getBaseLoopStats() (*syscall.Stat_t, error) {
 	return loop0.Sys().(*syscall.Stat_t), nil
 }
 
-func verifyFile(t testing.TB, path string, mode os.FileMode, uid, gid uint32) {
-	fi, err := os.Stat(path)
+func verifyFile(t testing.TB, path string, driver graphdriver.Mount, mode os.FileMode, uid, gid uint32) {
+	fi, err := driver.Stat(driver.FromSlash(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,15 +103,17 @@ func createBase(t testing.TB, driver graphdriver.Driver, name string) {
 	}
 	defer driver.Put(name)
 
-	subdir := path.Join(dir, "a subdir")
-	if err := os.Mkdir(subdir, 0705|os.ModeSticky); err != nil {
+	subdir := dir.Join(dir.Path(), "a subdir")
+	if err := dir.Mkdir(subdir, 0705|os.ModeSticky); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chown(subdir, 1, 2); err != nil {
+	
+	if err := dir.Lchown(subdir, 1, 2); err != nil {
 		t.Fatal(err)
 	}
 
-	file := path.Join(dir, "a file")
+	file := dir.Join(dir.Path(), "a file")
+	// TODO: @gupta-ak: Need to write file.
 	if err := ioutil.WriteFile(file, []byte("Some data"), 0222|os.ModeSetuid); err != nil {
 		t.Fatal(err)
 	}
@@ -125,11 +126,11 @@ func verifyBase(t testing.TB, driver graphdriver.Driver, name string) {
 	}
 	defer driver.Put(name)
 
-	subdir := path.Join(dir, "a subdir")
-	verifyFile(t, subdir, 0705|os.ModeDir|os.ModeSticky, 1, 2)
+	subdir := dir.Join(dir.Path(), "a subdir")
+	verifyFile(t, subdir, dir, 0705|os.ModeDir|os.ModeSticky, 1, 2)
 
-	file := path.Join(dir, "a file")
-	verifyFile(t, file, 0222|os.ModeSetuid, 0, 0)
+	file := dir.Join(dir.Path(), "a file")
+	verifyFile(t, file, dir, 0222|os.ModeSetuid, 0, 0)
 
 	fis, err := readDir(dir)
 	if err != nil {

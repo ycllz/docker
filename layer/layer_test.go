@@ -97,7 +97,7 @@ func createLayer(ls Store, parent ChainID, layerFunc layerInit) (Layer, error) {
 	}
 
 	// TODO: @gupta-ak. Change this for the remote fs. Assume it's local for now.
-	path := pathFS.HostPathName()
+	path := pathFS.Path()
 
 	if err := layerFunc(path); err != nil {
 		return nil, err
@@ -292,10 +292,7 @@ func TestMountAndRegister(t *testing.T) {
 	}
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if path2FS.Remote() {
-		t.Skip("Remote file system not supported")
-	}
-	path2 := path2FS.HostPathName()
+	path2 := path2FS.Path()
 
 	b, err := ioutil.ReadFile(filepath.Join(path2, "testfile.txt"))
 	if err != nil {
@@ -406,10 +403,7 @@ func TestStoreRestore(t *testing.T) {
 	}
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if pathFS.Remote() {
-		t.Skip("Remote file system not supported")
-	}
-	path := pathFS.HostPathName()
+	path := pathFS.Path()
 
 	if err := ioutil.WriteFile(filepath.Join(path, "testfile.txt"), []byte("nothing here"), 0644); err != nil {
 		t.Fatal(err)
@@ -443,22 +437,16 @@ func TestStoreRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// TODO @gupta-ak. Implement this for the remote file system.
 	if mountPath, err := m2.Mount(""); err != nil {
 		t.Fatal(err)
-	} else if mountPath.Remote() {
-		t.Skip("Remote file system not supported")
-	} else if path != mountPath.HostPathName() {
-		t.Fatalf("Unexpected path %s, expected %s", mountPath.HostPathName(), path)
+	} else if path != mountPath.Path() {
+		t.Fatalf("Unexpected path %s, expected %s", mountPath.Path(), path)
 	}
 
-	// TODO @gupta-ak. Implement this for the remote file system.
 	if mountPath, err := m2.Mount(""); err != nil {
 		t.Fatal(err)
-	} else if mountPath.Remote() {
-		t.Skip("Remote file system not supported")
-	} else if path != mountPath.HostPathName() {
-		t.Fatalf("Unexpected path %s, expected %s", mountPath.HostPathName(), path)
+	} else if path != mountPath.Path() {
+		t.Fatalf("Unexpected path %s, expected %s", mountPath.Path(), path)
 	}
 
 	if err := m2.Unmount(); err != nil {
@@ -533,10 +521,8 @@ func TestTarStreamStability(t *testing.T) {
 	}
 
 	// TODO: @gupta-ak. Implement this for the remote file system
-	if pFS.Remote() {
-		t.Skip("remote file system unsupported")
-	}
-	p := pFS.HostPathName()
+	// Need to override ApplyFile function.
+	p := pFS.Path()
 
 	if err := addedFile.ApplyFile(p); err != nil {
 		t.Fatal(err)

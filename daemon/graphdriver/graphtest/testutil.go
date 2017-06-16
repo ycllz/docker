@@ -37,10 +37,8 @@ func addFiles(drv graphdriver.Driver, layer string, seed int64) error {
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	// Need the ability to write files.
+	root := rootFS.Path()
 
 	if err := ioutil.WriteFile(path.Join(root, "file-a"), randomContent(64, seed), 0755); err != nil {
 		return err
@@ -63,10 +61,7 @@ func checkFile(drv graphdriver.Driver, layer, filename string, content []byte) e
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	fileContent, err := ioutil.ReadFile(path.Join(root, filename))
 	if err != nil {
@@ -88,10 +83,7 @@ func addFile(drv graphdriver.Driver, layer, filename string, content []byte) err
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	return ioutil.WriteFile(path.Join(root, filename), content, 0755)
 }
@@ -104,10 +96,7 @@ func addDirectory(drv graphdriver.Driver, layer, dir string) error {
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	return os.MkdirAll(path.Join(root, dir), 0755)
 }
@@ -120,10 +109,7 @@ func removeAll(drv graphdriver.Driver, layer string, names ...string) error {
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	for _, filename := range names {
 		if err := os.RemoveAll(path.Join(root, filename)); err != nil {
@@ -141,10 +127,7 @@ func checkFileRemoved(drv graphdriver.Driver, layer, filename string) error {
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	if _, err := os.Stat(path.Join(root, filename)); err == nil {
 		return fmt.Errorf("file still exists: %s", path.Join(root, filename))
@@ -163,10 +146,7 @@ func addManyFiles(drv graphdriver.Driver, layer string, count int, seed int64) e
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	for i := 0; i < count; i += 100 {
 		dir := path.Join(root, fmt.Sprintf("directory-%d", i))
@@ -192,10 +172,7 @@ func changeManyFiles(drv graphdriver.Driver, layer string, count int, seed int64
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil, nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	changes := []archive.Change{}
 	for i := 0; i < count; i += 100 {
@@ -249,10 +226,7 @@ func checkManyFiles(drv graphdriver.Driver, layer string, count int, seed int64)
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	for i := 0; i < count; i += 100 {
 		dir := path.Join(root, fmt.Sprintf("directory-%d", i))
@@ -309,10 +283,7 @@ func addLayerFiles(drv graphdriver.Driver, layer, parent string, i int) error {
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	if err := ioutil.WriteFile(path.Join(root, "top-id"), []byte(layer), 0755); err != nil {
 		return err
@@ -356,10 +327,7 @@ func checkManyLayers(drv graphdriver.Driver, layer string, count int) error {
 	defer drv.Put(layer)
 
 	// TODO @gupta-ak. Implement this for the remote file system.
-	if rootFS.Remote() {
-		return nil
-	}
-	root := rootFS.HostPathName()
+	root := rootFS.Path()
 
 	layerIDBytes, err := ioutil.ReadFile(path.Join(root, "top-id"))
 	if err != nil {
@@ -391,7 +359,10 @@ func checkManyLayers(drv graphdriver.Driver, layer string, count int) error {
 // readDir reads a directory just like ioutil.ReadDir()
 // then hides specific files (currently "lost+found")
 // so the tests don't "see" it
-func readDir(dir string) ([]os.FileInfo, error) {
+func readDir(mnt graphdriver.Mount) ([]os.FileInfo, error) {
+	// TODO @gupta-ak. Need to be able to read a directory
+	dir := mnt.Path()
+	
 	a, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
