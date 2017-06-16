@@ -203,11 +203,11 @@ func TestFromScratch(t *testing.T) {
 	assert.True(t, req.state.hasFromImage())
 	assert.Equal(t, "", req.state.imageID)
 	// Windows does not set the default path. TODO @jhowardmsft LCOW support. This will need revisiting as we get further into the implementation
-	expected := "PATH=" + system.DefaultPathEnv
+	expected := []string{"PATH=" + system.DefaultPathEnv}
 	if runtime.GOOS == "windows" {
-		expected = ""
+		expected = nil
 	}
-	assert.Equal(t, []string{expected}, req.state.runConfig.Env)
+	assert.Equal(t, expected, req.state.runConfig.Env)
 }
 
 func TestFromWithArg(t *testing.T) {

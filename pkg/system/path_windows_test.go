@@ -3,11 +3,11 @@
 package system
 
 import "testing"
-import "github.com/containerd/continuity/fsdriver"
+import "github.com/containerd/continuity/pathdriver"
 
 // TestCheckSystemDriveAndRemoveDriveLetter tests CheckSystemDriveAndRemoveDriveLetter
 func TestCheckSystemDriveAndRemoveDriveLetter(t *testing.T) {
-	driver := fsdriver.BasicDriver
+	driver := pathdriver.LocalPathDriver
 
 	// Fails if not C drive.
 	path, err := CheckSystemDriveAndRemoveDriveLetter(`d:\`, driver)
