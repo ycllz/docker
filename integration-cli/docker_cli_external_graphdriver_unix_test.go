@@ -203,7 +203,8 @@ func (s *DockerExternalGraphdriverSuite) setUpPlugin(c *check.C, name string, ex
 			respond(w, err)
 			return
 		}
-		respond(w, &graphDriverResponse{Dir: dir})
+		// TODO @gupta-ak. Check how this is used.
+		respond(w, &graphDriverResponse{Dir: dir.Path()})
 	})
 
 	mux.HandleFunc("/GraphDriver.Put", func(w http.ResponseWriter, r *http.Request) {

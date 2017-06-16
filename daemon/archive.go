@@ -331,7 +331,9 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 		}
 	}
 
-	err = extractArchive(driver, content, resolvedPath, options)
+	if err := extractArchive(driver, content, resolvedPath, options); err != nil {
+		return err
+	}
 
 	daemon.LogContainerEvent(container, "extract-to-dir")
 
