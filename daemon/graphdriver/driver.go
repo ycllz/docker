@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
+	"github.com/docker/docker/pkg/rootfs"
 )
 
 // FsMagic unsigned id of the filesystem in use.
@@ -68,7 +69,7 @@ type ProtoDriver interface {
 	// Get returns the mountpoint for the layered filesystem referred
 	// to by this id. You can optionally specify a mountLabel or "".
 	// Returns the absolute path to the mounted layered filesystem.
-	Get(id, mountLabel string) (dir string, err error)
+	Get(id, mountLabel string) (fs rootfs.RootFS, err error)
 	// Put releases the system resources for the specified id,
 	// e.g, unmounting layered filesystem.
 	Put(id string) error
@@ -112,6 +113,13 @@ type Driver interface {
 	DiffDriver
 }
 
+// LayerGetter is an interface to get the path to a layer on the host.
+type LayerGetter interface {
+	// GetLayerPath gets the path for the layer. This is different from Get()
+	// since that returns an interface to account for umountable layers.
+	GetLayerPath(id string) (string, error)
+}
+
 // Capabilities defines a list of capabilities a driver may implement.
 // These capabilities are not required; however, they do determine how a
 // graphdriver can be used.
@@ -150,6 +158,20 @@ type FileGetCloser interface {
 type Checker interface {
 	// IsMounted returns true if the provided path is mounted for the specific checker
 	IsMounted(path string) bool
+}
+
+// LocalGetFunc is a function definition that is identical if the file system
+// exists locally on the host.
+type LocalGetFunc func(string, string) (string, error)
+
+// WrapLocalGetFunc wraps the old graphdriver Get() interface (LocalGetFunc)
+// with the current graphdriver.Get() interface
+func WrapLocalGetFunc(id, mountLabel string, f LocalGetFunc) (rootfs.RootFS, error) {
+	mnt, err := f(id, mountLabel)
+	if err != nil {
+		return nil, err
+	}
+	return rootfs.NewLocalRootFS(mnt), nil
 }
 
 func init() {

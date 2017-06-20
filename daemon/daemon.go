@@ -944,14 +944,11 @@ func (daemon *Daemon) Shutdown() error {
 // Mount sets container.BaseFS
 // (is it not set coming in? why is it unset?)
 func (daemon *Daemon) Mount(container *container.Container) error {
-	dirStr, err := container.RWLayer.Mount(container.GetMountLabel())
+	dir, err := container.RWLayer.Mount(container.GetMountLabel())
 	if err != nil {
 		return err
 	}
-	logrus.Debugf("container mounted via layerStore: %v", dirStr)
-
-	//TODO @gupta-ak. To break the commit into smaller chunks, have this here for now.
-	dir := rootfs.NewLocalRootFS(dirStr)
+	logrus.Debugf("container mounted via layerStore: %v", dir)
 
 	if container.BaseFS != nil && container.BaseFS.Path() != dir.Path() {
 		// The mount path reported by the graph driver should always be trusted on Windows, since the
@@ -1032,7 +1029,7 @@ func prepareTempDir(rootDir string, rootIDs idtools.IDPair) (string, error) {
 	return tmpDir, idtools.MkdirAllAndChown(tmpDir, 0700, rootIDs)
 }
 
-func (daemon *Daemon) setupInitLayer(initPath string) error {
+func (daemon *Daemon) setupInitLayer(initPath rootfs.RootFS) error {
 	rootIDs := daemon.idMappings.RootPair()
 	return initlayer.Setup(initPath, rootIDs)
 }

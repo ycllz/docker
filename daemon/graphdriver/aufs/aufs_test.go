@@ -39,6 +39,14 @@ func testInit(dir string, t testing.TB) graphdriver.Driver {
 	return d
 }
 
+func driverGet(d *Driver, id string, mntLabel string) (string, error) {
+	mnt, err := d.Get(id, mntLabel)
+	if err != nil {
+		return "", err
+	}
+	return mnt.Path(), nil
+}
+
 func newDriver(t testing.TB) *Driver {
 	if err := os.MkdirAll(tmp, 0755); err != nil {
 		t.Fatal(err)
@@ -165,7 +173,7 @@ func TestGetWithoutParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := path.Join(tmp, "diff", "1")
-	if diffPath != expected {
+	if diffPath.Path() != expected {
 		t.Fatalf("Expected path %s got %s", expected, diffPath)
 	}
 }
@@ -258,13 +266,13 @@ func TestMountWithParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mntPath == "" {
-		t.Fatal("mntPath should not be empty string")
+	if mntPath == nil {
+		t.Fatal("mntPath should not be nil")
 	}
 
 	expected := path.Join(tmp, "mnt", "2")
-	if mntPath != expected {
-		t.Fatalf("Expected %s got %s", expected, mntPath)
+	if mntPath.Path() != expected {
+		t.Fatalf("Expected %s got %s", expected, mntPath.Path())
 	}
 }
 
@@ -289,8 +297,8 @@ func TestRemoveMountedDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mntPath == "" {
-		t.Fatal("mntPath should not be empty string")
+	if mntPath == nil {
+		t.Fatal("mntPath should not be nil")
 	}
 
 	mounted, err := d.mounted(d.pathCache["2"])
@@ -324,7 +332,7 @@ func TestGetDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diffPath, err := d.Get("1", "")
+	diffPath, err := driverGet(d, "1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +376,7 @@ func TestChanges(t *testing.T) {
 		}
 	}()
 
-	mntPoint, err := d.Get("2", "")
+	mntPoint, err := driverGet(d, "2", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +415,7 @@ func TestChanges(t *testing.T) {
 	if err := d.CreateReadWrite("3", "2", nil); err != nil {
 		t.Fatal(err)
 	}
-	mntPoint, err = d.Get("3", "")
+	mntPoint, err = driverGet(d, "3", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +461,7 @@ func TestDiffSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diffPath, err := d.Get("1", "")
+	diffPath, err := driverGet(d, "1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +503,7 @@ func TestChildDiffSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diffPath, err := d.Get("1", "")
+	diffPath, err := driverGet(d, "1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +605,7 @@ func TestApplyDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diffPath, err := d.Get("1", "")
+	diffPath, err := driverGet(d, "1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,7 +640,7 @@ func TestApplyDiff(t *testing.T) {
 
 	// Ensure that the file is in the mount point for id 3
 
-	mountPoint, err := d.Get("3", "")
+	mountPoint, err := driverGet(d, "3", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,7 +684,7 @@ func testMountMoreThan42Layers(t *testing.T, mountPath string) {
 			t.Logf("Current layer %d", i)
 			t.Error(err)
 		}
-		point, err := d.Get(current, "")
+		point, err := driverGet(d, current, "")
 		if err != nil {
 			t.Logf("Current layer %d", i)
 			t.Error(err)
@@ -699,7 +707,7 @@ func testMountMoreThan42Layers(t *testing.T, mountPath string) {
 	}
 
 	// Perform the actual mount for the top most image
-	point, err := d.Get(last, "")
+	point, err := driverGet(d, last, "")
 	if err != nil {
 		t.Error(err)
 	}
