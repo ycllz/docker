@@ -48,7 +48,9 @@ func (container *Container) ResolvePath(path string) (resolvedPath, absPath stri
 // resolved to a path on the host corresponding to the given absolute path
 // inside the container.
 func (container *Container) StatPath(resolvedPath, absPath string) (stat *types.ContainerPathStat, err error) {
-	lstat, err := os.Lstat(resolvedPath)
+	driver := container.BaseFS
+
+	lstat, err := driver.Lstat(resolvedPath)
 	if err != nil {
 		return nil, err
 	}
@@ -61,17 +63,17 @@ func (container *Container) StatPath(resolvedPath, absPath string) (stat *types.
 			return nil, err
 		}
 
-		linkTarget, err = filepath.Rel(container.BaseFS, hostPath)
+		linkTarget, err = filepath.Rel(driver.Path(), hostPath)
 		if err != nil {
 			return nil, err
 		}
 
 		// Make it an absolute path.
-		linkTarget = filepath.Join(string(filepath.Separator), linkTarget)
+		linkTarget = driver.Join(string(driver.Separator()), linkTarget)
 	}
 
 	return &types.ContainerPathStat{
-		Name:       filepath.Base(absPath),
+		Name:       driver.Base(absPath),
 		Size:       lstat.Size(),
 		Mode:       lstat.Mode(),
 		Mtime:      lstat.ModTime(),
