@@ -749,5 +749,7 @@ func (n *naiveDiffPathDriver) DiffGetter(id string) (graphdriver.FileGetCloser, 
 	if err != nil {
 		return nil, err
 	}
-	return &fileGetPutter{storage.NewPathFileGetter(p), n.Driver, id}, nil
+	// TODO: @gupta-ak: Most likely, we will implement DiffGetter in the LCOW driver
+	// so we can assume this will be a local file system.
+	return &fileGetPutter{storage.NewPathFileGetter(p.Path()), n.Driver, id}, nil
 }
