@@ -46,6 +46,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/locker"
 	mountpk "github.com/docker/docker/pkg/mount"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/system"
 
 	rsystem "github.com/opencontainers/runc/libcontainer/system"
@@ -341,7 +342,11 @@ func (a *Driver) Remove(id string) error {
 
 // Get returns the rootfs path for the id.
 // This will mount the dir at its given path
-func (a *Driver) Get(id, mountLabel string) (string, error) {
+func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
+	return graphdriver.WrapLocalGetFunc(id, mountLabel, d.get)
+}
+
+func (a *Driver) get(id, mountLabel string) (string, error) {
 	a.locker.Lock(id)
 	defer a.locker.Unlock(id)
 	parents, err := a.getParentLayerPaths(id)

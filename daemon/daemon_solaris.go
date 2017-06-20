@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/parsers/kernel"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/sysinfo"
 	refstore "github.com/docker/docker/reference"
 	"github.com/docker/libnetwork"
@@ -97,7 +98,7 @@ func setupDaemonRoot(config *Config, rootDir string, rootUID, rootGID int) error
 	return nil
 }
 
-func (daemon *Daemon) getLayerInit() func(string) error {
+func (daemon *Daemon) getLayerInit() func(rootfs.RootFS) error {
 	return nil
 }
 
