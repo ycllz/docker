@@ -43,6 +43,7 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/docker/docker/pkg/registrar"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/signal"
 	"github.com/docker/docker/pkg/sysinfo"
 	"github.com/docker/docker/pkg/system"
@@ -971,17 +972,20 @@ func (daemon *Daemon) Shutdown() error {
 // Mount sets container.BaseFS
 // (is it not set coming in? why is it unset?)
 func (daemon *Daemon) Mount(container *container.Container) error {
-	dir, err := container.RWLayer.Mount(container.GetMountLabel())
+	dirStr, err := container.RWLayer.Mount(container.GetMountLabel())
 	if err != nil {
 		return err
 	}
-	logrus.Debugf("container mounted via layerStore: %v", dir)
+	logrus.Debugf("container mounted via layerStore: %v", dirStr)
 
-	if container.BaseFS != dir {
+	//TODO @gupta-ak. To break the commit into smaller chunks, have this here for now.
+	dir := rootfs.NewLocalRootFS(dirStr)
+
+	if container.BaseFS != nil && container.BaseFS.Path() != dir.Path() {
 		// The mount path reported by the graph driver should always be trusted on Windows, since the
 		// volume path for a given mounted layer may change over time.  This should only be an error
 		// on non-Windows operating systems.
-		if container.BaseFS != "" && runtime.GOOS != "windows" {
+		if runtime.GOOS != "windows" {
 			daemon.Unmount(container)
 			return fmt.Errorf("Error: driver %s is returning inconsistent paths for container %s ('%s' then '%s')",
 				daemon.GraphDriverName(container.Platform), container.ID, container.BaseFS, dir)
