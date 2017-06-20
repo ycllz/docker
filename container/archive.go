@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/system"
@@ -21,7 +22,10 @@ func (container *Container) ResolvePath(path string) (resolvedPath, absPath stri
 	}
 
 	// Consider the given path as an absolute path in the container.
-	absPath = archive.PreserveTrailingDotOrSeparator(filepath.Join(string(filepath.Separator), path), path)
+	absPath = archive.PreserveTrailingDotOrSeparator(
+		filepath.Join(string(filepath.Separator), path),
+		path,
+		pathdriver.LocalPathDriver)
 
 	// Split the absPath into its Directory and Base components. We will
 	// resolve the dir in the scope of the container then append the base.
