@@ -137,7 +137,7 @@ func (daemon *Daemon) createSpecWindowsFields(c *container.Container, s *specs.S
 
 	s.Root.Readonly = false // Windows does not support a read-only root filesystem
 	if !isHyperV {
-		s.Root.Path = c.BaseFS // This is not set for Hyper-V containers
+		s.Root.Path = c.BaseFS.Path()
 	}
 
 	// In s.Windows.Resources
