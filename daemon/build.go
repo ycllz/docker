@@ -38,7 +38,12 @@ func (rl *releaseableLayer) Mount() (string, error) {
 		return "", errors.Wrap(err, "failed to create rwlayer")
 	}
 
-	return rl.rwLayer.Mount("")
+	// TODO: @gupta-ak. Fix this for later commit.
+	path, err := rl.rwLayer.Mount("")
+	if err != nil {
+		return "", err
+	}
+	return path.Path(), nil
 }
 
 func (rl *releaseableLayer) Commit(platform string) (builder.ReleaseableLayer, error) {

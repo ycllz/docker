@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/system"
 	"github.com/jhowardmsft/opengcs/gogcs/client"
 )
@@ -271,9 +272,13 @@ func (d *Driver) Remove(id string) error {
 // Get returns the rootfs path for the id. It is reference counted and
 // effectively can be thought of as a "mount the layer into the utility
 // vm if it isn't already"
-func (d *Driver) Get(id, mountLabel string) (string, error) {
+func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
 	dir, _, _, err := d.getEx(id)
-	return dir, err
+	if err != nil {
+		return nil, err
+	}
+	// TODO: @gupta-ak. Change later.
+	return rootfs.NewLocalRootFS(dir), nil
 }
 
 // getEx is Get, but also returns the cache-entry and the size of the VHD
