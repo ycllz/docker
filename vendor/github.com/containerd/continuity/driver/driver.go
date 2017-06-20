@@ -23,6 +23,7 @@ type Driver interface {
 	// is because os.File is a struct, so if Open was to return *os.File,
 	// the only way to fulfill the interface would be to call os.Open()
 	Open(path string) (File, error)
+	OpenFile(path string, flag int, perm os.FileMode) (File, error)
 
 	Stat(path string) (os.FileInfo, error)
 	Lstat(path string) (os.FileInfo, error)
@@ -104,6 +105,10 @@ var LocalDriver Driver = &driver{}
 
 func (d *driver) Open(p string) (File, error) {
 	return os.Open(p)
+}
+
+func (d *driver) OpenFile(path string, flag int, perm os.FileMode) (File, error) {
+	return os.OpenFile(path, flag, perm)
 }
 
 func (d *driver) Stat(p string) (os.FileInfo, error) {
