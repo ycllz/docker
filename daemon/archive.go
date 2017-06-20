@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/pkg/archive"
@@ -220,7 +221,10 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 	// that you can extract an archive to a symlink that points to a directory.
 
 	// Consider the given path as an absolute path in the container.
-	absPath := archive.PreserveTrailingDotOrSeparator(filepath.Join(string(filepath.Separator), path), path)
+	absPath := archive.PreserveTrailingDotOrSeparator(
+		filepath.Join(string(filepath.Separator), path),
+		path,
+		pathdriver.LocalPathDriver)
 
 	// This will evaluate the last path element if it is a symlink.
 	resolvedPath, err := container.GetResourcePath(absPath)
