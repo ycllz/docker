@@ -16,7 +16,7 @@ import (
 // an error if the path points to outside the container's rootfs.
 func (container *Container) ResolvePath(path string) (resolvedPath, absPath string, err error) {
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
-	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path)
+	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path, pathdriver.LocalPathDriver)
 	if err != nil {
 		return "", "", err
 	}
