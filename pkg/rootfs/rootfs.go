@@ -1,8 +1,11 @@
 package rootfs
 
 import (
+	"path/filepath"
+
 	"github.com/containerd/continuity/driver"
 	"github.com/containerd/continuity/pathdriver"
+	"github.com/docker/docker/pkg/symlink"
 )
 
 // RootFS is that represents a root file system
@@ -11,12 +14,17 @@ type RootFS interface {
 	// on the local system, so the continuity operations must be used
 	Path() string
 
+	// ResolveScopedPath evaluates the given absolute path scoped to
+	// the root. For example, if root=/a, and path=/b/c, then this function
+	// would return /a/b/c
+	ResolveScopedPath(path string) (string, error)
+
 	// Driver & PathDriver provide methods to manipulate files & paths
 	driver.Driver
 	pathdriver.PathDriver
 }
 
-// NewLocalMount is a helper function to implement daemon's Mount interface
+// NewLocalRoot is a helper function to implement daemon's Mount interface
 // when the graphdriver mount point is a local path on the machine.
 func NewLocalRootFS(path string) RootFS {
 	return &local{
@@ -34,4 +42,9 @@ type local struct {
 
 func (l *local) Path() string {
 	return l.path
+}
+
+func (l *local) ResolveScopedPath(path string) (string, error) {
+	cleanedPath := filepath.Join(l.path, cleanScopedPath(path))
+	return symlink.FollowSymlinkInScope(cleanedPath, l.path)
 }

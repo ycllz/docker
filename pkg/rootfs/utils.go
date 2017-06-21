@@ -24,7 +24,6 @@ func ReadFile(r RootFS, filename string) ([]byte, error) {
 	}
 
 	return data, nil
-
 }
 
 func WriteFile(r RootFS, filename string, data []byte, perm os.FileMode) error {
