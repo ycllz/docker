@@ -112,13 +112,6 @@ type Container struct {
 	NetworkSharedContainerID string
 }
 
-// PathResolver resolves a path scoped to the container rooted
-// at the container's BaseFS.Path(). If the underlying graphdriver
-// Mount interface implements this method, the container will call it.
-type PathResolver interface {
-	ResolveScopedPath(path string) (string, error)
-}
-
 // NewBaseContainer creates a new container with its
 // basic configuration.
 func NewBaseContainer(id, root string) *Container {
@@ -283,48 +276,15 @@ func (container *Container) SetupWorkingDirectory(rootIDs idtools.IDPair) error 
 func (container *Container) GetResourcePath(path string) (string, error) {
 	// IMPORTANT - These are paths on the OS where the daemon is running, hence
 	// any filepath operations must be done in an OS agnostic way.
-	var resolvedPath string
-	var err error
-
-	cleanPath := container.cleanResourcePath(path)
-	fullPath := container.BaseFS.Join(container.BaseFS.Path(), cleanPath)
-
-	if pr, ok := container.BaseFS.(PathResolver); ok {
-		resolvedPath, err = pr.ResolveScopedPath(fullPath)
-	} else {
-		resolvedPath, err = symlink.FollowSymlinkInScope(fullPath, container.BaseFS.Path())
-	}
+	r, e := container.BaseFS.ResolveScopedPath(path)
 
 	// Log this here on the daemon side as there's otherwise no indication apart
 	// from the error being propagated all the way back to the client. This makes
 	// debugging significantly easier and clearly indicates the error comes from the daemon.
-	if err != nil {
-		logrus.Errorf("Failed to FollowSymlinkInScope BaseFS %s cleanPath %s path %s %s\n", container.BaseFS.Path(), fullPath, path, err)
+	if e != nil {
+		logrus.Errorf("Failed to ResolveScopedPath BaseFS %s path %s %s\n", container.BaseFS.Path(), path, e)
 	}
-	return resolvedPath, err
-}
-
-// cleanResourcePath cleans a resource path.
-// For linux containers, it prepares to combine with a mnt path.
-// For windows containers, it removes the C:\ syntax, and prepares
-// to combine with a volume path
-func (container *Container) cleanResourcePath(path string) string {
-	driver := container.BaseFS
-
-	// TODO: @gupta-ak. Hack to make work. Once platform stuff is in,
-	// we can check the explicitly.
-	if driver.Separator() == '/' {
-		// Non-windows clean
-		return driver.Join(string(driver.Separator()), path)
-	}
-
-	if len(path) >= 2 {
-		c := path[0]
-		if path[1] == ':' && ('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z') {
-			path = path[2:]
-		}
-	}
-	return driver.Join(string(driver.Separator()), path)
+	return r, e
 }
 
 // GetRootResourcePath evaluates `path` in the scope of the container's root, with proper path
