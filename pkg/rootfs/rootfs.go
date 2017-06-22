@@ -19,6 +19,9 @@ type RootFS interface {
 	// would return /a/b/c
 	ResolveScopedPath(path string) (string, error)
 
+	// TODO: @gupta-ak. Add this to the continuity API
+	Match(pattern, name string) (matched bool, err error)
+
 	// Driver & PathDriver provide methods to manipulate files & paths
 	driver.Driver
 	pathdriver.PathDriver
@@ -47,4 +50,8 @@ func (l *local) Path() string {
 func (l *local) ResolveScopedPath(path string) (string, error) {
 	cleanedPath := filepath.Join(l.path, cleanScopedPath(path))
 	return symlink.FollowSymlinkInScope(cleanedPath, l.path)
+}
+
+func (l *local) Match(pattern, name string) (bool, error) {
+	return filepath.Match(pattern, name)
 }

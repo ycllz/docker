@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/registry"
 	"github.com/pkg/errors"
@@ -25,7 +26,7 @@ type releaseableLayer struct {
 	rwLayer    layer.RWLayer
 }
 
-func (rl *releaseableLayer) Mount() (string, error) {
+func (rl *releaseableLayer) Mount() (rootfs.RootFS, error) {
 	var err error
 	var chainID layer.ChainID
 	if rl.roLayer != nil {
@@ -35,15 +36,14 @@ func (rl *releaseableLayer) Mount() (string, error) {
 	mountID := stringid.GenerateRandomID()
 	rl.rwLayer, err = rl.layerStore.CreateRWLayer(mountID, chainID, nil)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to create rwlayer")
+		return nil, errors.Wrap(err, "failed to create rwlayer")
 	}
 
-	// TODO: @gupta-ak. Fix this for later commit.
 	path, err := rl.rwLayer.Mount("")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return path.Path(), nil
+	return path, nil
 }
 
 func (rl *releaseableLayer) Commit(platform string) (builder.ReleaseableLayer, error) {
