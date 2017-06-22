@@ -2,6 +2,7 @@ package rootfs
 
 import (
 	"path/filepath"
+	"runtime"
 
 	"github.com/containerd/continuity/driver"
 	"github.com/containerd/continuity/pathdriver"
@@ -19,6 +20,15 @@ type RootFS interface {
 	// would return /a/b/c
 	ResolveScopedPath(path string) (string, error)
 
+	Driver
+}
+
+// TODO: @gupta-ak. Maybe this belongs in continuity instead?
+type Driver interface {
+	// Platform returns the OS where the rootfs is located. Essentially,
+	// runtime.GOOS for everything aside from LCOW, which is "linux"
+	Platform() string
+
 	// TODO: @gupta-ak. Add this to the continuity API
 	Match(pattern, name string) (matched bool, err error)
 
@@ -32,6 +42,13 @@ type RootFS interface {
 func NewLocalRootFS(path string) RootFS {
 	return &local{
 		path:       path,
+		Driver:     driver.LocalDriver,
+		PathDriver: pathdriver.LocalPathDriver,
+	}
+}
+
+func NewLocalDriver() Driver {
+	return &local{
 		Driver:     driver.LocalDriver,
 		PathDriver: pathdriver.LocalPathDriver,
 	}
@@ -54,4 +71,8 @@ func (l *local) ResolveScopedPath(path string) (string, error) {
 
 func (l *local) Match(pattern, name string) (bool, error) {
 	return filepath.Match(pattern, name)
+}
+
+func (l *local) Platform() string {
+	return runtime.GOOS
 }
