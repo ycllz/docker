@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -368,7 +369,12 @@ func downloadSource(output io.Writer, stdout io.Writer, srcURL string) (remote b
 
 type copyFileOptions struct {
 	decompress bool
-	archiver   *archive.Archiver
+	archiver   archive.Archiver
+}
+
+type copyEndpoint struct {
+	driver rootfs.Driver
+	path   string
 }
 
 func performCopyForInfo(dest copyInfo, source copyInfo, options copyFileOptions) error {
@@ -376,6 +382,7 @@ func performCopyForInfo(dest copyInfo, source copyInfo, options copyFileOptions)
 	if err != nil {
 		return err
 	}
+
 	destPath, err := dest.fullPath()
 	if err != nil {
 		return err
@@ -383,57 +390,72 @@ func performCopyForInfo(dest copyInfo, source copyInfo, options copyFileOptions)
 
 	archiver := options.archiver
 
-	src, err := os.Stat(srcPath)
+	srcEndpoint := &copyEndpoint{driver: source.root, path: srcPath}
+	destEndpoint := &copyEndpoint{driver: dest.root, path: destPath}
+
+	src, err := source.root.Stat(srcPath)
 	if err != nil {
 		return errors.Wrapf(err, "source path not found")
 	}
 	if src.IsDir() {
-		return copyDirectory(archiver, srcPath, destPath)
+		return copyDirectory(archiver, srcEndpoint, destEndpoint)
 	}
-	if options.decompress && archive.IsArchivePath(srcPath) {
+	if options.decompress && archive.IsArchivePath(source.root, srcPath) {
 		return archiver.UntarPath(srcPath, destPath)
 	}
 
-	destExistsAsDir, err := isExistingDirectory(destPath)
+	destExistsAsDir, err := isExistingDirectory(destEndpoint)
 	if err != nil {
 		return err
 	}
 	// dest.path must be used because destPath has already been cleaned of any
 	// trailing slash
-	if endsInSlash(dest.path) || destExistsAsDir {
+	if endsInSlash(dest.root, dest.path) || destExistsAsDir {
 		// source.path must be used to get the correct filename when the source
 		// is a symlink
-		destPath = filepath.Join(destPath, filepath.Base(source.path))
+		destPath = dest.root.Join(destPath, source.root.Base(source.path))
+		destEndpoint = &copyEndpoint{driver: dest.root, path: destPath}
 	}
-	return copyFile(archiver, srcPath, destPath)
+	return copyFile(archiver, srcEndpoint, destEndpoint)
 }
 
-func copyDirectory(archiver *archive.Archiver, source, dest string) error {
-	if err := archiver.CopyWithTar(source, dest); err != nil {
+func copyDirectory(archiver archive.Archiver, source, dest *copyEndpoint) error {
+	if err := archiver.CopyWithTar(source.path, dest.path); err != nil {
 		return errors.Wrapf(err, "failed to copy directory")
 	}
-	return fixPermissions(source, dest, archiver.IDMappings.RootPair())
+	// TODO: @gupta-ak. Not 100% sure how user mappings will work in lcow.
+	return fixPermissions(source.path, dest.path, archiver.IDMappings().RootPair())
 }
 
-func copyFile(archiver *archive.Archiver, source, dest string) error {
-	rootIDs := archiver.IDMappings.RootPair()
+func copyFile(archiver archive.Archiver, source, dest *copyEndpoint) error {
+	rootIDs := archiver.IDMappings().RootPair()
 
-	if err := idtools.MkdirAllAndChownNew(filepath.Dir(dest), 0755, rootIDs); err != nil {
-		return errors.Wrapf(err, "failed to create new directory")
+	if runtime.GOOS == "windows" && dest.driver.Platform() == "linux" {
+		// LCOW
+		if err := dest.driver.MkdirAll(dest.driver.Dir(dest.path), 0755); err != nil {
+			return errors.Wrapf(err, "failed to create new directory")
+		}
+	} else {
+		if err := idtools.MkdirAllAndChownNew(filepath.Dir(dest.path), 0755, rootIDs); err != nil {
+			// Normal containers
+			return errors.Wrapf(err, "failed to create new directory")
+		}
 	}
-	if err := archiver.CopyFileWithTar(source, dest); err != nil {
+
+	if err := archiver.CopyFileWithTar(source.path, dest.path); err != nil {
 		return errors.Wrapf(err, "failed to copy file")
 	}
-	return fixPermissions(source, dest, rootIDs)
+	// TODO: @gupta-ak. Not 100% sure how user mappings will work in lcow.
+	return fixPermissions(source.path, dest.path, rootIDs)
 }
 
-func endsInSlash(path string) bool {
-	return strings.HasSuffix(path, string(os.PathSeparator))
+func endsInSlash(driver rootfs.Driver, path string) bool {
+	return strings.HasSuffix(path, string(driver.Separator()))
 }
 
 // isExistingDirectory returns true if the path exists and is a directory
-func isExistingDirectory(path string) (bool, error) {
-	destStat, err := os.Stat(path)
+func isExistingDirectory(point *copyEndpoint) (bool, error) {
+	destStat, err := point.driver.Stat(point.path)
 	switch {
 	case os.IsNotExist(err):
 		return false, nil

@@ -86,9 +86,7 @@ func (c *lazySource) prepareHash(relPath string, fi os.FileInfo) (string, error)
 // handle UUID paths in windows.
 func Rel(basepath rootfs.RootFS, targpath string) (string, error) {
 	// filepath.Rel can't handle UUID paths in windows
-	if basepath.Separator() == '\\' {
-		// @TODO gupta-ak: sorta a hack to figure out if rootfs is windows.
-		// could also add back the && runtime.GOOS == "windows"
+	if basepath.Platform() == "windows" {
 		pfx := basepath.Path() + `\`
 		if strings.HasPrefix(targpath, pfx) {
 			p := strings.TrimPrefix(targpath, pfx)
