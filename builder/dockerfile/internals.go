@@ -125,6 +125,7 @@ func (b *Builder) performCopy(state *dispatchState, inst copyInstruction) error 
 		return err
 	}
 
+	// TODO: @gupta-ak: Add archiver here.
 	opts := copyFileOptions{
 		decompress: inst.allowLocalDecompression,
 		archiver:   b.archiver,
