@@ -17,8 +17,8 @@ import (
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/progress"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/streamformatter"
-	"github.com/docker/docker/pkg/symlink"
 	"github.com/docker/docker/pkg/system"
 	"github.com/docker/docker/pkg/urlutil"
 	"github.com/pkg/errors"
@@ -32,13 +32,13 @@ type pathCache interface {
 // copyInfo is a data object which stores the metadata about each source file in
 // a copyInstruction
 type copyInfo struct {
-	root string
+	root rootfs.RootFS
 	path string
 	hash string
 }
 
 func (c copyInfo) fullPath() (string, error) {
-	return symlink.FollowSymlinkInScope(filepath.Join(c.root, c.path), c.root)
+	return c.root.ResolveScopedPath(c.path)
 }
 
 func newCopyInfoFromSource(source builder.Source, path string, hash string) copyInfo {
@@ -117,11 +117,12 @@ func (o *copier) getCopyInfoForSourcePath(orig string) ([]copyInfo, error) {
 	if !urlutil.IsURL(orig) {
 		return o.calcCopyInfo(orig, true)
 	}
+
 	remote, path, err := o.download(orig)
 	if err != nil {
 		return nil, err
 	}
-	o.tmpPaths = append(o.tmpPaths, remote.Root())
+	o.tmpPaths = append(o.tmpPaths, remote.Root().Path())
 
 	hash, err := remote.Hash(path)
 	return newCopyInfos(newCopyInfoFromSource(remote, path, hash)), err
@@ -203,12 +204,13 @@ func (o *copier) storeInPathCache(im *imageMount, path string, hash string) {
 }
 
 func (o *copier) copyWithWildcards(origPath string) ([]copyInfo, error) {
+	root := o.source.Root()
 	var copyInfos []copyInfo
-	if err := filepath.Walk(o.source.Root(), func(path string, info os.FileInfo, err error) error {
+	if err := root.Walk(root.Path(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := remotecontext.Rel(o.source.Root(), path)
+		rel, err := remotecontext.Rel(root, path)
 		if err != nil {
 			return err
 		}
@@ -216,7 +218,7 @@ func (o *copier) copyWithWildcards(origPath string) ([]copyInfo, error) {
 		if rel == "." {
 			return nil
 		}
-		if match, _ := filepath.Match(origPath, rel); !match {
+		if match, _ := root.Match(origPath, rel); !match {
 			return nil
 		}
 
@@ -359,7 +361,8 @@ func downloadSource(output io.Writer, stdout io.Writer, srcURL string) (remote b
 		return
 	}
 
-	lc, err := remotecontext.NewLazySource(tmpDir)
+	// TODO: @gupta-ak. Okay for download to always be onto local daemon?
+	lc, err := remotecontext.NewLazySource(rootfs.NewLocalRootFS(tmpDir))
 	return lc, filename, err
 }
 

@@ -3,24 +3,23 @@ package remotecontext
 import (
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/ioutils"
-	"github.com/docker/docker/pkg/symlink"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/tarsum"
 	"github.com/pkg/errors"
 )
 
 type tarSumContext struct {
-	root string
+	root rootfs.RootFS
 	sums tarsum.FileInfoSums
 }
 
 func (c *tarSumContext) Close() error {
-	return os.RemoveAll(c.root)
+	return c.root.RemoveAll(c.root.Path())
 }
 
 func convertPathError(err error, cleanpath string) error {
@@ -52,7 +51,7 @@ func MakeTarSumContext(tarStream io.Reader) (builder.Source, error) {
 		return nil, err
 	}
 
-	tsc := &tarSumContext{root: root}
+	tsc := &tarSumContext{root: rootfs.NewLocalRootFS(root)}
 
 	// Make sure we clean-up upon error.  In the happy case the caller
 	// is expected to manage the clean-up
@@ -82,7 +81,7 @@ func MakeTarSumContext(tarStream io.Reader) (builder.Source, error) {
 	return tsc, nil
 }
 
-func (c *tarSumContext) Root() string {
+func (c *tarSumContext) Root() rootfs.RootFS {
 	return c.root
 }
 
@@ -91,7 +90,7 @@ func (c *tarSumContext) Remove(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(fullpath)
+	return c.root.RemoveAll(fullpath)
 }
 
 func (c *tarSumContext) Hash(path string) (string, error) {
@@ -100,14 +99,14 @@ func (c *tarSumContext) Hash(path string) (string, error) {
 		return "", err
 	}
 
-	rel, err := filepath.Rel(c.root, fullpath)
+	rel, err := c.root.Rel(c.root.Path(), fullpath)
 	if err != nil {
 		return "", convertPathError(err, cleanpath)
 	}
 
 	// Use the checksum of the followed path(not the possible symlink) because
 	// this is the file that is actually copied.
-	if tsInfo := c.sums.GetFile(filepath.ToSlash(rel)); tsInfo != nil {
+	if tsInfo := c.sums.GetFile(c.root.ToSlash(rel)); tsInfo != nil {
 		return tsInfo.Sum(), nil
 	}
 	// We set sum to path by default for the case where GetFile returns nil.
@@ -115,13 +114,13 @@ func (c *tarSumContext) Hash(path string) (string, error) {
 	return path, nil // backwards compat TODO: see if really needed
 }
 
-func normalize(path, root string) (cleanPath, fullPath string, err error) {
-	cleanPath = filepath.Clean(string(os.PathSeparator) + path)[1:]
-	fullPath, err = symlink.FollowSymlinkInScope(filepath.Join(root, path), root)
+func normalize(path string, root rootfs.RootFS) (cleanPath, fullPath string, err error) {
+	cleanPath = root.Clean(string(root.Separator()) + path)[1:]
+	fullPath, err = root.ResolveScopedPath(path)
 	if err != nil {
 		return "", "", errors.Wrapf(err, "forbidden path outside the build context: %s (%s)", path, cleanPath)
 	}
-	if _, err := os.Lstat(fullPath); err != nil {
+	if _, err := root.Lstat(fullPath); err != nil {
 		return "", "", convertPathError(err, path)
 	}
 	return
