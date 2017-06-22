@@ -50,7 +50,7 @@ type SessionGetter interface {
 
 // BuildManager is shared across all Builder objects
 type BuildManager struct {
-	archiver  *archive.Archiver
+	archiver  archive.Archiver
 	backend   builder.Backend
 	pathCache pathCache // TODO: make this persistent
 	sg        SessionGetter
@@ -160,7 +160,7 @@ type builderOptions struct {
 	Backend        builder.Backend
 	ProgressWriter backend.ProgressWriter
 	PathCache      pathCache
-	Archiver       *archive.Archiver
+	Archiver       archive.Archiver
 	Platform       string
 }
 
@@ -177,7 +177,7 @@ type Builder struct {
 	docker    builder.Backend
 	clientCtx context.Context
 
-	archiver         *archive.Archiver
+	archiver         archive.Archiver
 	buildStages      *buildStages
 	disableCommit    bool
 	buildArgs        *buildArgs
