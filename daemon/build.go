@@ -26,7 +26,7 @@ type releaseableLayer struct {
 	rwLayer    layer.RWLayer
 }
 
-func (rl *releaseableLayer) Mount() (string, error) {
+func (rl *releaseableLayer) Mount() (rootfs.RootFS, error) {
 	var err error
 	var mountPath rootfs.RootFS
 	var chainID layer.ChainID
@@ -37,7 +37,7 @@ func (rl *releaseableLayer) Mount() (string, error) {
 	mountID := stringid.GenerateRandomID()
 	rl.rwLayer, err = rl.layerStore.CreateRWLayer(mountID, chainID, nil)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to create rwlayer")
+		return nil, errors.Wrap(err, "failed to create rwlayer")
 	}
 
 	mountPath, err = rl.rwLayer.Mount("")
@@ -49,10 +49,10 @@ func (rl *releaseableLayer) Mount() (string, error) {
 			logrus.Errorf("Failed to release RWLayer: %s", err)
 		}
 		rl.rwLayer = nil
-		return "", err
+		return nil, err
 	}
 
-	return mountPath.Path(), nil
+	return mountPath, nil
 }
 
 func (rl *releaseableLayer) Commit(platform string) (builder.ReleaseableLayer, error) {
