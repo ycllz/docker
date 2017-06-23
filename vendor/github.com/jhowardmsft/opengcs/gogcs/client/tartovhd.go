@@ -28,6 +28,7 @@ func (config *Config) TarToVhd(targetVHDFile string, reader io.Reader) (int64, e
 	defer file.Close()
 
 	command := fmt.Sprintf("tar2vhd -known_size %d", fileSize)
+	command = "tar2vhd"
 	process, err := config.createUtilsProcess(command)
 	if err != nil {
 		return 0, fmt.Errorf("opengcs: TarToVhd: %s: failed to create utils process tar2vhd: %s", targetVHDFile, err)
