@@ -62,6 +62,9 @@ type Driver struct {
 	cacheMu sync.Mutex
 	// cache is the cache of all the IDs we've mounted/unmounted.
 	cache map[string]cacheType
+
+	firstMu         sync.Mutex
+	scratchAttached bool
 }
 
 // InitLCOW returns a new LCOW storage driver.
@@ -431,6 +434,23 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 	if err := d.startUvm(fmt.Sprintf("applydiff %s", id)); err != nil {
 		return 0, err
 	}
+
+	// Attach a sandbox to the Service VM so that it has scratch space.
+	d.firstMu.Lock()
+	if !d.scratchAttached {
+		err := d.config.CreateSandbox(filepath.Join(d.dir(id), sandboxFilename), client.DefaultSandboxSizeMB, d.cachedSandboxFile)
+		if err != nil {
+			return 0, err
+		}
+
+		vhdFilename := filepath.Join(d.dir(id), sandboxFilename)
+		logrus.Debugf("%s %s: Hot-Adding %s", "applydiff", id, vhdFilename)
+		if err := d.config.HotAddVhd(vhdFilename, "/mnt/gcs/LinuxServiceVM/scratch"); err != nil {
+			return 0, fmt.Errorf("%s hot add %s failed: %s", "applydiff", vhdFilename, err)
+		}
+		d.scratchAttached = true
+	}
+	d.firstMu.Unlock()
 
 	return d.config.TarToVhd(filepath.Join(d.homeDir, id, "layer.vhd"), diff)
 }

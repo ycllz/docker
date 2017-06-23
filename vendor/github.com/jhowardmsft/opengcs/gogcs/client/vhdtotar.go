@@ -29,8 +29,13 @@ func (config *Config) VhdToTar(vhdFile string, uvmMountPath string, isSandbox bo
 	defer vhdHandle.Close()
 	logrus.Debugf("opengcs: VhdToTar: exporting %s, size %d, isSandbox %t", vhdHandle.Name(), vhdSize, isSandbox)
 
+	fi, err := vhdHandle.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("opengcs: VhdToTar: failed to open %s: %s", vhdHandle.Name(), err)
+	}
+
 	// Different binary depending on whether a RO layer or a RW sandbox
-	command := "vhd2tar"
+	command := fmt.Sprintf("vhd2tar -known_size %d", fi.Size())
 	if isSandbox {
 		command = fmt.Sprintf("exportSandbox -path %s", uvmMountPath)
 	}

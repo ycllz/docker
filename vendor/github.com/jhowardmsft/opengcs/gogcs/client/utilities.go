@@ -12,6 +12,8 @@ import (
 	"time"
 	"unsafe"
 
+	"io/ioutil"
+
 	"github.com/Sirupsen/logrus"
 )
 
@@ -107,4 +109,23 @@ func copyFile(srcFile, destFile string) error {
 	}
 	return nil
 
+}
+
+func getTarSize(r io.Reader) (*os.File, int64, error) {
+	file, err := ioutil.TempFile("", "")
+	if err != nil {
+		return nil, 0, err
+	}
+
+	size, err := io.Copy(file, r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return file, size, nil
 }

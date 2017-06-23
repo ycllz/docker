@@ -7,6 +7,7 @@ package client
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/Sirupsen/logrus"
 )
@@ -19,14 +20,22 @@ func (config *Config) TarToVhd(targetVHDFile string, reader io.Reader) (int64, e
 		return 0, fmt.Errorf("cannot Tar2Vhd as no utility VM is in configuration")
 	}
 
-	process, err := config.createUtilsProcess("tar2vhd")
+	file, fileSize, err := getTarSize(reader)
+	if err != nil {
+		return 0, fmt.Errorf("could not get vhd size for tar2vhd")
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+
+	command := fmt.Sprintf("tar2vhd -known_size %d", fileSize)
+	process, err := config.createUtilsProcess(command)
 	if err != nil {
 		return 0, fmt.Errorf("opengcs: TarToVhd: %s: failed to create utils process tar2vhd: %s", targetVHDFile, err)
 	}
 	defer process.Process.Close()
 
 	// Send the tarstream into the `tar2vhd`s stdin
-	if _, err = copyWithTimeout(process.Stdin, reader, 0, config.UvmTimeoutSeconds, fmt.Sprintf("send %s, to stdin of tar2vhd", targetVHDFile)); err != nil {
+	if _, err = copyWithTimeout(process.Stdin, file, 0, config.UvmTimeoutSeconds, fmt.Sprintf("send %s, to stdin of tar2vhd", targetVHDFile)); err != nil {
 		return 0, fmt.Errorf("opengcs: TarToVhd: %s: failed to send to tar2vhd in uvm: %s", targetVHDFile, err)
 	}
 
