@@ -92,7 +92,7 @@ func copyFile(srcFile, destFile string) error {
 		uintptr(unsafe.Pointer(lpNewFileName)),
 		uintptr(bFailIfExists))
 	if r1 == 0 {
-		return fmt.Errorf("failed CopyFileW Win32 call from '%s' to %s: %s", srcFile, destFile, err)
+		return fmt.Errorf("failed CopyFileW Win32 call from '%s' to '%s': %s", srcFile, destFile, err)
 	}
 	return nil
 

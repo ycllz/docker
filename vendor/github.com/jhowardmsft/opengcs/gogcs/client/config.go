@@ -39,7 +39,7 @@ const (
 	ModeRequestKernelInitrd
 
 	// defaultUvmTimeoutSeconds is the default time to wait for utility VM operations
-	defaultUvmTimeoutSeconds = 5 * 60
+	defaultUvmTimeoutSeconds = 60 * 60
 
 	// DefaultSandboxSizeMB is the size of the default sandbox size in MB
 	DefaultSandboxSizeMB = 20 * 1024 * 1024
