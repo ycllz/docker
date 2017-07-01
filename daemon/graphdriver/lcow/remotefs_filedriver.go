@@ -2,72 +2,84 @@ package lcow
 
 import (
 	"os"
+	"runtime"
+
+	"fmt"
 
 	"github.com/containerd/continuity/driver"
-	"github.com/pkg/errors"
 )
 
 var _ driver.Driver = &lcowfs{}
 
+func panicNotImplemented() {
+	pc, _, _, _ := runtime.Caller(1)
+	name := runtime.FuncForPC(pc).Name()
+	panic(fmt.Sprintf("Not implemented: %s\n", name))
+}
+
 func (d *lcowfs) Open(p string) (driver.File, error) {
-	return os.Open(p)
+	panicNotImplemented()
+	return nil, nil
 }
 
 func (d *lcowfs) OpenFile(path string, flag int, perm os.FileMode) (driver.File, error) {
-	return os.OpenFile(path, flag, perm)
-}
-
-func (d *lcowfs) Stat(p string) (os.FileInfo, error) {
-	return os.Stat(p)
-}
-
-func (d *lcowfs) Lstat(p string) (os.FileInfo, error) {
-	return os.Lstat(p)
+	panicNotImplemented()
+	return nil, nil
 }
 
 func (d *lcowfs) Readlink(p string) (string, error) {
-	return os.Readlink(p)
+	panicNotImplemented()
+	return "", nil
 }
 
 func (d *lcowfs) Mkdir(p string, mode os.FileMode) error {
-	return os.Mkdir(p, mode)
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) Remove(path string) error {
-	return os.Remove(path)
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) Link(oldname, newname string) error {
-	return os.Link(oldname, newname)
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) Lchown(name string, uid, gid int64) error {
 	// TODO: error out if uid excesses int bit width?
-	return os.Lchown(name, int(uid), int(gid))
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) Symlink(oldname, newname string) error {
-	return os.Symlink(oldname, newname)
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) RemoveAll(path string) error {
-	return os.RemoveAll(path)
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) Mknod(path string, mode os.FileMode, major, minor int) error {
-	return errors.Wrap(ErrNotSupported, "cannot create device node on Windows")
+	panicNotImplemented()
+	return nil
 }
 
 func (d *lcowfs) Mkfifo(path string, mode os.FileMode) error {
-	return errors.Wrap(ErrNotSupported, "cannot create fifo on Windows")
+	panicNotImplemented()
+	return nil
 }
 
 // Lchmod changes the mode of an file not following symlinks.
 func (d *lcowfs) Lchmod(path string, mode os.FileMode) (err error) {
-	// TODO: Use Window's equivalent
-	return os.Chmod(path, mode)
+	panicNotImplemented()
+	return nil
 }

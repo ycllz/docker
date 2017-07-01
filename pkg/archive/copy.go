@@ -39,7 +39,7 @@ func PreserveTrailingDotOrSeparator(cleanedPath string, originalPath string, dri
 		if !hasTrailingPathSeparator(cleanedPath, driver) {
 			// Add a separator if it doesn't already end with one (a cleaned
 			// path would only end in a separator if it is the root).
-			cleanedPath += string(filepath.Separator)
+			cleanedPath += string(sep)
 		}
 		cleanedPath += "."
 	}

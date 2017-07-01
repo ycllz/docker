@@ -273,43 +273,38 @@ func (d *Driver) Remove(id string) error {
 // effectively can be thought of as a "mount the layer into the utility
 // vm if it isn't already"
 func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
-	dir, _, _, err := d.getEx(id)
+	_, mnt, _, _, err := d.getEx(id)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: @gupta-ak. Change later.
-	return rootfs.NewLocalRootFS(dir), nil
+
+	return &lcowfs{
+		root:   mnt,
+		config: d.config,
+	}, nil
 }
 
 // getEx is Get, but also returns the cache-entry and the size of the VHD
-func (d *Driver) getEx(id string) (string, cacheType, int64, error) {
+func (d *Driver) getEx(id string) (string, string, cacheType, int64, error) {
 	title := "lcowdriver: getEx"
 	logrus.Debugf("%s %s", title, id)
 
 	if err := d.startUvm(fmt.Sprintf("getex %s", id)); err != nil {
 		logrus.Debugf("%s failed to start utility vm: %s", title, err)
-		return "", cacheType{}, 0, err
+		return "", "", cacheType{}, 0, err
 	}
 
 	// Work out what we are working on
 	vhdFilename, vhdSize, isSandbox, err := client.LayerVhdDetails(d.dir(id))
 	if err != nil {
 		logrus.Debugf("%s failed to get LayerVhdDetails from %s: %s", title, d.dir(id), err)
-		return "", cacheType{}, 0, fmt.Errorf("%s failed to open layer or sandbox VHD to open in %s: %s", title, d.dir(id), err)
+		return "", "", cacheType{}, 0, fmt.Errorf("%s failed to open layer or sandbox VHD to open in %s: %s", title, d.dir(id), err)
 	}
 	logrus.Debugf("%s %s, size %d, isSandbox %t", title, vhdFilename, vhdSize, isSandbox)
 
-	hotAddRequired := false
 	d.cacheMu.Lock()
 	var cacheEntry cacheType
 	if _, ok := d.cache[id]; !ok {
-		// The item is not currently in the cache.
-		//
-		// Sandboxes need hot-adding in the case that there is a single global utility VM
-		// This will change for multiple instances with the lifetime changes.
-		if isSandbox {
-			hotAddRequired = true
-		}
 		d.cache[id] = cacheType{
 			uvmPath:   fmt.Sprintf("/mnt/%s", id),
 			refCount:  1,
@@ -327,15 +322,49 @@ func (d *Driver) getEx(id string) (string, cacheType, int64, error) {
 	logrus.Debugf("%s %s: isSandbox %t, refCount %d", title, id, cacheEntry.isSandbox, cacheEntry.refCount)
 	d.cacheMu.Unlock()
 
-	if hotAddRequired {
-		logrus.Debugf("%s %s: Hot-Adding %s", title, id, vhdFilename)
-		if err := d.config.HotAddVhd(vhdFilename, cacheEntry.uvmPath); err != nil {
-			return "", cacheType{}, 0, fmt.Errorf("%s hot add %s failed: %s", title, vhdFilename, err)
-		}
+	logrus.Debugf("%s %s: Hot-Adding %s", title, id, vhdFilename)
+	if err := d.config.HotAddVhd(vhdFilename, cacheEntry.uvmPath); err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s hot add %s failed: %s", title, vhdFilename, err)
+	}
+
+	// TODO: @gupta-ak. This has to be worked properly to handle race conditions and
+	// 1 vs many service vm model.
+	// Mount all the layers now.
+	parentPaths, err := d.getParentMounts(id)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: failed to get parent mounts %s", title, err)
+	}
+
+	// Now do the union mount.
+	upper := fmt.Sprintf("%s/upper", cacheEntry.uvmPath)
+	work := fmt.Sprintf("%s/work", cacheEntry.uvmPath)
+	union := fmt.Sprintf("%s-mount", cacheEntry.uvmPath)
+
+	logrus.Debugf("%s: Doing the overlay mount with union directory=%s", title, union)
+	err = d.config.RunProcess(fmt.Sprintf("mkdir -p %s", union), nil, nil)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: mkdir failed: %s", title, err)
+	}
+
+	err = d.config.RunProcess(fmt.Sprintf("mkdir -p %s %s", upper, work), nil, nil)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: mkdir failed with: %s", title, err)
+	}
+
+	cmd := fmt.Sprintf("mount -t overlay overlay -olowerdir=%s,upperdir=%s,workdir=%s %s",
+		strings.Join(parentPaths, ","),
+		upper,
+		work,
+		union)
+
+	logrus.Debugf("%s: Executing mount=%s", title, cmd)
+	err = d.config.RunProcess(cmd, nil, nil)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: create overlay failed: %s", title, err)
 	}
 
 	logrus.Debugf("%s %s success. %s: %+v: size %d", title, id, d.dir(id), cacheEntry, vhdSize)
-	return d.dir(id), cacheEntry, vhdSize, nil
+	return d.dir(id), union, cacheEntry, vhdSize, nil
 }
 
 // Put does the reverse of get. If there are no more references to
@@ -365,12 +394,38 @@ func (d *Driver) Put(id string) error {
 		return nil
 	}
 
-	// No more references, so tear it down if previously hot-added
-	if entry.isSandbox {
-		logrus.Debugf("%s %s: Hot-Removing %s", title, id, entry.hostPath)
-		if err := d.config.HotRemoveVhd(entry.hostPath); err != nil {
+	// Delete the union mount
+	union := fmt.Sprintf("%s-mount", entry.uvmPath)
+	err := d.config.RunProcess(fmt.Sprintf("umount %s && rmdir %s", union, union), nil, nil)
+	if err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s: failed to unmount union mount: %s", title, err)
+	}
+
+	// Remove all the VHDs
+	logrus.Debugf("%s %s: Hot-Removing %s", title, id, entry.hostPath)
+	if err := d.config.HotRemoveVhd(entry.hostPath); err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s failed to hot-remove %s from service utility VM: %s", title, entry.hostPath, err)
+	}
+
+	layerChain, err := d.getLayerChain(id)
+	if err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s: failed to get parents: %s", title, err)
+	}
+
+	logrus.Debugf("%s %s: Hot-Removing %v", title, id, layerChain)
+	for _, layerPath := range layerChain {
+		vhdFilename, _, _, err := client.LayerVhdDetails(layerPath)
+		if err != nil {
+			logrus.Debugf("Failed to get LayerVhdDetails from %s: %s", layerPath, err)
+			return err
+		}
+
+		if err := d.config.HotRemoveVhd(vhdFilename); err != nil {
 			d.cacheMu.Unlock()
-			return fmt.Errorf("%s failed to hot-remove %s from service utility VM: %s", title, entry.hostPath, err)
+			return fmt.Errorf("%s failed to hot-remove %s from service utility vm: %s", title, layerPath, err)
 		}
 	}
 
@@ -541,4 +596,28 @@ func (d *Driver) setLayerChain(id string, chain []string) error {
 		return fmt.Errorf("lcowdriver: setlayerchain: %s failed to write layerchain file: %s", id, err)
 	}
 	return nil
+}
+
+func (d *Driver) getParentMounts(id string) ([]string, error) {
+	layerChain, err := d.getLayerChain(id)
+	if err != nil {
+		return nil, err
+	}
+
+	logrus.Debugf("Mounting all parent layers: %v", layerChain)
+	var parentPaths []string
+	for _, layerPath := range layerChain {
+		vhdFilename, _, _, err := client.LayerVhdDetails(layerPath)
+		if err != nil {
+			logrus.Debugf("Failed to get LayerVhdDetails from %s: %s", layerPath, err)
+			return nil, err
+		}
+
+		parentPath := fmt.Sprintf("/mnt/%s", filepath.Base(layerPath))
+		if err := d.config.HotAddVhd(vhdFilename, parentPath); err != nil {
+			return nil, err
+		}
+		parentPaths = append(parentPaths, parentPath)
+	}
+	return parentPaths, nil
 }
