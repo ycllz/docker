@@ -10,6 +10,9 @@ var (
 	// ErrComputeSystemDoesNotExist is an error encountered when the container being operated on no longer exists
 	ErrComputeSystemDoesNotExist = syscall.Errno(0xc037010e)
 
+	// ErrComputeSystemExist is an error encountered when the container already exists
+	ErrComputeSystemExist = syscall.Errno(0xc037010f)
+
 	// ErrElementNotFound is an error encountered when the object being referenced does not exist
 	ErrElementNotFound = syscall.Errno(0x490)
 
