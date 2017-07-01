@@ -4,13 +4,21 @@ import (
 	"fmt"
 	"io"
 
+	"bytes"
+
+	"github.com/Microsoft/hcsshim"
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/rootfs"
 )
 
 type lcowfs struct {
-	root string
+	root        string
+	d           *Driver
+	mappedDisks []hcsshim.MappedVirtualDisk
+	vmID        string
+	currentSVM  serviceVM
 }
 
 var _ rootfs.RootFS = &lcowfs{}
@@ -23,7 +31,21 @@ func (l *lcowfs) Path() string {
 }
 
 func (l *lcowfs) ResolveScopedPath(path string) (string, error) {
-	return path, nil
+	logrus.Debugf("XXX: EVALSYMLINK %s %s ", path, l.root)
+	arg1 := l.Join(l.root, path)
+	arg2 := l.root
+
+	output := &bytes.Buffer{}
+	cmd := fmt.Sprintf("remotefs resolvepath %s %s", arg1, arg2)
+	process, err := l.currentSVM.config.RunProcess(cmd, nil, output, nil)
+	if err != nil {
+		return "", err
+	}
+	process.Close()
+
+	logrus.Debugf("XXX: GOT RESOLVED PATH: %s\n", output.String())
+
+	return output.String(), nil
 }
 
 func (l *lcowfs) Platform() string {

@@ -43,7 +43,7 @@ func DefaultPathEnv(platform string) string {
 // /a			--> \a
 // d:\			--> Fail
 func CheckSystemDriveAndRemoveDriveLetter(path string, driver pathdriver.PathDriver) (string, error) {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != "windows" || LCOWSupported() {
 		return path, nil
 	}
 

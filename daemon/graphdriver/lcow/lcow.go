@@ -110,60 +110,16 @@ const (
 	scratchDirectory = "scratch"
 )
 
-// cacheItem is our internal structure representing an item in our local cache
-// of things that have been mounted.
-type cacheItem struct {
-	sync.Mutex        // Protects operations performed on this item
-	uvmPath    string // Path in utility VM
-	hostPath   string // Path on host
-	refCount   int    // How many times its been mounted
-	isSandbox  bool   // True if a sandbox
-	isMounted  bool   // True when mounted in a service VM
-}
-
-// setIsMounted is a helper function for a cacheItem which does exactly what it says
-func (ci *cacheItem) setIsMounted() {
-	logrus.Debugf("locking cache item for set isMounted")
-	ci.Lock()
-	defer ci.Unlock()
-	ci.isMounted = true
-	logrus.Debugf("set isMounted on cache item")
-}
-
-// incrementRefCount is a helper function for a cacheItem which does exactly what it says
-func (ci *cacheItem) incrementRefCount() {
-	logrus.Debugf("locking cache item for increment")
-	ci.Lock()
-	defer ci.Unlock()
-	ci.refCount++
-	logrus.Debugf("incremented refcount on cache item %+v", ci)
-}
-
-// serviceVMItem is our internal structure representing an item in our
-// map of service VMs we are maintaining.
-type serviceVMItem struct {
-	sync.Mutex                     // Serialises operations being performed in this service VM.
-	scratchAttached bool           // Has a scratch been attached?
-	config          *client.Config // Represents the service VM item.
-}
-
 // Driver represents an LCOW graph driver.
 type Driver struct {
-	dataRoot           string                    // Root path on the host where we are storing everything.
-	cachedSandboxFile  string                    // Location of the local default-sized cached sandbox.
-	cachedSandboxMutex sync.Mutex                // Protects race conditions from multiple threads creating the cached sandbox.
-	cachedScratchFile  string                    // Location of the local cached empty scratch space.
-	cachedScratchMutex sync.Mutex                // Protects race conditions from multiple threads creating the cached scratch.
-	options            []string                  // Graphdriver options we are initialised with.
-	serviceVmsMutex    sync.Mutex                // Protects add/updates/delete to the serviceVMs map.
-	serviceVms         map[string]*serviceVMItem // Map of the configs representing the service VM(s) we are running.
-	globalMode         bool                      // Indicates if running in an unsafe/global service VM mode.
-
-	// NOTE: It is OK to use a cache here because Windows does not support
-	// restoring containers when the daemon dies.
-
-	cacheMutex sync.Mutex            // Protects add/update/deletes to cache.
-	cache      map[string]*cacheItem // Map holding a cache of all the IDs we've mounted/unmounted.
+	dataRoot           string        // Root path on the host where we are storing everything.
+	cachedSandboxFile  string        // Location of the local default-sized cached sandbox.
+	cachedSandboxMutex sync.Mutex    // Protects race conditions from multiple threads creating the cached sandbox.
+	cachedScratchFile  string        // Location of the local cached empty scratch space.
+	cachedScratchMutex sync.Mutex    // Protects race conditions from multiple threads creating the cached scratch.
+	options            []string      // Graphdriver options we are initialised with.
+	serviceVms         *serviceVMMap // Map of the configs representing the service VM(s) we are running.
+	globalMode         bool          // Indicates if running in an unsafe/global service VM mode.
 }
 
 // layerDetails is the structure returned by a helper function `getLayerDetails`
@@ -196,8 +152,7 @@ func InitDriver(dataRoot string, options []string, _, _ []idtools.IDMap) (graphd
 		options:           options,
 		cachedSandboxFile: filepath.Join(cd, sandboxFilename),
 		cachedScratchFile: filepath.Join(cd, scratchFilename),
-		cache:             make(map[string]*cacheItem),
-		serviceVms:        make(map[string]*serviceVMItem),
+		serviceVms:        newServiceVMMap(),
 		globalMode:        false,
 	}
 
@@ -240,53 +195,61 @@ func InitDriver(dataRoot string, options []string, _, _ []idtools.IDMap) (graphd
 	return d, nil
 }
 
+func (d *Driver) getVMID(id string) string {
+	if d.globalMode {
+		return svmGlobalID
+	}
+	return id
+}
+
 // startServiceVMIfNotRunning starts a service utility VM if it is not currently running.
 // It can optionally be started with a mapped virtual disk. Returns a opengcs config structure
 // representing the VM.
-func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedVirtualDisk, context string) (*serviceVMItem, error) {
+func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd []hcsshim.MappedVirtualDisk, context string) (_ *serviceVM, err error) {
 	// Use the global ID if in global mode
-	if d.globalMode {
-		id = svmGlobalID
-	}
+	id = d.getVMID(id)
 
 	title := fmt.Sprintf("lcowdriver: startservicevmifnotrunning %s:", id)
 
-	// Make sure thread-safe when interrogating the map
-	logrus.Debugf("%s taking serviceVmsMutex", title)
-	d.serviceVmsMutex.Lock()
+	// Attempt to add ID to the service vm map
+	logrus.Debugf("%s: Adding entry to service vm map", title)
+	svm, exists, err := d.serviceVms.add(id)
+	if err != nil && err == errVMisTerminating {
+		// VM is in the process of terminating. Wait until it's done and and then try again
+		logrus.Debugf("%s: VM with current ID still in the process of terminating: %s", title, id)
+		if err := svm.getStopError(); err != nil {
+			logrus.Debugf("%s: VM %s did not stop succesfully: %s", title, id, err)
+			return nil, err
+		}
+		return d.startServiceVMIfNotRunning(id, mvdToAdd, context)
+	} else if err != nil {
+		logrus.Debugf("%s: failed to add service vm to map: %s", err)
+		return nil, fmt.Errorf("%s: failed to add to service vm map: %s", title, err)
+	}
 
-	// Nothing to do if it's already running except add the mapped drive if supplied.
-	if svm, ok := d.serviceVms[id]; ok {
-		logrus.Debugf("%s exists, releasing serviceVmsMutex", title)
-		d.serviceVmsMutex.Unlock()
+	defer func() {
+		// Signal that start has finished, passing in the error if any.
+		svm.signalStartFinished(err)
+		if err == nil {
+			return
+		}
 
-		if mvdToAdd != nil {
-			logrus.Debugf("hot-adding %s to %s", mvdToAdd.HostPath, mvdToAdd.ContainerPath)
+		// We added a ref to the VM, since we failed, we should delete the ref.
+		err = d.terminateServiceVM(id, "error path on startServiceVMIfNotRunning", false)
+	}()
 
-			// Ensure the item is locked while doing this
-			logrus.Debugf("%s locking serviceVmItem %s", title, svm.config.Name)
-			svm.Lock()
-
-			if err := svm.config.HotAddVhd(mvdToAdd.HostPath, mvdToAdd.ContainerPath, false, true); err != nil {
-				logrus.Debugf("%s releasing serviceVmItem %s on hot-add failure %s", title, svm.config.Name, err)
-				svm.Unlock()
-				return nil, fmt.Errorf("%s hot add %s to %s failed: %s", title, mvdToAdd.HostPath, mvdToAdd.ContainerPath, err)
-			}
-
-			logrus.Debugf("%s releasing serviceVmItem %s", title, svm.config.Name)
-			svm.Unlock()
+	if exists {
+		// Service VM is already up and running. In this case, just hot add the vhds.
+		logrus.Debugf("%s: service vm already exists. Just hot adding: %+v", title, mvdToAdd)
+		if err := svm.hotAddVHDs(mvdToAdd...); err != nil {
+			logrus.Debugf("%s: failed to hot add vhds on service vm creation: %s", title, err)
+			return nil, fmt.Errorf("%s: failed to hot add vhds on service vm: %s", title, err)
 		}
 		return svm, nil
 	}
 
-	// Release the lock early
-	logrus.Debugf("%s releasing serviceVmsMutex", title)
-	d.serviceVmsMutex.Unlock()
-
-	// So we are starting one. First need an enpty structure.
-	svm := &serviceVMItem{
-		config: &client.Config{},
-	}
+	// We are the first service for this id, so we need to start it
+	logrus.Debugf("%s: service vm doesn't exist. Now starting it up: %s", title, id)
 
 	// Generate a default configuration
 	if err := svm.config.GenerateDefault(d.options); err != nil {
@@ -327,13 +290,12 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 		svm.config.MappedVirtualDisks = append(svm.config.MappedVirtualDisks, mvd)
 		svm.scratchAttached = true
 	}
+
 	logrus.Debugf("%s releasing cachedScratchMutex", title)
 	d.cachedScratchMutex.Unlock()
 
 	// If requested to start it with a mapped virtual disk, add it now.
-	if mvdToAdd != nil {
-		svm.config.MappedVirtualDisks = append(svm.config.MappedVirtualDisks, *mvdToAdd)
-	}
+	svm.config.MappedVirtualDisks = append(svm.config.MappedVirtualDisks, mvdToAdd...)
 
 	// Start it.
 	logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) starting %s", context, svm.config.Name)
@@ -341,40 +303,17 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 		return nil, fmt.Errorf("failed to start service utility VM (%s): %s", context, err)
 	}
 
-	// As it's now running, add it to the map, checking for a race where another
-	// thread has simultaneously tried to start it.
-	logrus.Debugf("%s locking serviceVmsMutex for insertion", title)
-	d.serviceVmsMutex.Lock()
-	if svm, ok := d.serviceVms[id]; ok {
-		logrus.Debugf("%s releasing serviceVmsMutex after insertion but exists", title)
-		d.serviceVmsMutex.Unlock()
-		return svm, nil
-	}
-	d.serviceVms[id] = svm
-	logrus.Debugf("%s releasing serviceVmsMutex after insertion", title)
-	d.serviceVmsMutex.Unlock()
-
 	// Now we have a running service VM, we can create the cached scratch file if it doesn't exist.
 	logrus.Debugf("%s locking cachedScratchMutex", title)
 	d.cachedScratchMutex.Lock()
 	if _, err := os.Stat(d.cachedScratchFile); err != nil {
 		logrus.Debugf("%s (%s): creating an SVM scratch - locking serviceVM", title, context)
-		svm.Lock()
-		if err := svm.config.CreateExt4Vhdx(scratchTargetFile, client.DefaultVhdxSizeGB, d.cachedScratchFile); err != nil {
-			logrus.Debugf("%s (%s): releasing serviceVM on error path from CreateExt4Vhdx: %s", title, context, err)
-			svm.Unlock()
+		if err := svm.createExt4VHDX(scratchTargetFile, client.DefaultVhdxSizeGB, d.cachedScratchFile); err != nil {
 			logrus.Debugf("%s (%s): releasing cachedScratchMutex on error path", title, context)
 			d.cachedScratchMutex.Unlock()
-
-			// Do a force terminate and remove it from the map on failure, ignoring any errors
-			if err2 := d.terminateServiceVM(id, "error path from CreateExt4Vhdx", true); err2 != nil {
-				logrus.Warnf("failed to terminate service VM on error path from CreateExt4Vhdx: %s", err2)
-			}
-
+			logrus.Debugf("%s: failed to create vm scratch %s: %s", title, scratchTargetFile, err)
 			return nil, fmt.Errorf("failed to create SVM scratch VHDX (%s): %s", context, err)
 		}
-		logrus.Debugf("%s (%s): releasing serviceVM after %s created and cached to %s", title, context, scratchTargetFile, d.cachedScratchFile)
-		svm.Unlock()
 	}
 	logrus.Debugf("%s (%s): releasing cachedScratchMutex", title, context)
 	d.cachedScratchMutex.Unlock()
@@ -382,92 +321,81 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 	// Hot-add the scratch-space if not already attached
 	if !svm.scratchAttached {
 		logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) hot-adding scratch %s - locking serviceVM", context, scratchTargetFile)
-		svm.Lock()
-		if err := svm.config.HotAddVhd(scratchTargetFile, toolsScratchPath, false, true); err != nil {
-			logrus.Debugf("%s (%s): releasing serviceVM on error path of HotAddVhd: %s", title, context, err)
-			svm.Unlock()
-
-			// Do a force terminate and remove it from the map on failure, ignoring any errors
-			if err2 := d.terminateServiceVM(id, "error path from HotAddVhd", true); err2 != nil {
-				logrus.Warnf("failed to terminate service VM on error path from HotAddVhd: %s", err2)
-			}
-
+		if err := svm.hotAddVHDs(hcsshim.MappedVirtualDisk{
+			HostPath:          scratchTargetFile,
+			ContainerPath:     toolsScratchPath,
+			CreateInUtilityVM: true,
+		}); err != nil {
+			logrus.Debugf("%s: failed to hot-add scratch %s: %s", title, scratchTargetFile, err)
 			return nil, fmt.Errorf("failed to hot-add %s failed: %s", scratchTargetFile, err)
 		}
-		logrus.Debugf("%s (%s): releasing serviceVM", title, context)
-		svm.Unlock()
 	}
 
 	logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) success", context)
 	return svm, nil
 }
 
-// getServiceVM returns the appropriate service utility VM instance, optionally
-// deleting it from the map (but not the global one)
-func (d *Driver) getServiceVM(id string, deleteFromMap bool) (*serviceVMItem, error) {
-	logrus.Debugf("lcowdriver: getservicevm:locking serviceVmsMutex")
-	d.serviceVmsMutex.Lock()
-	defer func() {
-		logrus.Debugf("lcowdriver: getservicevm:releasing serviceVmsMutex")
-		d.serviceVmsMutex.Unlock()
-	}()
-	if d.globalMode {
-		id = svmGlobalID
-	}
-	if _, ok := d.serviceVms[id]; !ok {
-		return nil, fmt.Errorf("getservicevm for %s failed as not found", id)
-	}
-	svm := d.serviceVms[id]
-	if deleteFromMap && id != svmGlobalID {
-		logrus.Debugf("lcowdriver: getservicevm: removing %s from map", id)
-		delete(d.serviceVms, id)
-	}
-	return svm, nil
-}
-
-// terminateServiceVM terminates a service utility VM if its running, but does nothing
-// when in global mode as it's lifetime is limited to that of the daemon.
-func (d *Driver) terminateServiceVM(id, context string, force bool) error {
-
+// terminateServiceVM terminates a service utility VM if its running if it's,
+// not being used by any goroutine, but does nothing when in global mode as it's
+// lifetime is limited to that of the daemon. If the force flag is set, then
+// the VM will be killed regardless of the ref count or if it's global.
+func (d *Driver) terminateServiceVM(id, context string, force bool) (err error) {
 	// We don't do anything in safe mode unless the force flag has been passed, which
 	// is only the case for cleanup at driver termination.
-	if d.globalMode {
-		if !force {
-			logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - doing nothing as in global mode", id, context)
-			return nil
-		}
-		id = svmGlobalID
+	if d.globalMode && !force {
+		logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - doing nothing as in global mode", id, context)
+		return nil
 	}
 
-	// Get the service VM and delete it from the map
-	svm, err := d.getServiceVM(id, true)
+	id = d.getVMID(id)
+
+	// Get the service VM and reduce the ref count
+	lastRef, err := d.serviceVms.reduceRef(id)
 	if err != nil {
-		return err
+		// Bug in the code... starts not matched with terminates
+		logrus.Debugf("attempted to start unknown service vm %s", id)
+		return fmt.Errorf("attempted to start unknown service vm %s", id)
+	}
+
+	if !lastRef && !force {
+		// Don't need to do anything since we all we need to is lower ref count.
+		return nil
+	}
+
+	svm, ok := d.serviceVms.get(id)
+	if !ok {
+		// Bug in the code... some goroutine deleted even if it was not supposed to
+		logrus.Debugf("attempted to start unknown service vm %s", id)
+		return fmt.Errorf("attempted to start unknown service vm %s", id)
 	}
 
 	// We run the deletion of the scratch as a deferred function to at least attempt
 	// clean-up in case of errors.
 	defer func() {
-		if svm.scratchAttached {
-			scratchTargetFile := filepath.Join(d.dataRoot, scratchDirectory, fmt.Sprintf("%s.vhdx", id))
-			logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - deleting scratch %s", id, context, scratchTargetFile)
-			if err := os.Remove(scratchTargetFile); err != nil {
-				logrus.Warnf("failed to remove scratch file %s (%s): %s", scratchTargetFile, context, err)
-			}
+		scratchTargetFile := filepath.Join(d.dataRoot, scratchDirectory, fmt.Sprintf("%s.vhdx", id))
+		logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - deleting scratch %s", id, context, scratchTargetFile)
+		if errRemove := os.Remove(scratchTargetFile); errRemove != nil {
+			logrus.Warnf("failed to remove scratch file %s (%s): %s", scratchTargetFile, context, errRemove)
+			err = errRemove
 		}
+
+		// This function shouldn't actually return error unless there is a bug
+		if errDelete := d.serviceVms.deleteID(id); errDelete != nil {
+			logrus.Warnf("failed to service vm from svm map %s (%s): %s", id, context, errDelete)
+		}
+
+		// Signal that this VM has stopped
+		svm.signalStopFinished(err)
 	}()
 
-	// Nothing to do if it's not running
-	if svm.config.Uvm != nil {
-		logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - calling terminate", id, context)
-		if err := svm.config.Uvm.Terminate(); err != nil {
-			return fmt.Errorf("failed to terminate utility VM (%s): %s", context, err)
-		}
+	logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - calling terminate", id, context)
+	if err := svm.config.Uvm.Terminate(); err != nil {
+		return fmt.Errorf("failed to terminate utility VM (%s): %s", context, err)
+	}
 
-		logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - waiting for utility VM to terminate", id, context)
-		if err := svm.config.Uvm.WaitTimeout(time.Duration(svm.config.UvmTimeoutSeconds) * time.Second); err != nil {
-			return fmt.Errorf("failed waiting for utility VM to terminate (%s): %s", context, err)
-		}
+	logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - waiting for utility VM to terminate", id, context)
+	if err := svm.config.Uvm.WaitTimeout(time.Duration(svm.config.UvmTimeoutSeconds) * time.Second); err != nil {
+		return fmt.Errorf("failed waiting for utility VM to terminate (%s): %s", context, err)
 	}
 
 	logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - success", id, context)
@@ -563,25 +491,18 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 		}()
 	}
 
-	// Synchronise the operation in the service VM.
-	logrus.Debugf("%s: locking svm for sandbox creation", title)
-	svm.Lock()
-	defer func() {
-		logrus.Debugf("%s: releasing svm for sandbox creation", title)
-		svm.Unlock()
-	}()
-
 	// Make sure we don't write to our local cached copy if this is for a non-default size request.
 	targetCacheFile := d.cachedSandboxFile
 	if sandboxSize != client.DefaultVhdxSizeGB {
 		targetCacheFile = ""
 	}
 
-	// Actually do the creation.
-	if err := svm.config.CreateExt4Vhdx(filepath.Join(d.dir(id), sandboxFilename), uint32(sandboxSize), targetCacheFile); err != nil {
+	// Create the ext4 vhdx
+	logrus.Debugf("%s: creating sandbox ext4 vhdx", title)
+	if err := svm.createExt4VHDX(filepath.Join(d.dir(id), sandboxFilename), uint32(sandboxSize), targetCacheFile); err != nil {
+		logrus.Debugf("%s: failed to create sandbox vhdx for %s: %s", title, id, err)
 		return err
 	}
-
 	return nil
 }
 
@@ -655,39 +576,20 @@ func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
 	title := fmt.Sprintf("lcowdriver: get: %s", id)
 	logrus.Debugf(title)
 
-	// Work out what we are working on
-	ld, err := getLayerDetails(d.dir(id))
+	// Generate the mounts needed for the defered operation.
+	disks, err := d.getAllMounts(id)
 	if err != nil {
-		logrus.Debugf("%s failed to get layer details from %s: %s", title, d.dir(id), err)
-		return nil, fmt.Errorf("%s failed to open layer or sandbox VHD to open in %s: %s", title, d.dir(id), err)
+		logrus.Debugf("%s failed to get all layer details for %s: %s", title, d.dir(id), err)
+		return nil, fmt.Errorf("%s failed to get layer details for %s: %s", title, d.dir(id), err)
 	}
-	logrus.Debugf("%s %s, size %d, isSandbox %t", title, ld.filename, ld.size, ld.isSandbox)
 
-	// Add item to cache, or update existing item, but ensure we have the
-	// lock while updating items.
-	logrus.Debugf("%s: locking cacheMutex", title)
-	d.cacheMutex.Lock()
-	var cacheEntry *cacheItem
-	if entry, ok := d.cache[id]; !ok {
-		// The item is not currently in the cache.
-		cacheEntry = &cacheItem{
-			refCount:  1,
-			isSandbox: ld.isSandbox,
-			hostPath:  ld.filename,
-			uvmPath:   fmt.Sprintf("/mnt/%s", id),
-			isMounted: false, // we defer this as an optimisation
-		}
-		d.cache[id] = cacheEntry
-		logrus.Debugf("%s: added cache item %+v", title, cacheEntry)
-	} else {
-		// Increment the reference counter in the cache.
-		entry.incrementRefCount()
-	}
-	logrus.Debugf("%s: releasing cacheMutex", title)
-	d.cacheMutex.Unlock()
-
-	logrus.Debugf("%s %s success. %s: %+v: size %d", title, id, d.dir(id), cacheEntry, ld.size)
-	return rootfs.NewLocalRootFS(d.dir(id)), nil
+	logrus.Debugf("%s: got layer mounts: %+v", disks)
+	return &lcowfs{
+		root:        unionMountName(disks),
+		d:           d,
+		mappedDisks: disks,
+		vmID:        d.getVMID(id),
+	}, nil
 }
 
 // Put does the reverse of get. If there are no more references to
@@ -695,69 +597,25 @@ func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
 func (d *Driver) Put(id string) error {
 	title := fmt.Sprintf("lcowdriver: put: %s", id)
 
-	logrus.Debugf("%s: locking cacheMutex", title)
-	d.cacheMutex.Lock()
-	entry, ok := d.cache[id]
+	// Generate the mounts that Get() might have mounted
+	disks, err := d.getAllMounts(id)
+	if err != nil {
+		logrus.Debugf("%s failed to get all layer details for %s: %s", title, d.dir(id), err)
+		return fmt.Errorf("%s failed to get layer details for %s: %s", title, d.dir(id), err)
+	}
+
+	// Get the service VM that we need to remove from
+	svm, ok := d.serviceVms.get(id)
 	if !ok {
-		logrus.Debugf("%s: releasing cacheMutex on error path", title)
-		d.cacheMutex.Unlock()
-		return fmt.Errorf("%s possible ref-count error, or invalid id was passed to the graphdriver. Cannot handle id %s as it's not in the cache", title, id)
+		logrus.Debugf("%s failed to get vm for %s: %s", title, d.dir(id), err)
+		return fmt.Errorf("%s failed to get vm for %s: %s", title, d.dir(id), err)
 	}
 
-	// Are we just decrementing the reference count?
-	logrus.Debugf("%s: locking cache item for possible decrement", title)
-	entry.Lock()
-	if entry.refCount > 1 {
-		entry.refCount--
-		logrus.Debugf("%s: releasing cache item for decrement and early get-out as refCount is now %d", title, entry.refCount)
-		entry.Unlock()
-		logrus.Debugf("%s: refCount decremented to %d. Releasing cacheMutex", title, entry.refCount)
-		d.cacheMutex.Unlock()
-		return nil
-	}
-	logrus.Debugf("%s: releasing cache item", title)
-	entry.Unlock()
-	logrus.Debugf("%s: releasing cacheMutex. Ref count has dropped to zero", title)
-	d.cacheMutex.Unlock()
-
-	// To reach this point, the reference count has dropped to zero. If we have
-	// done a mount and we are in global mode, then remove it. We don't
-	// need to remove in safe mode as the service VM is going to be torn down
-	// anyway.
-
-	if d.globalMode {
-		logrus.Debugf("%s: locking cache item at zero ref-count", title)
-		entry.Lock()
-		defer func() {
-			logrus.Debugf("%s: releasing cache item at zero ref-count", title)
-			entry.Unlock()
-		}()
-		if entry.isMounted {
-			svm, err := d.getServiceVM(id, false)
-			if err != nil {
-				return err
-			}
-
-			logrus.Debugf("%s: Hot-Removing %s. Locking svm", title, entry.hostPath)
-			svm.Lock()
-			if err := svm.config.HotRemoveVhd(entry.hostPath); err != nil {
-				logrus.Debugf("%s: releasing svm on error path", title)
-				svm.Unlock()
-				return fmt.Errorf("%s failed to hot-remove %s from global service utility VM: %s", title, entry.hostPath, err)
-			}
-			logrus.Debugf("%s: releasing svm", title)
-			svm.Unlock()
-		}
-	}
-
-	// Remove from the cache map.
-	logrus.Debugf("%s: Locking cacheMutex to delete item from cache", title)
-	d.cacheMutex.Lock()
-	delete(d.cache, id)
-	logrus.Debugf("%s: releasing cacheMutex after item deleted from cache", title)
-	d.cacheMutex.Unlock()
-
-	logrus.Debugf("%s %s: refCount 0. %s (%s) completed successfully", title, id, entry.hostPath, entry.uvmPath)
+	// Now, we want to perform the unmounts, hot-remove and stop the service vm.
+	err = svm.deleteUnionMount(unionMountName(disks))
+	svm.hotRemoveVHDs(disks...)
+	d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
+	logrus.Debugf("Put succeeded on id %s", id)
 	return nil
 }
 
@@ -766,15 +624,6 @@ func (d *Driver) Put(id string) error {
 // still left if the daemon was killed while it was removing a layer.
 func (d *Driver) Cleanup() error {
 	title := "lcowdriver: cleanup"
-
-	d.cacheMutex.Lock()
-	for k, v := range d.cache {
-		logrus.Debugf("%s cache item: %s: %+v", title, k, v)
-		if v.refCount > 0 {
-			logrus.Warnf("%s leaked %s: %+v", title, k, v)
-		}
-	}
-	d.cacheMutex.Unlock()
 
 	items, err := ioutil.ReadDir(d.dataRoot)
 	if err != nil {
@@ -800,7 +649,7 @@ func (d *Driver) Cleanup() error {
 
 	// Cleanup any service VMs we have running, along with their scratch spaces.
 	// We don't take the lock for this as it's taken in terminateServiceVm.
-	for k, v := range d.serviceVms {
+	for k, v := range d.serviceVms.svms {
 		logrus.Debugf("%s svm entry: %s: %+v", title, k, v)
 		d.terminateServiceVM(k, "cleanup", true)
 	}
@@ -818,64 +667,39 @@ func (d *Driver) Cleanup() error {
 func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 	title := fmt.Sprintf("lcowdriver: diff: %s", id)
 
-	logrus.Debugf("%s: locking cacheMutex", title)
-	d.cacheMutex.Lock()
-	if _, ok := d.cache[id]; !ok {
-		logrus.Debugf("%s: releasing cacheMutex on error path", title)
-		d.cacheMutex.Unlock()
-		return nil, fmt.Errorf("%s fail as %s is not in the cache", title, id)
-	}
-	cacheEntry := d.cache[id]
-	logrus.Debugf("%s: releasing cacheMutex", title)
-	d.cacheMutex.Unlock()
-
-	// Stat to get size
-	logrus.Debugf("%s: locking cacheEntry", title)
-	cacheEntry.Lock()
-	fileInfo, err := os.Stat(cacheEntry.hostPath)
+	// Get VHDX info
+	hostPath, vhdSize, isSandbox, err := getLayerDetails(d.dir(id))
 	if err != nil {
-		logrus.Debugf("%s: releasing cacheEntry on error path", title)
-		cacheEntry.Unlock()
-		return nil, fmt.Errorf("%s failed to stat %s: %s", title, cacheEntry.hostPath, err)
+		logrus.Debugf("%s: failed to get vhdx information of %s: %s", title, d.dir(id), err)
+		return nil, err
 	}
-	logrus.Debugf("%s: releasing cacheEntry", title)
-	cacheEntry.Unlock()
 
 	// Start the SVM with a mapped virtual disk. Note that if the SVM is
 	// already runing and we are in global mode, this will be
 	// hot-added.
-	mvd := &hcsshim.MappedVirtualDisk{
-		HostPath:          cacheEntry.hostPath,
-		ContainerPath:     cacheEntry.uvmPath,
+	mvd := hcsshim.MappedVirtualDisk{
+		HostPath:          hostPath,
+		ContainerPath:     hostToGuest(hostPath),
 		CreateInUtilityVM: true,
 		ReadOnly:          true,
 	}
 
 	logrus.Debugf("%s: starting service VM", title)
-	svm, err := d.startServiceVMIfNotRunning(id, mvd, fmt.Sprintf("diff %s", id))
+	svm, err := d.startServiceVMIfNotRunning(id, []hcsshim.MappedVirtualDisk{mvd}, fmt.Sprintf("diff %s", id))
 	if err != nil {
 		return nil, err
 	}
 
-	// Set `isMounted` for the cache item. Note that we re-scan the cache
-	// at this point as it's possible the cacheEntry changed during the long-
-	// running operation above when we weren't holding the cacheMutex lock.
-	logrus.Debugf("%s: locking cacheMutex for updating isMounted", title)
-	d.cacheMutex.Lock()
-	if _, ok := d.cache[id]; !ok {
-		logrus.Debugf("%s: releasing cacheMutex on error path of isMounted", title)
-		d.cacheMutex.Unlock()
+	logrus.Debugf("lcowdriver: diff: waiting for svm to finish booting")
+	err = svm.getStartError()
+	if err != nil {
 		d.terminateServiceVM(id, fmt.Sprintf("diff %s", id), false)
-		return nil, fmt.Errorf("%s fail as %s is not in the cache when updating isMounted", title, id)
+		return nil, fmt.Errorf("lcowdriver: diff: svm failed to boot: %s", err)
 	}
-	cacheEntry = d.cache[id]
-	cacheEntry.setIsMounted()
-	logrus.Debugf("%s: releasing cacheMutex for updating isMounted", title)
-	d.cacheMutex.Unlock()
 
 	// Obtain the tar stream for it
-	logrus.Debugf("%s %s, size %d, isSandbox %t", title, cacheEntry.hostPath, fileInfo.Size(), cacheEntry.isSandbox)
-	tarReadCloser, err := svm.config.VhdToTar(cacheEntry.hostPath, cacheEntry.uvmPath, cacheEntry.isSandbox, fileInfo.Size())
+	logrus.Debugf("%s %s, size %d, ReadOnly %t", title, hostPath, mvd.ContainerPath, vhdSize, isSandbox)
+	tarReadCloser, err := svm.config.VhdToTar(mvd.HostPath, mvd.ContainerPath, isSandbox, vhdSize)
 	if err != nil {
 		d.terminateServiceVM(id, fmt.Sprintf("diff %s", id), false)
 		return nil, fmt.Errorf("%s failed to export layer to tar stream for id: %s, parent: %s : %s", title, id, parent, err)
@@ -887,6 +711,7 @@ func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 	if !d.globalMode {
 		return ioutils.NewReadCloserWrapper(tarReadCloser, func() error {
 			tarReadCloser.Close()
+			svm.hotRemoveVHDs(mvd)
 			d.terminateServiceVM(id, fmt.Sprintf("diff %s", id), false)
 			return nil
 		}), nil
@@ -907,6 +732,12 @@ func (d *Driver) ApplyDiff(id, parent string, diff io.Reader) (int64, error) {
 		return 0, err
 	}
 	defer d.terminateServiceVM(id, fmt.Sprintf("applydiff %s", id), false)
+
+	logrus.Debugf("lcowdriver: applydiff: waiting for svm to finish booting")
+	err = svm.getStartError()
+	if err != nil {
+		return 0, fmt.Errorf("lcowdriver: applydiff: svm failed to boot: %s", err)
+	}
 
 	// TODO @jhowardmsft - the retries are temporary to overcome platform reliablity issues.
 	// Obviously this will be removed as platform bugs are fixed.
@@ -993,25 +824,52 @@ func (d *Driver) setLayerChain(id string, chain []string) error {
 // getLayerDetails is a utility for getting a file name, size and indication of
 // sandbox for a VHD(x) in a folder. A read-only layer will be layer.vhd. A
 // read-write layer will be sandbox.vhdx.
-func getLayerDetails(folder string) (*layerDetails, error) {
+func getLayerDetails(folder string) (string, int64, bool, error) {
 	var fileInfo os.FileInfo
-	ld := &layerDetails{
-		isSandbox: false,
-		filename:  filepath.Join(folder, layerFilename),
-	}
+	isSandbox := false
+	filename := filepath.Join(folder, layerFilename)
+	var err error
 
-	fileInfo, err := os.Stat(ld.filename)
-	if err != nil {
-		ld.filename = filepath.Join(folder, sandboxFilename)
-		if fileInfo, err = os.Stat(ld.filename); err != nil {
+	if fileInfo, err = os.Stat(filename); err != nil {
+		filename = filepath.Join(folder, sandboxFilename)
+		if fileInfo, err = os.Stat(filename); err != nil {
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("could not find layer or sandbox in %s", folder)
+				return "", 0, isSandbox, fmt.Errorf("could not find layer or sandbox in %s", folder)
 			}
-			return nil, fmt.Errorf("error locating layer or sandbox in %s: %s", folder, err)
+			return "", 0, isSandbox, fmt.Errorf("error locating layer or sandbox in %s: %s", folder, err)
 		}
-		ld.isSandbox = true
+		isSandbox = true
 	}
-	ld.size = fileInfo.Size()
+	return filename, fileInfo.Size(), isSandbox, nil
+}
 
-	return ld, nil
+func (d *Driver) getAllMounts(id string) ([]hcsshim.MappedVirtualDisk, error) {
+	layerChain, err := d.getLayerChain(id)
+	if err != nil {
+		return nil, err
+	}
+	layerChain = append([]string{id}, layerChain...)
+
+	logrus.Debugf("getting all  layers: %v", layerChain)
+	disks := make([]hcsshim.MappedVirtualDisk, len(layerChain), len(layerChain))
+	for i := range layerChain {
+		vhdFilename, _, isSandbox, err := getLayerDetails(layerChain[i])
+		if err != nil {
+			logrus.Debugf("Failed to get LayerVhdDetails from %s: %s", layerChain[i], err)
+			return nil, err
+		}
+		disks[i].HostPath = vhdFilename
+		disks[i].ContainerPath = hostToGuest(vhdFilename)
+		disks[i].CreateInUtilityVM = true
+		disks[i].ReadOnly = !isSandbox
+	}
+	return disks, nil
+}
+
+func hostToGuest(hostpath string) string {
+	return fmt.Sprintf("/mnt/%s", filepath.Base(filepath.Dir(hostpath)))
+}
+
+func unionMountName(disks []hcsshim.MappedVirtualDisk) string {
+	return fmt.Sprintf("%s-mount", disks[0].ContainerPath)
 }

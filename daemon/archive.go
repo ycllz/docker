@@ -134,6 +134,9 @@ func (daemon *Daemon) containerStatPath(container *container.Container, path str
 		return nil, err
 	}
 
+	// Normalize path before sending to rootfs
+	path = container.BaseFS.FromSlash(path)
+
 	resolvedPath, absPath, err := container.ResolvePath(path)
 	if err != nil {
 		return nil, err
@@ -173,6 +176,9 @@ func (daemon *Daemon) containerArchivePath(container *container.Container, path 
 	if err = daemon.mountVolumes(container); err != nil {
 		return nil, nil, err
 	}
+
+	// Normalize path before sending to rootfs
+	path = container.BaseFS.FromSlash(path)
 
 	resolvedPath, absPath, err := container.ResolvePath(path)
 	if err != nil {
@@ -233,6 +239,8 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 		return err
 	}
 
+	// Normalize path before sending to rootfs
+	path = container.BaseFS.FromSlash(path)
 	driver := container.BaseFS
 
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
@@ -359,6 +367,8 @@ func (daemon *Daemon) containerCopy(container *container.Container, resource str
 		return nil, err
 	}
 
+	// Normalize path before sending to rootfs
+	resource = container.BaseFS.FromSlash(resource)
 	driver := container.BaseFS
 
 	basePath, err := container.GetResourcePath(resource)

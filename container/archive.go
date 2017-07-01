@@ -1,10 +1,10 @@
 package container
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
+	"runtime/debug"
 
-	"github.com/containerd/continuity/pathdriver"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/system"
@@ -16,20 +16,24 @@ import (
 // an error if the path points to outside the container's rootfs.
 func (container *Container) ResolvePath(path string) (resolvedPath, absPath string, err error) {
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
-	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path, pathdriver.LocalPathDriver)
+	debug.PrintStack()
+
+	fmt.Println(path)
+	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path, container.BaseFS)
 	if err != nil {
 		return "", "", err
 	}
 
+	fmt.Println(path, absPath)
 	// Consider the given path as an absolute path in the container.
 	absPath = archive.PreserveTrailingDotOrSeparator(
-		filepath.Join(string(filepath.Separator), path),
+		container.BaseFS.Join(string(container.BaseFS.Separator()), path),
 		path,
-		pathdriver.LocalPathDriver)
+		container.BaseFS)
 
 	// Split the absPath into its Directory and Base components. We will
 	// resolve the dir in the scope of the container then append the base.
-	dirPath, basePath := filepath.Split(absPath)
+	dirPath, basePath := container.BaseFS.Split(absPath)
 
 	resolvedDirPath, err := container.GetResourcePath(dirPath)
 	if err != nil {
@@ -38,8 +42,8 @@ func (container *Container) ResolvePath(path string) (resolvedPath, absPath stri
 
 	// resolvedDirPath will have been cleaned (no trailing path separators) so
 	// we can manually join it with the base path element.
-	resolvedPath = resolvedDirPath + string(filepath.Separator) + basePath
-
+	resolvedPath = resolvedDirPath + string(container.BaseFS.Separator()) + basePath
+	fmt.Println(resolvedPath, absPath)
 	return resolvedPath, absPath, nil
 }
 
@@ -63,7 +67,7 @@ func (container *Container) StatPath(resolvedPath, absPath string) (stat *types.
 			return nil, err
 		}
 
-		linkTarget, err = filepath.Rel(driver.Path(), hostPath)
+		linkTarget, err = driver.Rel(driver.Path(), hostPath)
 		if err != nil {
 			return nil, err
 		}
