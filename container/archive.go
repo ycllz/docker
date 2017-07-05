@@ -3,7 +3,6 @@ package container
 import (
 	"fmt"
 	"os"
-	"runtime/debug"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/archive"
@@ -16,9 +15,6 @@ import (
 // an error if the path points to outside the container's rootfs.
 func (container *Container) ResolvePath(path string) (resolvedPath, absPath string, err error) {
 	// Check if a drive letter supplied, it must be the system drive. No-op except on Windows
-	debug.PrintStack()
-
-	fmt.Println(path)
 	path, err = system.CheckSystemDriveAndRemoveDriveLetter(path, container.BaseFS)
 	if err != nil {
 		return "", "", err
