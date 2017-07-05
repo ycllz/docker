@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -239,7 +238,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 		return err
 	}
 
-	// Normalize path before sending to rootfs
+	// Normalize path before sending to rootfs'
 	path = container.BaseFS.FromSlash(path)
 	driver := container.BaseFS
 
@@ -297,7 +296,7 @@ func (daemon *Daemon) containerExtractToDir(container *container.Container, path
 			}
 		}
 	} else {
-		baseRel, err = filepath.Rel(driver.Path(), resolvedPath)
+		baseRel, err = driver.Rel(driver.Path(), resolvedPath)
 	}
 	if err != nil {
 		return err
