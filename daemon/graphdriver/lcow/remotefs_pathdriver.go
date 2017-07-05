@@ -24,29 +24,41 @@ func (d *lcowfs) IsAbs(path string) bool {
 	return pathpkg.IsAbs(path)
 }
 
-func (d *lcowfs) Rel(base, target string) (string, error) {
-	// This is mostly copied from the Go filepath.Rel function since the
-	// path package does not have Rel.
-	baseClean, targetClean := d.Clean(base), d.Clean(target)
+func sameWord(a, b string) bool {
+	return a == b
+}
 
-	// If one path is relative, but the other is absolute, we would need to
-	// know the current directory figure out where the path actually is.
-	if d.IsAbs(baseClean) != d.IsAbs(targetClean) {
-		return "", errors.New("Rel: can't make " + target + " relative to " + base)
+func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
+	baseVol := basepath
+	targVol := targpath
+	base := d.Clean(basepath)
+	targ := d.Clean(targpath)
+	if sameWord(targ, base) {
+		return ".", nil
 	}
-
+	base = base[len(baseVol):]
+	targ = targ[len(targVol):]
+	if base == "." {
+		base = ""
+	}
+	// Can't use IsAbs - `\a` and `a` are both relative in Windows.
+	baseSlashed := len(base) > 0 && base[0] == d.Separator()
+	targSlashed := len(targ) > 0 && targ[0] == d.Separator()
+	if baseSlashed != targSlashed || !sameWord(baseVol, targVol) {
+		return "", errors.New("Rel: can't make " + targpath + " relative to " + basepath)
+	}
 	// Position base[b0:bi] and targ[t0:ti] at the first differing elements.
-	bl := len(baseClean)
-	tl := len(targetClean)
+	bl := len(base)
+	tl := len(targ)
 	var b0, bi, t0, ti int
 	for {
-		for bi < bl && baseClean[bi] != '/' {
+		for bi < bl && base[bi] != d.Separator() {
 			bi++
 		}
-		for ti < tl && targetClean[ti] != '/' {
+		for ti < tl && targ[ti] != d.Separator() {
 			ti++
 		}
-		if targetClean[t0:ti] != baseClean[b0:bi] {
+		if !sameWord(targ[t0:ti], base[b0:bi]) {
 			break
 		}
 		if bi < bl {
@@ -58,13 +70,12 @@ func (d *lcowfs) Rel(base, target string) (string, error) {
 		b0 = bi
 		t0 = ti
 	}
-	if baseClean[b0:bi] == ".." {
-		return "", errors.New("Rel: can't make " + target + " relative to " + base)
+	if base[b0:bi] == ".." {
+		return "", errors.New("Rel: can't make " + targpath + " relative to " + basepath)
 	}
-
 	if b0 != bl {
 		// Base elements left. Must go up before going down.
-		seps := strings.Count(baseClean[b0:bl], "/")
+		seps := strings.Count(base[b0:bl], string(d.Separator()))
 		size := 2 + seps*3
 		if tl != t0 {
 			size += 1 + tl - t0
@@ -72,17 +83,17 @@ func (d *lcowfs) Rel(base, target string) (string, error) {
 		buf := make([]byte, size)
 		n := copy(buf, "..")
 		for i := 0; i < seps; i++ {
-			buf[n] = '/'
+			buf[n] = d.Separator()
 			copy(buf[n+1:], "..")
 			n += 3
 		}
 		if t0 != tl {
-			buf[n] = '/'
-			copy(buf[n+1:], targetClean[t0:])
+			buf[n] = d.Separator()
+			copy(buf[n+1:], targ[t0:])
 		}
 		return string(buf), nil
 	}
-	return targetClean[t0:], nil
+	return targ[t0:], nil
 }
 
 func (d *lcowfs) Base(path string) string {
