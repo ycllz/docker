@@ -1,7 +1,6 @@
 package container
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/docker/docker/api/types"
@@ -20,7 +19,6 @@ func (container *Container) ResolvePath(path string) (resolvedPath, absPath stri
 		return "", "", err
 	}
 
-	fmt.Println(path, absPath)
 	// Consider the given path as an absolute path in the container.
 	absPath = archive.PreserveTrailingDotOrSeparator(
 		container.BaseFS.Join(string(container.BaseFS.Separator()), path),
@@ -39,7 +37,6 @@ func (container *Container) ResolvePath(path string) (resolvedPath, absPath stri
 	// resolvedDirPath will have been cleaned (no trailing path separators) so
 	// we can manually join it with the base path element.
 	resolvedPath = resolvedDirPath + string(container.BaseFS.Separator()) + basePath
-	fmt.Println(resolvedPath, absPath)
 	return resolvedPath, absPath, nil
 }
 

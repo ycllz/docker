@@ -29,8 +29,8 @@ func sameWord(a, b string) bool {
 }
 
 func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
-	baseVol := basepath
-	targVol := targpath
+	baseVol := ""
+	targVol := ""
 	base := d.Clean(basepath)
 	targ := d.Clean(targpath)
 	if sameWord(targ, base) {

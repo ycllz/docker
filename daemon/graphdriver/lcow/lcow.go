@@ -781,6 +781,11 @@ func (d *Driver) GetMetadata(id string) (map[string]string, error) {
 	return m, nil
 }
 
+// GetLayerPath gets the layer path on host (path to VHD/VHDX)
+func (d *Driver) GetLayerPath(id string) (string, error) {
+	return d.dir(id), nil
+}
+
 // dir returns the absolute path to the layer.
 func (d *Driver) dir(id string) string {
 	return filepath.Join(d.dataRoot, filepath.Base(id))

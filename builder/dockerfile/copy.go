@@ -33,9 +33,10 @@ type pathCache interface {
 // copyInfo is a data object which stores the metadata about each source file in
 // a copyInstruction
 type copyInfo struct {
-	root rootfs.RootFS
-	path string
-	hash string
+	root         rootfs.RootFS
+	path         string
+	hash         string
+	noDecompress bool
 }
 
 func (c copyInfo) fullPath() (string, error) {

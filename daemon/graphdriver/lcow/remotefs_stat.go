@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"encoding/gob"
+	"encoding/json"
 
 	"github.com/Sirupsen/logrus"
 )
@@ -37,8 +37,7 @@ func (d *lcowfs) stat(path string, cmd string) (os.FileInfo, error) {
 	process.Close()
 
 	var fi fileinfo
-	dec := gob.NewDecoder(output)
-	if err := dec.Decode(&fi); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &fi); err != nil {
 		return nil, err
 	}
 
