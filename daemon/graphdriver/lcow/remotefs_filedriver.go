@@ -14,7 +14,7 @@ var _ driver.Driver = &lcowfs{}
 func panicNotImplemented() {
 	pc, _, _, _ := runtime.Caller(1)
 	name := runtime.FuncForPC(pc).Name()
-	panic(fmt.Sprintf("Not implemented: %s\n", name))
+	panic(fmt.Sprintf("not implemented: %s", name))
 }
 
 func (d *lcowfs) Open(p string) (driver.File, error) {

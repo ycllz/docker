@@ -609,6 +609,99 @@ func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
 	}, nil
 }
 
+<<<<<<< HEAD
+=======
+// getEx is Get, but also returns the cache-entry and the size of the VHD
+func (d *Driver) getEx(id string) (string, string, cacheType, int64, error) {
+	title := "lcowdriver: getEx"
+	logrus.Debugf("%s %s", title, id)
+
+	if err := d.startUvm(fmt.Sprintf("getex %s", id)); err != nil {
+		logrus.Debugf("%s failed to start utility vm: %s", title, err)
+		return "", "", cacheType{}, 0, err
+	}
+
+	// Work out what we are working on
+	vhdFilename, vhdSize, isSandbox, err := client.LayerVhdDetails(d.dir(id))
+	if err != nil {
+		logrus.Debugf("%s failed to get LayerVhdDetails from %s: %s", title, d.dir(id), err)
+		return "", "", cacheType{}, 0, fmt.Errorf("%s failed to open layer or sandbox VHD to open in %s: %s", title, d.dir(id), err)
+	}
+	logrus.Debugf("%s %s, size %d, isSandbox %t", title, vhdFilename, vhdSize, isSandbox)
+
+	d.cacheMu.Lock()
+	var cacheEntry cacheType
+	if _, ok := d.cache[id]; !ok {
+		d.cache[id] = cacheType{
+			uvmPath:   fmt.Sprintf("/mnt/%s", id),
+			refCount:  1,
+			isSandbox: isSandbox,
+			hostPath:  vhdFilename,
+		}
+	} else {
+		// Increment the reference counter in the cache.
+		cacheEntry = d.cache[id]
+		cacheEntry.refCount++
+		d.cache[id] = cacheEntry
+	}
+
+	cacheEntry = d.cache[id]
+	logrus.Debugf("%s %s: isSandbox %t, refCount %d", title, id, cacheEntry.isSandbox, cacheEntry.refCount)
+	d.cacheMu.Unlock()
+
+	logrus.Debugf("%s %s: Hot-Adding %s", title, id, vhdFilename)
+	if err := d.config.HotAddVhd(vhdFilename, cacheEntry.uvmPath); err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s hot add %s failed: %s", title, vhdFilename, err)
+	}
+
+	// TODO: @gupta-ak. This has to be worked properly to handle race conditions and
+	// 1 vs many service vm model.
+	// Mount all the layers now.
+	hostPaths, guestPaths, err := d.getParentsForHotAdd(id)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: failed to get parent mounts %s", title, err)
+	}
+
+	for i := range hostPaths {
+		logrus.Debugf("%s: Hot-Adding %s to %s", title, hostPaths[i], guestPaths[i])
+		if err := d.config.HotAddVhd(hostPaths[i], guestPaths[i]); err != nil {
+			return "", "", cacheType{}, 0, fmt.Errorf("%s hot add %s -> %s failed: %s", title, hostPaths[i], guestPaths[i], err)
+		}
+	}
+
+	// Now do the union mount.
+	upper := fmt.Sprintf("%s/upper", cacheEntry.uvmPath)
+	work := fmt.Sprintf("%s/work", cacheEntry.uvmPath)
+	union := fmt.Sprintf("%s-mount", cacheEntry.uvmPath)
+
+	logrus.Debugf("%s: Doing the overlay mount with union directory=%s", title, union)
+	err = d.config.RunProcess(fmt.Sprintf("mkdir -p %s", union), nil, nil)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: mkdir failed: %s", title, err)
+	}
+
+	err = d.config.RunProcess(fmt.Sprintf("mkdir -p %s %s", upper, work), nil, nil)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: mkdir failed with: %s", title, err)
+	}
+
+	cmd := fmt.Sprintf("mount -t overlay overlay -olowerdir=%s,upperdir=%s,workdir=%s %s",
+		strings.Join(guestPaths, ","),
+		upper,
+		work,
+		union)
+
+	logrus.Debugf("%s: Executing mount=%s", title, cmd)
+	err = d.config.RunProcess(cmd, nil, nil)
+	if err != nil {
+		return "", "", cacheType{}, 0, fmt.Errorf("%s: create overlay failed: %s", title, err)
+	}
+
+	logrus.Debugf("%s %s success. %s: %+v: size %d", title, id, d.dir(id), cacheEntry, vhdSize)
+	return d.dir(id), union, cacheEntry, vhdSize, nil
+}
+
+>>>>>>> docker cp working
 // Put does the reverse of get. If there are no more references to
 // the layer, it unmounts it from the utility VM.
 func (d *Driver) Put(id string) error {
@@ -657,6 +750,7 @@ func (d *Driver) Put(id string) error {
 				return err
 			}
 
+<<<<<<< HEAD
 			logrus.Debugf("%s: Hot-Removing %s. Locking svm", title, entry.hostPath)
 			svm.Lock()
 			if err := svm.config.HotRemoveVhd(entry.hostPath); err != nil {
@@ -666,6 +760,47 @@ func (d *Driver) Put(id string) error {
 			}
 			logrus.Debugf("%s: releasing svm", title)
 			svm.Unlock()
+=======
+	// Delete the union mount
+	union := fmt.Sprintf("%s-mount", entry.uvmPath)
+	err := d.config.RunProcess(fmt.Sprintf("umount %s", union), nil, nil)
+	if err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s: failed to unmount union mount: %s", title, err)
+	}
+
+	// Remove the top level mount
+	logrus.Debugf("%s %s: Hot-Removing %s", title, id, entry.hostPath)
+	err = d.config.RunProcess(fmt.Sprintf("umount %s", entry.uvmPath), nil, nil)
+	if err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s: failed to umount sandbox layer: %s", title, err)
+	}
+
+	if err := d.config.HotRemoveVhd(entry.hostPath); err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s failed to hot-remove %s from service utility VM: %s", title, entry.hostPath, err)
+	}
+
+	// Now, remove the parents
+	hostPaths, guestPaths, err := d.getParentsForHotAdd(id)
+	if err != nil {
+		d.cacheMu.Unlock()
+		return fmt.Errorf("%s: failed to get parents: %s", title, err)
+	}
+
+	for i := range hostPaths {
+		logrus.Debugf("%s: Hot-Removing %s -> %s", title, hostPaths[i], guestPaths[i])
+
+		if err := d.config.RunProcess(fmt.Sprintf("umount %s", guestPaths[i]), nil, nil); err != nil {
+			d.cacheMu.Unlock()
+			return fmt.Errorf("%s: Failed to unmount layer: %s->%s", title, hostPaths[i], guestPaths[i])
+		}
+
+		if err := d.config.HotRemoveVhd(hostPaths[i]); err != nil {
+			d.cacheMu.Unlock()
+			return fmt.Errorf("%s failed to hot-remove %s from service utility vm: %s", title, hostPaths[i], err)
+>>>>>>> docker cp working
 		}
 	}
 
@@ -878,6 +1013,11 @@ func (d *Driver) GetMetadata(id string) (map[string]string, error) {
 	return m, nil
 }
 
+// GetLayerPath gets the layer path on host (path to VHD/VHDX)
+func (d *Driver) GetLayerPath(id string) (string, error) {
+	return d.dir(id), nil
+}
+
 // dir returns the absolute path to the layer.
 func (d *Driver) dir(id string) string {
 	return filepath.Join(d.dataRoot, filepath.Base(id))
@@ -918,6 +1058,7 @@ func (d *Driver) setLayerChain(id string, chain []string) error {
 	return nil
 }
 
+<<<<<<< HEAD
 // getLayerDetails is a utility for getting a file name, size and indication of
 // sandbox for a VHD(x) in a folder. A read-only layer will be layer.vhd. A
 // read-write layer will be sandbox.vhdx.
@@ -941,12 +1082,16 @@ func getLayerDetails(folder string) (string, int64, bool, error) {
 }
 
 func (d *Driver) getAllMounts(id string) ([]hcsshim.MappedVirtualDisk, error) {
+=======
+func (d *Driver) getParentsForHotAdd(id string) (hostPaths []string, guestPaths []string, err error) {
+>>>>>>> docker cp working
 	layerChain, err := d.getLayerChain(id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	layerChain = append([]string{id}, layerChain...)
 
+<<<<<<< HEAD
 	logrus.Debugf("getting all  layers: %v", layerChain)
 	disks := make([]hcsshim.MappedVirtualDisk, len(layerChain), len(layerChain))
 	for i := range layerChain {
@@ -961,4 +1106,18 @@ func (d *Driver) getAllMounts(id string) ([]hcsshim.MappedVirtualDisk, error) {
 		disks[i].ReadOnly = !isSandbox
 	}
 	return nil, disks
+=======
+	for _, layerPath := range layerChain {
+		vhdFilename, _, _, err := client.LayerVhdDetails(layerPath)
+		if err != nil {
+			logrus.Debugf("Failed to get LayerVhdDetails from %s: %s", layerPath, err)
+			return nil, nil, err
+		}
+
+		parentGuestPath := fmt.Sprintf("/mnt/%s", filepath.Base(layerPath))
+		hostPaths = append(hostPaths, vhdFilename)
+		guestPaths = append(guestPaths, parentGuestPath)
+	}
+	return hostPaths, guestPaths, nil
+>>>>>>> docker cp working
 }
