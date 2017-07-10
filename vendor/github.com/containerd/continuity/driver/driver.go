@@ -45,6 +45,9 @@ type Driver interface {
 	Mkfifo(path string, mode os.FileMode) error
 }
 
+// File is the interface for interacting with files returned by continuity's Open
+// This is needed since os.File is a struct, instead of an interface, so it can't
+// be used.
 type File interface {
 	io.ReadWriteCloser
 	io.Seeker
