@@ -161,6 +161,7 @@ func (b *Builder) performCopy(state *dispatchState, inst copyInstruction) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to get destination image %q", state.imageID)
 	}
+
 	destInfo, err := createDestInfo(state.runConfig.WorkingDir, inst, imageMount)
 	if err != nil {
 		return err
@@ -354,7 +355,6 @@ func containsWildcards(name, platform string) bool {
 
 func validateCopySourcePath(imageSource *imageMount, origPath, platform string) error {
 	// validate windows paths from other images
-	// TODO @gupta-ak: Need platform here.
 	if imageSource == nil || platform != "windows" {
 		return nil
 	}

@@ -551,6 +551,21 @@ func (d *Driver) Remove(id string) error {
 	layerPath := d.dir(id)
 
 	logrus.Debugf("lcowdriver: remove: id %s: layerPath %s", id, layerPath)
+
+	d.cacheMu.Lock()
+	entry, ok := d.cache[id]
+	if ok {
+		// We have a mounted layer, so we need to remove it.
+		// Hot remove all the mounts, including the parent ones
+		if err := d.unmountAll(id, &entry); err != nil {
+			d.cacheMu.Unlock()
+			return fmt.Errorf("lcowdriver: remove %s: failed to unmount all layers: %s", id, err)
+		}
+		// Remove from the cache map.
+		delete(d.cache, id)
+	}
+	d.cacheMu.Unlock()
+
 	if err := os.Rename(layerPath, tmpLayerPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -595,11 +610,72 @@ func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
 // Put does the reverse of get. If there are no more references to
 // the layer, it unmounts it from the utility VM.
 func (d *Driver) Put(id string) error {
+<<<<<<< HEAD
 	title := fmt.Sprintf("lcowdriver: put: %s", id)
+=======
+	title := "lcowdriver: put"
+	logrus.Debugf("%s %s", title, id)
+
+	if err := d.startUvm(fmt.Sprintf("put %s", id)); err != nil {
+		return err
+	}
+
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	// Bad-news if unmounting something that isn't in the cache.
+	entry, ok := d.cache[id]
+	if !ok {
+		return fmt.Errorf("%s possible ref-count error, or invalid id was passed to the graphdriver. Cannot handle id %s as it's not in the cache", title, id)
+	}
+
+	// Are we just decrementing the reference count
+	if entry.refCount > 1 {
+		entry.refCount--
+		d.cache[id] = entry
+		logrus.Debugf("%s %s: refCount decremented to %d", title, id, entry.refCount)
+		return nil
+	}
+
+	// Hot remove all the mounts, including the parent ones
+	if err := d.unmountAll(id, &entry); err != nil {
+		return fmt.Errorf("%s %s: failed to unmount all errors: %s", title, id, err)
+	}
+
+	// @jhowardmsft TEMPORARY FIX WHILE WAITING FOR HOT-REMOVE TO BE FIXED IN PLATFORM
+	//d.terminateUvm(fmt.Sprintf("put %s", id))
+
+	// Remove from the cache map.
+	delete(d.cache, id)
+
+	logrus.Debugf("%s %s: refCount 0. %s (%s) completed successfully", title, id, entry.hostPath, entry.uvmPath)
+	return nil
+}
+
+func (d *Driver) unmountAll(id string, entry *cacheType) error {
+	title := "lcowdriver: removeMount"
+	// Delete the union mount
+	union := fmt.Sprintf("%s-mount", entry.uvmPath)
+	err := d.config.RunProcess(fmt.Sprintf("umount %s", union), nil, nil)
+	if err != nil {
+		return fmt.Errorf("%s: failed to unmount union mount: %s", title, err)
+	}
+
+	// Remove the top level mount
+	logrus.Debugf("%s %s: Hot-Removing %s", title, id, entry.hostPath)
+	err = d.config.RunProcess(fmt.Sprintf("umount %s", entry.uvmPath), nil, nil)
+	if err != nil {
+		return fmt.Errorf("%s: failed to umount sandbox layer: %s", title, err)
+	}
+
+	if err := d.config.HotRemoveVhd(entry.hostPath); err != nil {
+		return fmt.Errorf("%s failed to hot-remove %s from service utility VM: %s", title, entry.hostPath, err)
+	}
+>>>>>>> fixed lcow driver not unmounting on delete
 
 	// Generate the mounts that Get() might have mounted
 	disks, err := d.getAllMounts(id)
 	if err != nil {
+<<<<<<< HEAD
 		logrus.Debugf("%s failed to get all layer details for %s: %s", title, d.dir(id), err)
 		return fmt.Errorf("%s failed to get layer details for %s: %s", title, d.dir(id), err)
 	}
@@ -616,6 +692,22 @@ func (d *Driver) Put(id string) error {
 	svm.hotRemoveVHDs(disks...)
 	d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
 	logrus.Debugf("Put succeeded on id %s", id)
+=======
+		return fmt.Errorf("%s: failed to get parents: %s", title, err)
+	}
+
+	for i := range hostPaths {
+		logrus.Debugf("%s: Hot-Removing %s -> %s", title, hostPaths[i], guestPaths[i])
+
+		if err := d.config.RunProcess(fmt.Sprintf("umount %s", guestPaths[i]), nil, nil); err != nil {
+			return fmt.Errorf("%s: Failed to unmount layer: %s->%s", title, hostPaths[i], guestPaths[i])
+		}
+
+		if err := d.config.HotRemoveVhd(hostPaths[i]); err != nil {
+			return fmt.Errorf("%s failed to hot-remove %s from service utility vm: %s", title, hostPaths[i], err)
+		}
+	}
+>>>>>>> fixed lcow driver not unmounting on delete
 	return nil
 }
 
