@@ -83,14 +83,20 @@ func (o *copier) createCopyInstruction(args []string, cmdName string) (copyInstr
 	inst := copyInstruction{cmdName: cmdName}
 	last := len(args) - 1
 
-	// Work in daemon-specific filepath semantics
-	inst.dest = filepath.FromSlash(args[last])
+	// TODO: @gupta-ak. The platform needs to be here to support LCOW + WCOW. Or in the copier constructor.
+	separator := "/"
+	if !system.LCOWSupported() {
+		// Work in daemon-specific filepath semantics
+		inst.dest = filepath.FromSlash(args[last])
+		separator = string(os.PathSeparator)
+	}
 
+	// TODO: @gupta-ak. Probably need platform here too to suport LCOW multi-stage builds
 	infos, err := o.getCopyInfosForSourcePaths(args[0:last])
 	if err != nil {
 		return inst, errors.Wrapf(err, "%s failed", cmdName)
 	}
-	if len(infos) > 1 && !strings.HasSuffix(inst.dest, string(os.PathSeparator)) {
+	if len(infos) > 1 && !strings.HasSuffix(inst.dest, separator) {
 		return inst, errors.Errorf("When using %s with more than one source file, the destination must be a directory and end with a /", cmdName)
 	}
 	inst.infos = infos
@@ -144,14 +150,6 @@ func (o *copier) Cleanup() {
 // TODO: allowWildcards can probably be removed by refactoring this function further.
 func (o *copier) calcCopyInfo(origPath string, allowWildcards bool) ([]copyInfo, error) {
 	imageSource := o.imageSource
-	if err := validateCopySourcePath(imageSource, origPath); err != nil {
-		return nil, err
-	}
-
-	// Work in daemon-specific OS filepath semantics
-	origPath = filepath.FromSlash(origPath)
-	origPath = strings.TrimPrefix(origPath, string(os.PathSeparator))
-	origPath = strings.TrimPrefix(origPath, "."+string(os.PathSeparator))
 
 	// TODO: do this when creating copier. Requires validateCopySourcePath
 	// (and other below) to be aware of the difference sources. Why is it only
@@ -168,8 +166,20 @@ func (o *copier) calcCopyInfo(origPath string, allowWildcards bool) ([]copyInfo,
 		return nil, errors.Errorf("missing build context")
 	}
 
+	root := o.source.Root()
+
+	if err := validateCopySourcePath(imageSource, origPath, root.Platform()); err != nil {
+		return nil, err
+	}
+
+	// Work in source OS specific filepath semantics
+	// For LCOW, this is NOT the daemon OS.
+	origPath = root.FromSlash(origPath)
+	origPath = strings.TrimPrefix(origPath, string(root.Separator()))
+	origPath = strings.TrimPrefix(origPath, "."+string(root.Separator()))
+
 	// Deal with wildcards
-	if allowWildcards && containsWildcards(origPath) {
+	if allowWildcards && containsWildcards(origPath, root.Platform()) {
 		return o.copyWithWildcards(origPath)
 	}
 
@@ -264,7 +274,7 @@ func walkSource(source builder.Source, origPath string) ([]string, error) {
 	}
 	// Must be a dir
 	var subfiles []string
-	err = filepath.Walk(fp, func(path string, info os.FileInfo, err error) error {
+	err = source.Root().Walk(fp, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -365,7 +375,6 @@ func downloadSource(output io.Writer, stdout io.Writer, srcURL string) (remote b
 		return
 	}
 
-	// TODO: @gupta-ak. Okay for download to always be onto local daemon?
 	lc, err := remotecontext.NewLazySource(rootfs.NewLocalRootFS(tmpDir))
 	return lc, filename, err
 }
