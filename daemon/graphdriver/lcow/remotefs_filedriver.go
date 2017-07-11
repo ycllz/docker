@@ -6,6 +6,8 @@ import (
 
 	"fmt"
 
+	"strconv"
+
 	"github.com/containerd/continuity/driver"
 )
 
@@ -59,8 +61,9 @@ func (d *lcowfs) Symlink(oldname, newname string) error {
 }
 
 func (d *lcowfs) MkdirAll(path string, perm os.FileMode) error {
-	panicNotImplemented()
-	return nil
+	permStr := strconv.FormatUint(uint64(perm), 8)
+	cmd := fmt.Sprintf("remotefs mkdirall %s %s", path, permStr)
+	return d.config.RunProcess(cmd, nil, nil)
 }
 
 func (d *lcowfs) RemoveAll(path string) error {
