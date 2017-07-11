@@ -7,15 +7,56 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/image"
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/pkg/errors"
 )
+
+// For Windows only
+var pathBlacklist = map[string]bool{
+	"c:\\":        true,
+	"c:\\windows": true,
+}
+
+// The builder will use the following interfaces if the container fs implements
+// these for optimized copies to and from the container.
+type extractor interface {
+	ExtractArchive(src io.Reader, dst string, opts *archive.TarOptions) error
+}
+
+type archiver interface {
+	ArchivePath(src string, opts *archive.TarOptions) (io.ReadCloser, error)
+}
+
+// helper functions to get tar/untar func
+func untarFunc(i interface{}) archive.UntarFunc {
+	if ea, ok := i.(extractor); ok {
+		return ea.ExtractArchive
+	}
+	return chrootarchive.Untar
+}
+
+func tarFunc(i interface{}) archive.TarFunc {
+	if ap, ok := i.(archiver); ok {
+		return ap.ArchivePath
+	}
+	return archive.TarWithOptions
+}
+
+func (b *Builder) getArchiver(src, dst rootfs.Driver) archive.Archiver {
+	t, u := tarFunc(src), untarFunc(dst)
+	return archive.NewCustomArchiver(src, dst, t, u, b.idMappings)
+}
 
 func (b *Builder) commit(dispatchState *dispatchState, comment string) error {
 	if b.disableCommit {
@@ -125,12 +166,11 @@ func (b *Builder) performCopy(state *dispatchState, inst copyInstruction) error 
 		return err
 	}
 
-	// TODO: @gupta-ak: Add archiver here.
-	opts := copyFileOptions{
-		decompress: inst.allowLocalDecompression,
-		archiver:   b.archiver,
-	}
 	for _, info := range inst.infos {
+		opts := copyFileOptions{
+			decompress: inst.allowLocalDecompression,
+			archiver:   b.getArchiver(info.root, destInfo.root),
+		}
 		if err := performCopyForInfo(destInfo, info, opts); err != nil {
 			return errors.Wrapf(err, "failed to copy files")
 		}
@@ -298,4 +338,41 @@ func hostConfigFromOptions(options *types.ImageBuildOptions) *container.HostConf
 		LogConfig:  defaultLogConfig,
 		ExtraHosts: options.ExtraHosts,
 	}
+}
+
+func containsWildcards(name, platform string) bool {
+	for i := 0; i < len(name); i++ {
+		ch := name[i]
+		if ch == '\\' && platform != "windows" {
+			i++
+		} else if ch == '*' || ch == '?' || ch == '[' {
+			return true
+		}
+	}
+	return false
+}
+
+func validateCopySourcePath(imageSource *imageMount, origPath, platform string) error {
+	// validate windows paths from other images
+	// TODO @gupta-ak: Need platform here.
+	if imageSource == nil || platform != "windows" {
+		return nil
+	}
+
+	origPath = filepath.FromSlash(origPath)
+	p := strings.ToLower(filepath.Clean(origPath))
+	if !filepath.IsAbs(p) {
+		if filepath.VolumeName(p) != "" {
+			if p[len(p)-2:] == ":." { // case where clean returns weird c:. paths
+				p = p[:len(p)-1]
+			}
+			p += "\\"
+		} else {
+			p = filepath.Join("c:\\", p)
+		}
+	}
+	if _, blacklisted := pathBlacklist[p]; blacklisted {
+		return errors.New("copy from c:\\ or c:\\windows is not allowed on windows")
+	}
+	return nil
 }
