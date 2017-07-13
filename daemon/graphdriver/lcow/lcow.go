@@ -13,7 +13,43 @@
 // operations. The downside of safe-mode is that operations are slower as
 // a new service utility VM has to be started and torn-down when needed.
 //
-// To enable global mode, run with --storage-opt lcow.globalmode=true
+// Options (needs official documentation, but lets get full functionality first...) @jhowardmsft
+//
+// The following options are read by the graphdriver itself:
+//
+//   * lcow.globalmode - Enables global service VM Mode
+//        -- Possible values:     true/false
+//		  -- Default if omitted:  false
+//
+//   * lcow.sandboxsize - Specifies a custom sandbox size in GB for starting a container
+//        -- Possible values:      >= default sandbox size (opengcs defined, currently 20)
+//        -- Default if ommitted:  20
+//
+// The following options are read by opengcs:
+//
+//   * lcow.kirdpath - Specifies a custom path to a kernel/initrd pair
+//        -- Possible values:      Any local path that is not a mapped drive
+//        -- Default if ommitted:  %ProgramFiles%\Linux Containers
+//
+//   * lcow.kernel - Specifies a custom kernel file located in the `lcow.kirdpath` path
+//        -- Possible values:      Any valid filename
+//        -- Default if ommitted:  bootx64.efi
+//
+//   * lcow.initrd - Specifies a custom initrd file located in the `lcow.kirdpath` path
+//        -- Possible values:      Any valid filename
+//        -- Default if ommitted:  initrd.img
+//
+//   * lcow.bootparameters - Specifies additional boot parameters for booting in kernel+initrd mode
+//        -- Possible values:      Any valid linux kernel boot options
+//        -- Default if ommitted:  <nil>
+//
+//   * lcow.vhdx - Specifies a custom vhdx file to boot (instead of a kernel+initrd)
+//        -- Possible values:      Any valid filename
+//        -- Default if ommitted:  C:\Program Files\Linux Containers\uvm.vhdx
+//
+//   * lcow.timeout - Specifies a timeout for utility VM operations in seconds
+//        -- Possible values:      >=0
+//        -- Default if ommitted:  300
 
 // TODO: Grab logs from SVM at terminate or errors
 
@@ -84,6 +120,24 @@ type cacheItem struct {
 	isMounted  bool   // True when mounted in a service VM
 }
 
+// setIsMounted is a helper function for a cacheItem which does exactly what it says
+func (ci *cacheItem) setIsMounted() {
+	logrus.Debugf("locking cache item for set isMounted")
+	ci.Lock()
+	defer ci.Unlock()
+	ci.isMounted = true
+	logrus.Debugf("set isMounted on cache item")
+}
+
+// incrementRefCount is a helper function for a cacheItem which does exactly what it says
+func (ci *cacheItem) incrementRefCount() {
+	logrus.Debugf("locking cache item for increment")
+	ci.Lock()
+	defer ci.Unlock()
+	ci.refCount++
+	logrus.Debugf("incremented refcount on cache item %+v", ci)
+}
+
 // serviceVMItem is our internal structure representing an item in our
 // map of service VMs we are maintaining.
 type serviceVMItem struct {
@@ -109,6 +163,14 @@ type Driver struct {
 
 	cacheMutex sync.Mutex            // Protects add/update/deletes to cache.
 	cache      map[string]*cacheItem // Map holding a cache of all the IDs we've mounted/unmounted.
+}
+
+// layerDetails is the structure returned by a helper function `getLayerDetails`
+// for getting information about a layer folder
+type layerDetails struct {
+	filename  string // \path\to\sandbox.vhdx or \path\to\layer.vhd
+	size      int64  // size of the above file
+	isSandbox bool   // true if sandbox.vhdx
 }
 
 // deletefiles is a helper function for initialisation where we delete any
@@ -204,7 +266,7 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 			logrus.Debugf("%s locking serviceVmItem %s", title, svm.config.Name)
 			svm.Lock()
 
-			if err := svm.config.HotAddVhd(mvdToAdd.HostPath, mvdToAdd.ContainerPath); err != nil {
+			if err := svm.config.HotAddVhd(mvdToAdd.HostPath, mvdToAdd.ContainerPath, false, true); err != nil {
 				logrus.Debugf("%s releasing serviceVmItem %s on hot-add failure %s", title, svm.config.Name, err)
 				svm.Unlock()
 				return nil, fmt.Errorf("%s hot add %s to %s failed: %s", title, mvdToAdd.HostPath, mvdToAdd.ContainerPath, err)
@@ -274,7 +336,7 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 
 	// Start it.
 	logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) starting %s", context, svm.config.Name)
-	if err := svm.config.Create(); err != nil {
+	if err := svm.config.StartUtilityVM(); err != nil {
 		return nil, fmt.Errorf("failed to start service utility VM (%s): %s", context, err)
 	}
 
@@ -295,18 +357,22 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 	logrus.Debugf("%s locking cachedScratchMutex", title)
 	d.cachedScratchMutex.Lock()
 	if _, err := os.Stat(d.cachedScratchFile); err != nil {
-		// TODO: Not a typo, but needs fixing when the platform sandbox stuff has been sorted out.
 		logrus.Debugf("%s (%s): creating an SVM scratch - locking serviceVM", title, context)
 		svm.Lock()
-		if err := svm.config.CreateSandbox(d.cachedScratchFile, client.DefaultSandboxSizeMB, d.cachedSandboxFile); err != nil {
-			logrus.Debugf("%s (%s): releasing serviceVM on error path", title, context)
+		if err := svm.config.CreateExt4Vhdx(scratchTargetFile, client.DefaultVhdxSizeGB, d.cachedScratchFile); err != nil {
+			logrus.Debugf("%s (%s): releasing serviceVM on error path from CreateExt4Vhdx: %s", title, context, err)
 			svm.Unlock()
 			logrus.Debugf("%s (%s): releasing cachedScratchMutex on error path", title, context)
 			d.cachedScratchMutex.Unlock()
-			// TODO: NEED TO REMOVE FROM MAP HERE AND STOP IT
+
+			// Do a force terminate and remove it from the map on failure, ignoring any errors
+			if err2 := d.terminateServiceVM(id, "error path from CreateExt4Vhdx", true); err2 != nil {
+				logrus.Warnf("failed to terminate service VM on error path from CreateExt4Vhdx: %s", err2)
+			}
+
 			return nil, fmt.Errorf("failed to create SVM scratch VHDX (%s): %s", context, err)
 		}
-		logrus.Debugf("%s (%s): releasing serviceVM on error path", title, context)
+		logrus.Debugf("%s (%s): releasing serviceVM after %s created and cached to %s", title, context, scratchTargetFile, d.cachedScratchFile)
 		svm.Unlock()
 	}
 	logrus.Debugf("%s (%s): releasing cachedScratchMutex", title, context)
@@ -314,19 +380,17 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd *hcsshim.MappedV
 
 	// Hot-add the scratch-space if not already attached
 	if !svm.scratchAttached {
-		// Make a copy of it to the layer directory
-		logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) cloning cached scratch for hot-add", context)
-		if err := client.CopyFile(d.cachedScratchFile, scratchTargetFile, true); err != nil {
-			// TODO: NEED TO REMOVE FROM MAP HERE AND STOP IT
-			return nil, err
-		}
-
 		logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) hot-adding scratch %s - locking serviceVM", context, scratchTargetFile)
 		svm.Lock()
-		if err := svm.config.HotAddVhd(scratchTargetFile, toolsScratchPath); err != nil {
-			logrus.Debugf("%s (%s): releasing serviceVM on error path", title, context)
+		if err := svm.config.HotAddVhd(scratchTargetFile, toolsScratchPath, false, true); err != nil {
+			logrus.Debugf("%s (%s): releasing serviceVM on error path of HotAddVhd: %s", title, context, err)
 			svm.Unlock()
-			// TODOL NEED TO REMOVE FROM MAP HERE AND STOP IT
+
+			// Do a force terminate and remove it from the map on failure, ignoring any errors
+			if err2 := d.terminateServiceVM(id, "error path from HotAddVhd", true); err2 != nil {
+				logrus.Warnf("failed to terminate service VM on error path from HotAddVhd: %s", err2)
+			}
+
 			return nil, fmt.Errorf("failed to hot-add %s failed: %s", scratchTargetFile, err)
 		}
 		logrus.Debugf("%s (%s): releasing serviceVM", title, context)
@@ -441,26 +505,43 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 		return err
 	}
 
+	// Look for an explicit sandbox size option.
+	sandboxSize := uint64(client.DefaultVhdxSizeGB)
+	for k, v := range opts.StorageOpt {
+		switch strings.ToLower(k) {
+		case "lcow.sandboxsize":
+			var err error
+			sandboxSize, err = strconv.ParseUint(v, 10, 32)
+			if err != nil {
+				return fmt.Errorf("%s failed to parse value '%s' for 'lcow.sandboxsize'", title, v)
+			}
+			if sandboxSize < client.DefaultVhdxSizeGB {
+				return fmt.Errorf("%s 'lcow.sandboxsize' option cannot be less than %d", title, client.DefaultVhdxSizeGB)
+			}
+			break
+		}
+	}
+
 	// Massive perf optimisation here. If we know that the RW layer is the default size,
 	// and that the cached sandbox already exists, and we are running in safe mode, we
 	// can just do a simple copy into the layers sandbox file without needing to start a
-	// unique service VM. For a global service VM, it doesn't really matter.
+	// unique service VM. For a global service VM, it doesn't really matter. Of course,
+	// this is only the case where the sandbox is the default size.
 	//
-	// TODO: @jhowardmsft Where are we going to get the required size from?
-	// We need to look at the CreateOpts for that, I think....
-
 	// Make sure we have the sandbox mutex taken while we are examining it.
-	logrus.Debugf("%s: locking cachedSandboxMutex", title)
-	d.cachedSandboxMutex.Lock()
-	_, err := os.Stat(d.cachedSandboxFile)
-	logrus.Debugf("%s: releasing cachedSandboxMutex", title)
-	d.cachedSandboxMutex.Unlock()
-	if err == nil {
-		logrus.Debugf("%s: using cached sandbox to populate", title)
-		if err := client.CopyFile(d.cachedSandboxFile, filepath.Join(d.dir(id), sandboxFilename), true); err != nil {
-			return err
+	if sandboxSize == client.DefaultVhdxSizeGB {
+		logrus.Debugf("%s: locking cachedSandboxMutex", title)
+		d.cachedSandboxMutex.Lock()
+		_, err := os.Stat(d.cachedSandboxFile)
+		logrus.Debugf("%s: releasing cachedSandboxMutex", title)
+		d.cachedSandboxMutex.Unlock()
+		if err == nil {
+			logrus.Debugf("%s: using cached sandbox to populate", title)
+			if err := client.CopyFile(d.cachedSandboxFile, filepath.Join(d.dir(id), sandboxFilename), true); err != nil {
+				return err
+			}
+			return nil
 		}
-		return nil
 	}
 
 	logrus.Debugf("%s: creating SVM to create sandbox", title)
@@ -470,13 +551,16 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 	}
 	defer d.terminateServiceVM(id, "createreadwrite", false)
 
-	// So the cached sandbox needs creating. Ensure we are the only thread creating it.
-	logrus.Debugf("%s: locking cachedSandboxMutex for creation", title)
-	d.cachedSandboxMutex.Lock()
-	defer func() {
-		logrus.Debugf("%s: releasing cachedSandboxMutex for creation", title)
-		d.cachedSandboxMutex.Unlock()
-	}()
+	// So the sandbox needs creating. If default size ensure we are the only thread populating the cache.
+	// Non-default size we don't store, just create them one-off so no need to lock the cachedSandboxMutex.
+	if sandboxSize == client.DefaultVhdxSizeGB {
+		logrus.Debugf("%s: locking cachedSandboxMutex for creation", title)
+		d.cachedSandboxMutex.Lock()
+		defer func() {
+			logrus.Debugf("%s: releasing cachedSandboxMutex for creation", title)
+			d.cachedSandboxMutex.Unlock()
+		}()
+	}
 
 	// Synchronise the operation in the service VM.
 	logrus.Debugf("%s: locking svm for sandbox creation", title)
@@ -485,7 +569,15 @@ func (d *Driver) CreateReadWrite(id, parent string, opts *graphdriver.CreateOpts
 		logrus.Debugf("%s: releasing svm for sandbox creation", title)
 		svm.Unlock()
 	}()
-	if err := svm.config.CreateSandbox(filepath.Join(d.dir(id), sandboxFilename), client.DefaultSandboxSizeMB, d.cachedSandboxFile); err != nil {
+
+	// Make sure we don't write to our local cached copy if this is for a non-default size request.
+	targetCacheFile := d.cachedSandboxFile
+	if sandboxSize != client.DefaultVhdxSizeGB {
+		targetCacheFile = ""
+	}
+
+	// Actually do the creation.
+	if err := svm.config.CreateExt4Vhdx(filepath.Join(d.dir(id), sandboxFilename), uint32(sandboxSize), targetCacheFile); err != nil {
 		return err
 	}
 
@@ -563,12 +655,12 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 	logrus.Debugf(title)
 
 	// Work out what we are working on
-	vhdFilename, vhdSize, isSandbox, err := getLayerDetails(d.dir(id))
+	ld, err := getLayerDetails(d.dir(id))
 	if err != nil {
 		logrus.Debugf("%s failed to get layer details from %s: %s", title, d.dir(id), err)
 		return "", fmt.Errorf("%s failed to open layer or sandbox VHD to open in %s: %s", title, d.dir(id), err)
 	}
-	logrus.Debugf("%s %s, size %d, isSandbox %t", title, vhdFilename, vhdSize, isSandbox)
+	logrus.Debugf("%s %s, size %d, isSandbox %t", title, ld.filename, ld.size, ld.isSandbox)
 
 	// Add item to cache, or update existing item, but ensure we have the
 	// lock while updating items.
@@ -579,26 +671,21 @@ func (d *Driver) Get(id, mountLabel string) (string, error) {
 		// The item is not currently in the cache.
 		cacheEntry = &cacheItem{
 			refCount:  1,
-			isSandbox: isSandbox,
-			hostPath:  vhdFilename,
+			isSandbox: ld.isSandbox,
+			hostPath:  ld.filename,
 			uvmPath:   fmt.Sprintf("/mnt/%s", id),
 			isMounted: false, // we defer this as an optimisation
 		}
 		d.cache[id] = cacheEntry
-		logrus.Debugf("%s: added cache entry %+v", title, cacheEntry)
+		logrus.Debugf("%s: added cache item %+v", title, cacheEntry)
 	} else {
 		// Increment the reference counter in the cache.
-		logrus.Debugf("%s: locking cache item for increment", title)
-		entry.Lock()
-		entry.refCount++
-		logrus.Debugf("%s: releasing cache item for increment", title)
-		entry.Unlock()
-		logrus.Debugf("%s: incremented refcount on cache entry %+v", title, cacheEntry)
+		entry.incrementRefCount()
 	}
 	logrus.Debugf("%s: releasing cacheMutex", title)
 	d.cacheMutex.Unlock()
 
-	logrus.Debugf("%s %s success. %s: %+v: size %d", title, id, d.dir(id), cacheEntry, vhdSize)
+	logrus.Debugf("%s %s success. %s: %+v: size %d", title, id, d.dir(id), cacheEntry, ld.size)
 	return d.dir(id), nil
 }
 
@@ -681,7 +768,7 @@ func (d *Driver) Cleanup() error {
 
 	d.cacheMutex.Lock()
 	for k, v := range d.cache {
-		logrus.Debugf("%s cache entry: %s: %+v", title, k, v)
+		logrus.Debugf("%s cache item: %s: %+v", title, k, v)
 		if v.refCount > 0 {
 			logrus.Warnf("%s leaked %s: %+v", title, k, v)
 		}
@@ -769,7 +856,7 @@ func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	// Set `isMounted` for the cache entry. Note that we re-scan the cache
+	// Set `isMounted` for the cache item. Note that we re-scan the cache
 	// at this point as it's possible the cacheEntry changed during the long-
 	// running operation above when we weren't holding the cacheMutex lock.
 	logrus.Debugf("%s: locking cacheMutex for updating isMounted", title)
@@ -781,11 +868,7 @@ func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("%s fail as %s is not in the cache when updating isMounted", title, id)
 	}
 	cacheEntry = d.cache[id]
-	logrus.Debugf("%s: locking cacheEntry for updating isMounted", title)
-	cacheEntry.Lock()
-	cacheEntry.isMounted = true
-	logrus.Debugf("%s: releasing cacheEntry for updating isMounted", title)
-	cacheEntry.Unlock()
+	cacheEntry.setIsMounted()
 	logrus.Debugf("%s: releasing cacheMutex for updating isMounted", title)
 	d.cacheMutex.Unlock()
 
@@ -909,21 +992,25 @@ func (d *Driver) setLayerChain(id string, chain []string) error {
 // getLayerDetails is a utility for getting a file name, size and indication of
 // sandbox for a VHD(x) in a folder. A read-only layer will be layer.vhd. A
 // read-write layer will be sandbox.vhdx.
-func getLayerDetails(folder string) (string, int64, bool, error) {
+func getLayerDetails(folder string) (*layerDetails, error) {
 	var fileInfo os.FileInfo
-	isSandbox := false
-	filename := filepath.Join(folder, layerFilename)
-	var err error
-
-	if fileInfo, err = os.Stat(filename); err != nil {
-		filename = filepath.Join(folder, sandboxFilename)
-		if fileInfo, err = os.Stat(filename); err != nil {
-			if os.IsNotExist(err) {
-				return "", 0, isSandbox, fmt.Errorf("could not find layer or sandbox in %s", folder)
-			}
-			return "", 0, isSandbox, fmt.Errorf("error locating layer or sandbox in %s: %s", folder, err)
-		}
-		isSandbox = true
+	ld := &layerDetails{
+		isSandbox: false,
+		filename:  filepath.Join(folder, layerFilename),
 	}
-	return filename, fileInfo.Size(), isSandbox, nil
+
+	fileInfo, err := os.Stat(ld.filename)
+	if err != nil {
+		ld.filename = filepath.Join(folder, sandboxFilename)
+		if fileInfo, err = os.Stat(ld.filename); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("could not find layer or sandbox in %s", folder)
+			}
+			return nil, fmt.Errorf("error locating layer or sandbox in %s: %s", folder, err)
+		}
+		ld.isSandbox = true
+	}
+	ld.size = fileInfo.Size()
+
+	return ld, nil
 }
