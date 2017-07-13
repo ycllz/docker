@@ -37,11 +37,17 @@ type MappedDir struct {
 	IOPSMaximum      uint64
 }
 
+type MappedPipe struct {
+	HostPath          string
+	ContainerPipeName string
+}
+
 type HvRuntime struct {
-	ImagePath       string `json:",omitempty"`
-	SkipTemplate    bool   `json:",omitempty"`
-	LinuxInitrdFile string `json:",omitempty"` // File under ImagePath on host containing an initrd image for starting a Linux utility VM
-	LinuxKernelFile string `json:",omitempty"` // File under ImagePath on host containing a kernel for starting a Linux utility VM
+	ImagePath           string `json:",omitempty"`
+	SkipTemplate        bool   `json:",omitempty"`
+	LinuxInitrdFile     string `json:",omitempty"` // File under ImagePath on host containing an initrd image for starting a Linux utility VM
+	LinuxKernelFile     string `json:",omitempty"` // File under ImagePath on host containing a kernel for starting a Linux utility VM
+	LinuxBootParameters string `json:",omitempty"` // Additional boot parameters for starting a Linux Utility VM in initrd mode
 }
 
 type MappedVirtualDisk struct {
@@ -50,6 +56,7 @@ type MappedVirtualDisk struct {
 	CreateInUtilityVM bool   `json:",omitempty"`
 	ReadOnly          bool   `json:",omitempty"`
 	Cache             string `json:",omitempty"` // "" (Unspecified); "Disabled"; "Enabled"; "Private"; "PrivateAllowSharing"
+	AttachOnly        bool   `json:",omitempty:`
 }
 
 // ContainerConfig is used as both the input of CreateContainer
@@ -72,6 +79,7 @@ type ContainerConfig struct {
 	MemoryMaximumInMB           int64               `json:",omitempty"` // Maximum memory available to the container in Megabytes
 	HostName                    string              `json:",omitempty"` // Hostname
 	MappedDirectories           []MappedDir         `json:",omitempty"` // List of mapped directories (volumes/mounts)
+	MappedPipes                 []MappedPipe        `json:",omitempty"` // List of mapped Windows named pipes
 	HvPartition                 bool                // True if it a Hyper-V Container
 	NetworkSharedContainerName  string              `json:",omitempty"` // Name (ID) of the container that we will share the network stack with.
 	EndpointList                []string            `json:",omitempty"` // List of networking endpoints to be attached to container
@@ -123,6 +131,9 @@ type Container interface {
 
 	// ProcessList returns details for the processes in a container.
 	ProcessList() ([]ProcessListItem, error)
+
+	// MappedVirtualDisks returns virtual disks mapped to a utility VM, indexed by controller
+	MappedVirtualDisks() (map[int]MappedVirtualDiskController, error)
 
 	// CreateProcess launches a new process within the container.
 	CreateProcess(c *ProcessConfig) (Process, error)
