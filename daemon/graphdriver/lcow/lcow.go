@@ -19,7 +19,7 @@
 //
 //   * lcow.globalmode - Enables global service VM Mode
 //        -- Possible values:     true/false
-//		  -- Default if omitted:  false
+//        -- Default if omitted:  false
 //
 //   * lcow.sandboxsize - Specifies a custom sandbox size in GB for starting a container
 //        -- Possible values:      >= default sandbox size (opengcs defined, currently 20)
