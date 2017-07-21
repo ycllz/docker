@@ -8,6 +8,8 @@ import (
 
 	"encoding/binary"
 
+	"sync"
+
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/archive"
@@ -19,13 +21,35 @@ type lcowfs struct {
 	d           *Driver
 	mappedDisks []hcsshim.MappedVirtualDisk
 	vmID        string
-	currentSVM  serviceVM
+	currentSVM  *serviceVM
+	sync.Mutex
 }
 
 var _ rootfs.RootFS = &lcowfs{}
 
 // ErrNotSupported is an error for unsupported operations in the remotefs
 var ErrNotSupported = fmt.Errorf("not supported")
+
+func (l *lcowfs) startVM() error {
+	l.Lock()
+	if l.currentSVM != nil {
+		l.Unlock()
+		return nil
+	}
+
+	defer l.Unlock()
+	svm, err := l.d.startServiceVMIfNotRunning(l.vmID, l.mappedDisks, fmt.Sprintf("lcowfs.startVM"))
+	if err != nil {
+		return err
+	}
+
+	err = svm.createUnionMount(l.root, l.mappedDisks...)
+	if err != nil {
+		return err
+	}
+	l.currentSVM = svm
+	return nil
+}
 
 // Functions to implement the rootfs interface
 func (l *lcowfs) Path() string {
@@ -34,6 +58,11 @@ func (l *lcowfs) Path() string {
 
 func (l *lcowfs) ResolveScopedPath(path string) (string, error) {
 	logrus.Debugf("REMOTEFS: EVALSYMLINK %s %s ", path, l.root)
+
+	if err := l.startVM(); err != nil {
+		return "", err
+	}
+
 	arg1 := l.Join(l.root, path)
 	arg2 := l.root
 
@@ -58,6 +87,10 @@ func (l *lcowfs) Platform() string {
 func (l *lcowfs) ExtractArchive(src io.Reader, dst string, opts *archive.TarOptions) error {
 	logrus.Debugf("REMOTEFS: extract archive: %s %+v", dst, opts)
 
+	if err := l.startVM(); err != nil {
+		return err
+	}
+
 	optsBuf, err := json.Marshal(opts)
 	if err != nil {
 		return fmt.Errorf("failed to marshall tar opts: %s", err)
@@ -72,6 +105,7 @@ func (l *lcowfs) ExtractArchive(src io.Reader, dst string, opts *archive.TarOpti
 
 	input := io.MultiReader(optsSizeBuf, bytes.NewBuffer(optsBuf), src)
 	cmd := fmt.Sprintf("remotefs extractarchive %s", dst)
+
 	process, err := l.currentSVM.config.RunProcess(cmd, input, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to extract archive to %s: %s", dst, err)
@@ -90,6 +124,10 @@ func (l *lcowfs) ExtractArchive(src io.Reader, dst string, opts *archive.TarOpti
 
 func (l *lcowfs) ArchivePath(src string, opts *archive.TarOptions) (io.ReadCloser, error) {
 	logrus.Debugf("REMOTEFS: archive path %s %+v", src, opts)
+
+	if err := l.startVM(); err != nil {
+		return nil, err
+	}
 
 	optsBuf, err := json.Marshal(opts)
 	if err != nil {

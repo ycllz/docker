@@ -19,70 +19,78 @@ func panicNotImplemented() {
 	panic(fmt.Sprintf("not implemented: %s", name))
 }
 
-func (d *lcowfs) Open(p string) (driver.File, error) {
+func (l *lcowfs) Open(p string) (driver.File, error) {
 	panicNotImplemented()
 	return nil, nil
 }
 
-func (d *lcowfs) OpenFile(path string, flag int, perm os.FileMode) (driver.File, error) {
+func (l *lcowfs) OpenFile(path string, flag int, perm os.FileMode) (driver.File, error) {
 	panicNotImplemented()
 	return nil, nil
 }
 
-func (d *lcowfs) Readlink(p string) (string, error) {
+func (l *lcowfs) Readlink(p string) (string, error) {
 	panicNotImplemented()
 	return "", nil
 }
 
-func (d *lcowfs) Mkdir(p string, mode os.FileMode) error {
+func (l *lcowfs) Mkdir(p string, mode os.FileMode) error {
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) Remove(path string) error {
+func (l *lcowfs) Remove(path string) error {
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) Link(oldname, newname string) error {
+func (l *lcowfs) Link(oldname, newname string) error {
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) Lchown(name string, uid, gid int64) error {
+func (l *lcowfs) Lchown(name string, uid, gid int64) error {
 	// TODO: error out if uid excesses int bit width?
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) Symlink(oldname, newname string) error {
+func (l *lcowfs) Symlink(oldname, newname string) error {
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) MkdirAll(path string, perm os.FileMode) error {
+func (l *lcowfs) MkdirAll(path string, perm os.FileMode) error {
+	if err := l.startVM(); err != nil {
+		return err
+	}
+
 	permStr := strconv.FormatUint(uint64(perm), 8)
 	cmd := fmt.Sprintf("remotefs mkdirall %s %s", path, permStr)
-	return d.config.RunProcess(cmd, nil, nil)
+	process, err := l.currentSVM.config.RunProcess(cmd, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	return process.Close()
 }
 
-func (d *lcowfs) RemoveAll(path string) error {
+func (l *lcowfs) RemoveAll(path string) error {
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) Mknod(path string, mode os.FileMode, major, minor int) error {
+func (l *lcowfs) Mknod(path string, mode os.FileMode, major, minor int) error {
 	panicNotImplemented()
 	return nil
 }
 
-func (d *lcowfs) Mkfifo(path string, mode os.FileMode) error {
+func (l *lcowfs) Mkfifo(path string, mode os.FileMode) error {
 	panicNotImplemented()
 	return nil
 }
 
 // Lchmod changes the mode of an file not following symlinks.
-func (d *lcowfs) Lchmod(path string, mode os.FileMode) (err error) {
+func (l *lcowfs) Lchmod(path string, mode os.FileMode) (err error) {
 	panicNotImplemented()
 	return nil
 }

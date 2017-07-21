@@ -26,11 +26,15 @@ func (f *fileinfo) ModTime() time.Time { return f.ModTimeVar }
 func (f *fileinfo) IsDir() bool        { return f.IsDirVar }
 func (f *fileinfo) Sys() interface{}   { return nil }
 
-func (d *lcowfs) stat(path string, cmd string) (os.FileInfo, error) {
+func (l *lcowfs) stat(path string, cmd string) (os.FileInfo, error) {
 	logrus.Debugf("REMOTEFS: %s %s", cmd, path)
 
+	if err := l.startVM(); err != nil {
+		return nil, err
+	}
+
 	output := &bytes.Buffer{}
-	process, err := d.currentSVM.config.RunProcess(fmt.Sprintf("remotefs %s %s", cmd, path), nil, output, nil)
+	process, err := l.currentSVM.config.RunProcess(fmt.Sprintf("remotefs %s %s", cmd, path), nil, output, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -45,10 +49,10 @@ func (d *lcowfs) stat(path string, cmd string) (os.FileInfo, error) {
 	return &fi, nil
 }
 
-func (d *lcowfs) Stat(p string) (os.FileInfo, error) {
-	return d.stat(p, "stat")
+func (l *lcowfs) Stat(p string) (os.FileInfo, error) {
+	return l.stat(p, "stat")
 }
 
-func (d *lcowfs) Lstat(p string) (os.FileInfo, error) {
-	return d.stat(p, "lstat")
+func (l *lcowfs) Lstat(p string) (os.FileInfo, error) {
+	return l.stat(p, "lstat")
 }

@@ -16,11 +16,11 @@ import (
 var _ pathdriver.PathDriver = &lcowfs{}
 
 // Continuity Path functions can be done locally
-func (d *lcowfs) Join(path ...string) string {
+func (l *lcowfs) Join(path ...string) string {
 	return pathpkg.Join(path...)
 }
 
-func (d *lcowfs) IsAbs(path string) bool {
+func (l *lcowfs) IsAbs(path string) bool {
 	return pathpkg.IsAbs(path)
 }
 
@@ -28,11 +28,11 @@ func sameWord(a, b string) bool {
 	return a == b
 }
 
-func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
+func (l *lcowfs) Rel(basepath, targpath string) (string, error) {
 	baseVol := ""
 	targVol := ""
-	base := d.Clean(basepath)
-	targ := d.Clean(targpath)
+	base := l.Clean(basepath)
+	targ := l.Clean(targpath)
 	if sameWord(targ, base) {
 		return ".", nil
 	}
@@ -42,8 +42,8 @@ func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
 		base = ""
 	}
 	// Can't use IsAbs - `\a` and `a` are both relative in Windows.
-	baseSlashed := len(base) > 0 && base[0] == d.Separator()
-	targSlashed := len(targ) > 0 && targ[0] == d.Separator()
+	baseSlashed := len(base) > 0 && base[0] == l.Separator()
+	targSlashed := len(targ) > 0 && targ[0] == l.Separator()
 	if baseSlashed != targSlashed || !sameWord(baseVol, targVol) {
 		return "", errors.New("Rel: can't make " + targpath + " relative to " + basepath)
 	}
@@ -52,10 +52,10 @@ func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
 	tl := len(targ)
 	var b0, bi, t0, ti int
 	for {
-		for bi < bl && base[bi] != d.Separator() {
+		for bi < bl && base[bi] != l.Separator() {
 			bi++
 		}
-		for ti < tl && targ[ti] != d.Separator() {
+		for ti < tl && targ[ti] != l.Separator() {
 			ti++
 		}
 		if !sameWord(targ[t0:ti], base[b0:bi]) {
@@ -75,7 +75,7 @@ func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
 	}
 	if b0 != bl {
 		// Base elements left. Must go up before going down.
-		seps := strings.Count(base[b0:bl], string(d.Separator()))
+		seps := strings.Count(base[b0:bl], string(l.Separator()))
 		size := 2 + seps*3
 		if tl != t0 {
 			size += 1 + tl - t0
@@ -83,12 +83,12 @@ func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
 		buf := make([]byte, size)
 		n := copy(buf, "..")
 		for i := 0; i < seps; i++ {
-			buf[n] = d.Separator()
+			buf[n] = l.Separator()
 			copy(buf[n+1:], "..")
 			n += 3
 		}
 		if t0 != tl {
-			buf[n] = d.Separator()
+			buf[n] = l.Separator()
 			copy(buf[n+1:], targ[t0:])
 		}
 		return string(buf), nil
@@ -96,39 +96,43 @@ func (d *lcowfs) Rel(basepath, targpath string) (string, error) {
 	return targ[t0:], nil
 }
 
-func (d *lcowfs) Base(path string) string {
+func (l *lcowfs) Base(path string) string {
 	return pathpkg.Base(path)
 }
 
-func (d *lcowfs) Dir(path string) string {
+func (l *lcowfs) Dir(path string) string {
 	return pathpkg.Dir(path)
 }
 
-func (d *lcowfs) Clean(path string) string {
+func (l *lcowfs) Clean(path string) string {
 	return pathpkg.Clean(path)
 }
 
-func (d *lcowfs) Split(path string) (dir, file string) {
+func (l *lcowfs) Split(path string) (dir, file string) {
 	return pathpkg.Split(path)
 }
 
-func (d *lcowfs) Separator() byte {
+func (l *lcowfs) Separator() byte {
 	return '/'
 }
 
-func (d *lcowfs) Abs(path string) (string, error) {
+func (l *lcowfs) Abs(path string) (string, error) {
 	// Abs is supposed to add the current working directory, which is meaningless in lcow.
 	// So, return an error.
 	return "", ErrNotSupported
 }
 
-func (d *lcowfs) Walk(root string, walkFn filepath.WalkFunc) error {
+func (l *lcowfs) Walk(root string, walkFn filepath.WalkFunc) error {
 	// Implementation taken from the Go standard library
-	info, err := d.Lstat(root)
+	if err := l.startVM(); err != nil {
+		return err
+	}
+
+	info, err := l.Lstat(root)
 	if err != nil {
 		err = walkFn(root, nil, err)
 	} else {
-		err = d.walk(root, info, walkFn)
+		err = l.walk(root, info, walkFn)
 	}
 	if err == filepath.SkipDir {
 		return nil
@@ -137,7 +141,7 @@ func (d *lcowfs) Walk(root string, walkFn filepath.WalkFunc) error {
 }
 
 // walk recursively descends path, calling w.
-func (d *lcowfs) walk(path string, info os.FileInfo, walkFn filepath.WalkFunc) error {
+func (l *lcowfs) walk(path string, info os.FileInfo, walkFn filepath.WalkFunc) error {
 	err := walkFn(path, info, nil)
 	if err != nil {
 		if info.IsDir() && err == filepath.SkipDir {
@@ -150,20 +154,20 @@ func (d *lcowfs) walk(path string, info os.FileInfo, walkFn filepath.WalkFunc) e
 		return nil
 	}
 
-	names, err := d.readDirNames(path)
+	names, err := l.readDirNames(path)
 	if err != nil {
 		return walkFn(path, info, err)
 	}
 
 	for _, name := range names {
-		filename := d.Join(path, name)
-		fileInfo, err := d.Lstat(filename)
+		filename := l.Join(path, name)
+		fileInfo, err := l.Lstat(filename)
 		if err != nil {
 			if err := walkFn(filename, fileInfo, err); err != nil && err != filepath.SkipDir {
 				return err
 			}
 		} else {
-			err = d.walk(filename, fileInfo, walkFn)
+			err = l.walk(filename, fileInfo, walkFn)
 			if err != nil {
 				if !fileInfo.IsDir() || err != filepath.SkipDir {
 					return err
@@ -176,8 +180,8 @@ func (d *lcowfs) walk(path string, info os.FileInfo, walkFn filepath.WalkFunc) e
 
 // readDirNames reads the directory named by dirname and returns
 // a sorted list of directory entries.
-func (d *lcowfs) readDirNames(dirname string) ([]string, error) {
-	f, err := d.Open(dirname)
+func (l *lcowfs) readDirNames(dirname string) ([]string, error) {
+	f, err := l.Open(dirname)
 	if err != nil {
 		return nil, err
 	}
@@ -196,14 +200,14 @@ func (d *lcowfs) readDirNames(dirname string) ([]string, error) {
 	return names, nil
 }
 
-func (d *lcowfs) FromSlash(path string) string {
+func (l *lcowfs) FromSlash(path string) string {
 	return path
 }
 
-func (d *lcowfs) ToSlash(path string) string {
+func (l *lcowfs) ToSlash(path string) string {
 	return path
 }
 
-func (d *lcowfs) Match(pattern, name string) (matched bool, err error) {
+func (l *lcowfs) Match(pattern, name string) (matched bool, err error) {
 	return path.Match(pattern, name)
 }

@@ -112,14 +112,15 @@ const (
 
 // Driver represents an LCOW graph driver.
 type Driver struct {
-	dataRoot           string        // Root path on the host where we are storing everything.
-	cachedSandboxFile  string        // Location of the local default-sized cached sandbox.
-	cachedSandboxMutex sync.Mutex    // Protects race conditions from multiple threads creating the cached sandbox.
-	cachedScratchFile  string        // Location of the local cached empty scratch space.
-	cachedScratchMutex sync.Mutex    // Protects race conditions from multiple threads creating the cached scratch.
-	options            []string      // Graphdriver options we are initialised with.
-	serviceVms         *serviceVMMap // Map of the configs representing the service VM(s) we are running.
-	globalMode         bool          // Indicates if running in an unsafe/global service VM mode.
+	dataRoot           string             // Root path on the host where we are storing everything.
+	cachedSandboxFile  string             // Location of the local default-sized cached sandbox.
+	cachedSandboxMutex sync.Mutex         // Protects race conditions from multiple threads creating the cached sandbox.
+	cachedScratchFile  string             // Location of the local cached empty scratch space.
+	cachedScratchMutex sync.Mutex         // Protects race conditions from multiple threads creating the cached scratch.
+	options            []string           // Graphdriver options we are initialised with.
+	serviceVms         *serviceVMMap      // Map of the configs representing the service VM(s) we are running.
+	lcowfsMap          map[string]*lcowfs // Map of all the id -> lcowfs that we are maintaining
+	globalMode         bool               // Indicates if running in an unsafe/global service VM mode.
 }
 
 // layerDetails is the structure returned by a helper function `getLayerDetails`
@@ -154,6 +155,7 @@ func InitDriver(dataRoot string, options []string, _, _ []idtools.IDMap) (graphd
 		cachedScratchFile: filepath.Join(cd, scratchFilename),
 		serviceVms:        newServiceVMMap(),
 		globalMode:        false,
+		lcowfsMap:         make(map[string]*lcowfs),
 	}
 
 	// Looks for relevant options
@@ -308,7 +310,10 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd []hcsshim.Mapped
 	d.cachedScratchMutex.Lock()
 	if _, err := os.Stat(d.cachedScratchFile); err != nil {
 		logrus.Debugf("%s (%s): creating an SVM scratch - locking serviceVM", title, context)
-		if err := svm.createExt4VHDX(scratchTargetFile, client.DefaultVhdxSizeGB, d.cachedScratchFile); err != nil {
+
+		// Don't use svm.config.CreateExt4Vhdx since that only works when the service vm is setup,
+		// but we're still in that process right now.
+		if err := svm.config.CreateExt4Vhdx(scratchTargetFile, client.DefaultVhdxSizeGB, d.cachedScratchFile); err != nil {
 			logrus.Debugf("%s (%s): releasing cachedScratchMutex on error path", title, context)
 			d.cachedScratchMutex.Unlock()
 			logrus.Debugf("%s: failed to create vm scratch %s: %s", title, scratchTargetFile, err)
@@ -321,7 +326,7 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd []hcsshim.Mapped
 	// Hot-add the scratch-space if not already attached
 	if !svm.scratchAttached {
 		logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) hot-adding scratch %s - locking serviceVM", context, scratchTargetFile)
-		if err := svm.hotAddVHDs(hcsshim.MappedVirtualDisk{
+		if err := svm.hotAddVHDsNoLock(hcsshim.MappedVirtualDisk{
 			HostPath:          scratchTargetFile,
 			ContainerPath:     toolsScratchPath,
 			CreateInUtilityVM: true,
@@ -350,23 +355,16 @@ func (d *Driver) terminateServiceVM(id, context string, force bool) (err error) 
 	id = d.getVMID(id)
 
 	// Get the service VM and reduce the ref count
-	lastRef, err := d.serviceVms.reduceRef(id)
-	if err != nil {
-		// Bug in the code... starts not matched with terminates
-		logrus.Debugf("attempted to start unknown service vm %s", id)
-		return fmt.Errorf("attempted to start unknown service vm %s", id)
+	svm, lastRef, err := d.serviceVms.reduceRef(id)
+	if err == errVMUnknown {
+		return nil
+	} else if err == errVMisTerminating {
+		return svm.getStopError()
 	}
 
 	if !lastRef && !force {
 		// Don't need to do anything since we all we need to is lower ref count.
 		return nil
-	}
-
-	svm, ok := d.serviceVms.get(id)
-	if !ok {
-		// Bug in the code... some goroutine deleted even if it was not supposed to
-		logrus.Debugf("attempted to start unknown service vm %s", id)
-		return fmt.Errorf("attempted to start unknown service vm %s", id)
 	}
 
 	// We run the deletion of the scratch as a deferred function to at least attempt
@@ -552,19 +550,19 @@ func (d *Driver) Remove(id string) error {
 
 	logrus.Debugf("lcowdriver: remove: id %s: layerPath %s", id, layerPath)
 
-	d.cacheMu.Lock()
-	entry, ok := d.cache[id]
-	if ok {
-		// We have a mounted layer, so we need to remove it.
-		// Hot remove all the mounts, including the parent ones
-		if err := d.unmountAll(id, &entry); err != nil {
-			d.cacheMu.Unlock()
-			return fmt.Errorf("lcowdriver: remove %s: failed to unmount all layers: %s", id, err)
-		}
-		// Remove from the cache map.
-		delete(d.cache, id)
+	// Unmount all the layers
+	err := d.Put(id)
+	if err != nil {
+		logrus.Debugf("lcowdriver: remove id %s: failed to unmount: %s", id, err)
+		return err
 	}
-	d.cacheMu.Unlock()
+
+	// for non-global case just kill the vm
+	if !d.globalMode {
+		if err := d.terminateServiceVM(id, fmt.Sprintf("Remove %s", id), true); err != nil {
+			return err
+		}
+	}
 
 	if err := os.Rename(layerPath, tmpLayerPath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -610,105 +608,45 @@ func (d *Driver) Get(id, mountLabel string) (rootfs.RootFS, error) {
 // Put does the reverse of get. If there are no more references to
 // the layer, it unmounts it from the utility VM.
 func (d *Driver) Put(id string) error {
-<<<<<<< HEAD
 	title := fmt.Sprintf("lcowdriver: put: %s", id)
-=======
-	title := "lcowdriver: put"
-	logrus.Debugf("%s %s", title, id)
 
-	if err := d.startUvm(fmt.Sprintf("put %s", id)); err != nil {
-		return err
-	}
-
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
-	// Bad-news if unmounting something that isn't in the cache.
-	entry, ok := d.cache[id]
-	if !ok {
-		return fmt.Errorf("%s possible ref-count error, or invalid id was passed to the graphdriver. Cannot handle id %s as it's not in the cache", title, id)
-	}
-
-	// Are we just decrementing the reference count
-	if entry.refCount > 1 {
-		entry.refCount--
-		d.cache[id] = entry
-		logrus.Debugf("%s %s: refCount decremented to %d", title, id, entry.refCount)
+	// Get the service VM that we need to remove from
+	svm, err := d.serviceVms.get(d.getVMID(id))
+	if err == errVMUnknown {
 		return nil
+	} else if err == errVMisTerminating {
+		return svm.getStopError()
 	}
-
-	// Hot remove all the mounts, including the parent ones
-	if err := d.unmountAll(id, &entry); err != nil {
-		return fmt.Errorf("%s %s: failed to unmount all errors: %s", title, id, err)
-	}
-
-	// @jhowardmsft TEMPORARY FIX WHILE WAITING FOR HOT-REMOVE TO BE FIXED IN PLATFORM
-	//d.terminateUvm(fmt.Sprintf("put %s", id))
-
-	// Remove from the cache map.
-	delete(d.cache, id)
-
-	logrus.Debugf("%s %s: refCount 0. %s (%s) completed successfully", title, id, entry.hostPath, entry.uvmPath)
-	return nil
-}
-
-func (d *Driver) unmountAll(id string, entry *cacheType) error {
-	title := "lcowdriver: removeMount"
-	// Delete the union mount
-	union := fmt.Sprintf("%s-mount", entry.uvmPath)
-	err := d.config.RunProcess(fmt.Sprintf("umount %s", union), nil, nil)
-	if err != nil {
-		return fmt.Errorf("%s: failed to unmount union mount: %s", title, err)
-	}
-
-	// Remove the top level mount
-	logrus.Debugf("%s %s: Hot-Removing %s", title, id, entry.hostPath)
-	err = d.config.RunProcess(fmt.Sprintf("umount %s", entry.uvmPath), nil, nil)
-	if err != nil {
-		return fmt.Errorf("%s: failed to umount sandbox layer: %s", title, err)
-	}
-
-	if err := d.config.HotRemoveVhd(entry.hostPath); err != nil {
-		return fmt.Errorf("%s failed to hot-remove %s from service utility VM: %s", title, entry.hostPath, err)
-	}
->>>>>>> fixed lcow driver not unmounting on delete
 
 	// Generate the mounts that Get() might have mounted
 	disks, err := d.getAllMounts(id)
 	if err != nil {
-<<<<<<< HEAD
 		logrus.Debugf("%s failed to get all layer details for %s: %s", title, d.dir(id), err)
 		return fmt.Errorf("%s failed to get layer details for %s: %s", title, d.dir(id), err)
 	}
 
-	// Get the service VM that we need to remove from
-	svm, ok := d.serviceVms.get(id)
-	if !ok {
-		logrus.Debugf("%s failed to get vm for %s: %s", title, d.dir(id), err)
-		return fmt.Errorf("%s failed to get vm for %s: %s", title, d.dir(id), err)
-	}
-
 	// Now, we want to perform the unmounts, hot-remove and stop the service vm.
+	// We want to go though all the steps even if we have an error to clean up properly
 	err = svm.deleteUnionMount(unionMountName(disks))
-	svm.hotRemoveVHDs(disks...)
-	d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
+	if err != nil {
+		logrus.Debugf("%s failed to delete union mount %s: %s", title, id, err)
+	}
+	err1 := svm.hotRemoveVHDs(disks...)
+	if err1 != nil {
+		logrus.Debugf("%s failed to hot remove vhds %s: %s", title, id, err1)
+		if err == nil {
+			err = err1
+		}
+	}
+	err1 = d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
+	if err1 != nil {
+		logrus.Debugf("%s failed to terminate service vm %s: %s", title, id, err1)
+		if err == nil {
+			err = err1
+		}
+	}
 	logrus.Debugf("Put succeeded on id %s", id)
-=======
-		return fmt.Errorf("%s: failed to get parents: %s", title, err)
-	}
-
-	for i := range hostPaths {
-		logrus.Debugf("%s: Hot-Removing %s -> %s", title, hostPaths[i], guestPaths[i])
-
-		if err := d.config.RunProcess(fmt.Sprintf("umount %s", guestPaths[i]), nil, nil); err != nil {
-			return fmt.Errorf("%s: Failed to unmount layer: %s->%s", title, hostPaths[i], guestPaths[i])
-		}
-
-		if err := d.config.HotRemoveVhd(hostPaths[i]); err != nil {
-			return fmt.Errorf("%s failed to hot-remove %s from service utility vm: %s", title, hostPaths[i], err)
-		}
-	}
->>>>>>> fixed lcow driver not unmounting on delete
-	return nil
+	return err
 }
 
 // Cleanup ensures the information the driver stores is properly removed.
@@ -793,6 +731,7 @@ func (d *Driver) Diff(id, parent string) (io.ReadCloser, error) {
 	logrus.Debugf("%s %s, size %d, ReadOnly %t", title, hostPath, mvd.ContainerPath, vhdSize, isSandbox)
 	tarReadCloser, err := svm.config.VhdToTar(mvd.HostPath, mvd.ContainerPath, isSandbox, vhdSize)
 	if err != nil {
+		svm.hotRemoveVHDs(mvd)
 		d.terminateServiceVM(id, fmt.Sprintf("diff %s", id), false)
 		return nil, fmt.Errorf("%s failed to export layer to tar stream for id: %s, parent: %s : %s", title, id, parent, err)
 	}
