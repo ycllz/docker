@@ -14,8 +14,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func verifyFile(t testing.TB, path rootfs.RootFS, mode os.FileMode, uid, gid uint32) {
-	fi, err := path.Stat(path.Path())
+func verifyFile(t testing.TB, path string, mode os.FileMode, uid, gid uint32) {
+	fi, err := os.Stat(path)
 	require.NoError(t, err)
 
 	actual := fi.Mode()
@@ -63,7 +63,7 @@ func verifyBase(t testing.TB, driver graphdriver.Driver, name string) {
 	file := dirFS.Join(dirFS.Path(), "a file")
 	verifyFile(t, file, 0222|os.ModeSetuid, 0, 0)
 
-	files, err := readDir(dirFS, dir)
+	files, err := readDir(dirFS, dirFS.Path())
 	require.NoError(t, err)
 	assert.Len(t, files, 2)
 }

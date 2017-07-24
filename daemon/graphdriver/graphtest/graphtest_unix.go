@@ -97,7 +97,7 @@ func DriverTestCreateEmpty(t testing.TB, drivername string, driverOptions ...str
 	dir, err := driver.Get("empty", "")
 	require.NoError(t, err)
 
-	verifyFile(t, dir, 0755|os.ModeDir, 0, 0)
+	verifyFile(t, dir.Path(), 0755|os.ModeDir, 0, 0)
 
 	// Verify that the directory is empty
 	fis, err := readDir(dir, dir.Path())

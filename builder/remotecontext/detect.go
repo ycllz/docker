@@ -175,7 +175,7 @@ func StatAt(remote builder.Source, path string) (os.FileInfo, error) {
 
 // FullPath is a helper for getting a full path for a path from a source
 func FullPath(remote builder.Source, path string) (string, error) {
-	fullPath, err := remote.Root().ResolveScopedPath(path)
+	fullPath, err := remote.Root().ResolveScopedPath(path, true)
 	if err != nil {
 		return "", fmt.Errorf("Forbidden path outside the build context: %s (%s)", path, fullPath) // backwards compat with old error
 	}

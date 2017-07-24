@@ -40,7 +40,7 @@ type copyInfo struct {
 }
 
 func (c copyInfo) fullPath() (string, error) {
-	return c.root.ResolveScopedPath(c.path)
+	return c.root.ResolveScopedPath(c.path, true)
 }
 
 func newCopyInfoFromSource(source builder.Source, path string, hash string) copyInfo {

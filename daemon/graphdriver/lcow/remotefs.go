@@ -1,3 +1,5 @@
+// +build windows
+
 package lcow
 
 import (
@@ -56,7 +58,7 @@ func (l *lcowfs) Path() string {
 	return l.root
 }
 
-func (l *lcowfs) ResolveScopedPath(path string) (string, error) {
+func (l *lcowfs) ResolveScopedPath(path string, rawPath bool) (string, error) {
 	logrus.Debugf("REMOTEFS: EVALSYMLINK %s %s ", path, l.root)
 
 	if err := l.startVM(); err != nil {
@@ -64,6 +66,9 @@ func (l *lcowfs) ResolveScopedPath(path string) (string, error) {
 	}
 
 	arg1 := l.Join(l.root, path)
+	if !rawPath {
+		arg1 = l.Join(l.root, l.Join("/", path))
+	}
 	arg2 := l.root
 
 	output := &bytes.Buffer{}

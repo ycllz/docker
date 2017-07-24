@@ -135,7 +135,7 @@ func (cs *CachableSource) Close() error {
 
 func (cs *CachableSource) normalize(path string) (cleanpath, fullpath string, err error) {
 	cleanpath = cs.root.Clean(string(cs.root.Separator()) + path)[1:]
-	fullpath, err = cs.root.ResolveScopedPath(path)
+	fullpath, err = cs.root.ResolveScopedPath(path, true)
 	if err != nil {
 		return "", "", fmt.Errorf("Forbidden path outside the context: %s (%s)", path, fullpath)
 	}

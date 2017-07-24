@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/docker/docker/pkg/testutil/tempfile"
+	"github.com/docker/docker/pkg/rootfs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,7 +37,7 @@ func TestIsExistingDirectory(t *testing.T) {
 	}
 
 	for _, testcase := range testcases {
-		result, err := isExistingDirectory(testcase.path)
+		result, err := isExistingDirectory(&copyEndpoint{driver: rootfs.NewLocalDriver(), path: testcase.path})
 		if !assert.NoError(t, err) {
 			continue
 		}
