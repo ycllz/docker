@@ -130,6 +130,22 @@ func (svmMap *serviceVMMap) reduceRef(id string) (_ *serviceVM, lastRef bool, _ 
 	return svm.svm, svm.refCount == 0, nil
 }
 
+// Works the same way as reduceRef, but sets ref count to 0 instead of decrementing it.
+func (svmMap *serviceVMMap) reduceRefZero(id string) (*serviceVM, error) {
+	svmMap.Lock()
+	defer svmMap.Unlock()
+
+	svm, ok := svmMap.svms[id]
+	if !ok {
+		return nil, errVMUnknown
+	}
+	if svm.refCount == 0 {
+		return svm.svm, errVMisTerminating
+	}
+	svm.refCount = 0
+	return svm.svm, nil
+}
+
 // Deletes the given ID from the map. If the refcount is not 0 or the
 // VM does not exist, then this function returns an error.
 func (svmMap *serviceVMMap) deleteID(id string) error {
@@ -259,17 +275,16 @@ func (svm *serviceVM) createExt4VHDX(destFile string, sizeGB uint32, cacheFile s
 	}
 
 	svm.Lock()
-	err = svm.config.CreateExt4Vhdx(destFile, sizeGB, cacheFile)
-	svm.Unlock()
-	return nil
+	defer svm.Unlock()
+	return svm.config.CreateExt4Vhdx(destFile, sizeGB, cacheFile)
 }
 
-func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedVirtualDisk) error {
+func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedVirtualDisk) (err error) {
 	if len(mvds) == 0 {
 		return fmt.Errorf("createUnionMount: error must have atleast 1 layer")
 	}
 
-	err := svm.getStartError()
+	err = svm.getStartError()
 	if err != nil {
 		return err
 	}
@@ -286,11 +301,16 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 	if err := svm.hotAddVHDsNoLock(mvds...); err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			svm.hotRemoveVHDsNoLock(mvds...)
+		}
+	}()
 
 	union := fmt.Sprintf("%s-mount", mountName)
 	var lowerLayers []string
 
-	if !mvds[0].ReadOnly {
+	if mvds[0].ReadOnly {
 		lowerLayers = append(lowerLayers, mvds[0].ContainerPath)
 	}
 
@@ -304,9 +324,9 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 		return err
 	}
 
-	// Readonly overlay
 	var cmd string
 	if mvds[0].ReadOnly {
+		// Readonly overlay
 		cmd = fmt.Sprintf("mount -t overlay overlay -olowerdir=%s %s",
 			strings.Join(lowerLayers, ","),
 			union)
@@ -337,7 +357,7 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 	return nil
 }
 
-func (svm *serviceVM) deleteUnionMount(mountName string) error {
+func (svm *serviceVM) deleteUnionMount(mountName string, disks ...hcsshim.MappedVirtualDisk) error {
 	err := svm.getStartError()
 	if err != nil {
 		return err
@@ -346,13 +366,19 @@ func (svm *serviceVM) deleteUnionMount(mountName string) error {
 	svm.Lock()
 	_, ok := svm.unionMounts[mountName]
 	if !ok || svm.unionMounts[mountName] != 1 {
+		svm.unionMounts[mountName]--
 		svm.Unlock()
 		return nil
 	}
-
 	defer svm.Unlock()
+
 	logrus.Debugf("Removing union mount %s", mountName)
 	err = svm.runProcess(fmt.Sprintf("umount %s", mountName), nil, nil, nil)
+	if err != nil {
+		return err
+	}
+
+	err = svm.hotRemoveVHDsNoLock(disks...)
 	if err != nil {
 		return err
 	}

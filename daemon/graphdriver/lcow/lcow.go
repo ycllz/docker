@@ -237,7 +237,7 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd []hcsshim.Mapped
 		}
 
 		// We added a ref to the VM, since we failed, we should delete the ref.
-		err = d.terminateServiceVM(id, "error path on startServiceVMIfNotRunning", false)
+		d.terminateServiceVM(id, "error path on startServiceVMIfNotRunning", false)
 	}()
 
 	if exists {
@@ -354,16 +354,22 @@ func (d *Driver) terminateServiceVM(id, context string, force bool) (err error) 
 
 	id = d.getVMID(id)
 
-	// Get the service VM and reduce the ref count
-	svm, lastRef, err := d.serviceVms.reduceRef(id)
+	var svm *serviceVM
+	var lastRef bool
+	if !force {
+		// In the not force case, we ref count
+		svm, lastRef, err = d.serviceVms.reduceRef(id)
+	} else {
+		// In the force case, we ignore the ref count and just set it to 0
+		svm, err = d.serviceVms.reduceRefZero(id)
+		lastRef = true
+	}
+
 	if err == errVMUnknown {
 		return nil
 	} else if err == errVMisTerminating {
 		return svm.getStopError()
-	}
-
-	if !lastRef && !force {
-		// Don't need to do anything since we all we need to is lower ref count.
+	} else if !lastRef {
 		return nil
 	}
 
@@ -627,18 +633,12 @@ func (d *Driver) Put(id string) error {
 
 	// Now, we want to perform the unmounts, hot-remove and stop the service vm.
 	// We want to go though all the steps even if we have an error to clean up properly
-	err = svm.deleteUnionMount(unionMountName(disks))
+	err = svm.deleteUnionMount(unionMountName(disks), disks...)
 	if err != nil {
 		logrus.Debugf("%s failed to delete union mount %s: %s", title, id, err)
 	}
-	err1 := svm.hotRemoveVHDs(disks...)
-	if err1 != nil {
-		logrus.Debugf("%s failed to hot remove vhds %s: %s", title, id, err1)
-		if err == nil {
-			err = err1
-		}
-	}
-	err1 = d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
+
+	err1 := d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
 	if err1 != nil {
 		logrus.Debugf("%s failed to terminate service vm %s: %s", title, id, err1)
 		if err == nil {
