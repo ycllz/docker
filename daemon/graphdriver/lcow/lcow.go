@@ -884,7 +884,7 @@ func (d *Driver) getAllMounts(id string) ([]hcsshim.MappedVirtualDisk, error) {
 	if err != nil {
 		return nil, err
 	}
-	layerChain = append([]string{id}, layerChain...)
+	layerChain = append([]string{d.dir(id)}, layerChain...)
 
 	logrus.Debugf("getting all  layers: %v", layerChain)
 	disks := make([]hcsshim.MappedVirtualDisk, len(layerChain), len(layerChain))
