@@ -52,7 +52,7 @@ func FromArchive(tarStream io.Reader) (builder.Source, error) {
 		return nil, err
 	}
 
-	// TODO: @gupta-ak. Assume local file system. Since it's coming from a tar file.
+	// Assume local file system. Since it's coming from a tar file.
 	tsc := &archiveContext{root: rootfs.NewLocalRootFS(root)}
 
 	// Make sure we clean-up upon error.  In the happy case the caller

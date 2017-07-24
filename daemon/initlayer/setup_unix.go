@@ -18,7 +18,7 @@ import (
 // This extra layer is used by all containers as the top-most ro layer. It protects
 // the container from unwanted side-effects on the rw layer.
 func Setup(initLayerFs rootfs.RootFS, rootIDs idtools.IDPair) error {
-	// TODO: @gupta-ak. Since all paths are local to the container, we can just extract initLayerFs.Path()
+	// Since all paths are local to the container, we can just extract initLayerFs.Path()
 	initLayer := initLayerFs.Path()
 
 	for pth, typ := range map[string]string{

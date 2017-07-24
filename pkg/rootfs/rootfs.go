@@ -23,7 +23,6 @@ type RootFS interface {
 	Driver
 }
 
-// TODO: @gupta-ak. Maybe this belongs in continuity instead?
 type Driver interface {
 	// Platform returns the OS where the rootfs is located. Essentially,
 	// runtime.GOOS for everything aside from LCOW, which is "linux"

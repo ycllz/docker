@@ -35,8 +35,7 @@ type NaiveDiffDriver struct {
 //     Changes(id, parent string) ([]archive.Change, error)
 //     ApplyDiff(id, parent string, diff archive.Reader) (size int64, err error)
 //     DiffSize(id, parent string) (size int64, err error)
-// TODO: @gupta-ak: Right now, I'm assuming I have these not support remote file system
-// Decide if it's worth continuing the abstraction here.
+// Note that these assume a local file system for the graph driver (does not support LCOW)
 func NewNaiveDiffDriver(driver ProtoDriver, uidMaps, gidMaps []idtools.IDMap) Driver {
 	return &NaiveDiffDriver{ProtoDriver: driver,
 		uidMaps: uidMaps,

@@ -136,7 +136,7 @@ func (archiver *CustomArchiver) CopyFileWithTar(src, dst string) (err error) {
 		dst = dstDriver.Join(dst, srcDriver.Base(src))
 	}
 
-	// TODO: @gupta-ak. The original call was system.MkdirAll, which is just
+	// The original call was system.MkdirAll, which is just
 	// os.MkdirAll on not-Windows and changed for Windows.
 	if dstDriver.Platform() == "windows" {
 		// Now we are WCOW
