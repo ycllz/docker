@@ -10,7 +10,7 @@ import (
 // Utility functions for rootfs operations that aren't provided by the
 // continuity interface
 
-// These the same as the ioutil package.
+// ReadFile works the same as ioutil.ReadFile with the rootFS abstraction
 func ReadFile(r RootFS, filename string) ([]byte, error) {
 	f, err := r.Open(filename)
 	if err != nil {
@@ -26,6 +26,7 @@ func ReadFile(r RootFS, filename string) ([]byte, error) {
 	return data, nil
 }
 
+// WriteFile works the same as ioutil.WriteFile with the rootFS abstraction
 func WriteFile(r RootFS, filename string, data []byte, perm os.FileMode) error {
 	f, err := r.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
@@ -43,6 +44,7 @@ func WriteFile(r RootFS, filename string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
+// ReadDir works the same as ioutil.ReadDir with the rootFS abstraction
 func ReadDir(r RootFS, dirname string) ([]os.FileInfo, error) {
 	f, err := r.Open(dirname)
 	if err != nil {

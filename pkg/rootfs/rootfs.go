@@ -25,6 +25,8 @@ type RootFS interface {
 	Driver
 }
 
+// Driver combines both continuity's Driver and PathDriver interfaces with a Platform
+// field to determine the OS.
 type Driver interface {
 	// Platform returns the OS where the rootfs is located. Essentially,
 	// runtime.GOOS for everything aside from LCOW, which is "linux"
@@ -35,7 +37,7 @@ type Driver interface {
 	pathdriver.PathDriver
 }
 
-// NewLocalRoot is a helper function to implement daemon's Mount interface
+// NewLocalRootFS is a helper function to implement daemon's Mount interface
 // when the graphdriver mount point is a local path on the machine.
 func NewLocalRootFS(path string) RootFS {
 	return &local{
@@ -45,6 +47,8 @@ func NewLocalRootFS(path string) RootFS {
 	}
 }
 
+// NewLocalDriver provides file and path drivers for a local file system. They are
+// essentially a wrapper around the `os` and `filepath` functions.
 func NewLocalDriver() Driver {
 	return &local{
 		Driver:     driver.LocalDriver,

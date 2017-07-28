@@ -43,6 +43,7 @@ func NewCustomArchiver(src, dst rootfs.Driver, tar TarFunc, untar UntarFunc, map
 	}
 }
 
+// NewLocalArchiver provides a way to have a custom tar and untar functions that work on the local file system.
 func NewLocalArchiver(tar TarFunc, untar UntarFunc, mapping *idtools.IDMappings) Archiver {
 	return &CustomArchiver{
 		srcDriver:  rootfs.NewLocalDriver(),
@@ -53,6 +54,7 @@ func NewLocalArchiver(tar TarFunc, untar UntarFunc, mapping *idtools.IDMappings)
 	}
 }
 
+// NewDefaultArchiver creates an Archiver with the default tar/untar functions (TarWithOptions & Untar)
 func NewDefaultArchiver() Archiver {
 	return NewLocalArchiver(TarWithOptions, Untar, &idtools.IDMappings{})
 }
