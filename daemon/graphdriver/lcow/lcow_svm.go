@@ -292,26 +292,14 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 	}
 
 	svm.Lock()
+	defer svm.Unlock()
 	_, ok := svm.unionMounts[mountName]
 	if ok {
 		svm.unionMounts[mountName]++
-		svm.Unlock()
 		return nil
 	}
-	defer svm.Unlock()
 
-	if err := svm.hotAddVHDsNoLock(mvds...); err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			svm.hotRemoveVHDsNoLock(mvds...)
-		}
-	}()
-
-	union := fmt.Sprintf("%s-mount", mountName)
 	var lowerLayers []string
-
 	if mvds[0].ReadOnly {
 		lowerLayers = append(lowerLayers, mvds[0].ContainerPath)
 	}
@@ -320,8 +308,8 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 		lowerLayers = append(lowerLayers, mvds[i].ContainerPath)
 	}
 
-	logrus.Debugf("Doing the overlay mount with union directory=%s", union)
-	err = svm.runProcess(fmt.Sprintf("mkdir -p %s", union), nil, nil, nil)
+	logrus.Debugf("Doing the overlay mount with union directory=%s", mountName)
+	err = svm.runProcess(fmt.Sprintf("mkdir -p %s", mountName), nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -331,7 +319,7 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 		// Readonly overlay
 		cmd = fmt.Sprintf("mount -t overlay overlay -olowerdir=%s %s",
 			strings.Join(lowerLayers, ","),
-			union)
+			mountName)
 	} else {
 		upper := fmt.Sprintf("%s/upper", mvds[0].ContainerPath)
 		work := fmt.Sprintf("%s/work", mvds[0].ContainerPath)
@@ -345,8 +333,7 @@ func (svm *serviceVM) createUnionMount(mountName string, mvds ...hcsshim.MappedV
 			strings.Join(lowerLayers, ","),
 			upper,
 			work,
-			union)
-
+			mountName)
 	}
 
 	logrus.Debugf("createUnionMount: Executing mount=%s", cmd)
@@ -366,21 +353,19 @@ func (svm *serviceVM) deleteUnionMount(mountName string, disks ...hcsshim.Mapped
 	}
 
 	svm.Lock()
+	defer svm.Unlock()
 	_, ok := svm.unionMounts[mountName]
-	if !ok || svm.unionMounts[mountName] != 1 {
-		svm.unionMounts[mountName]--
-		svm.Unlock()
+	if !ok {
 		return nil
 	}
-	defer svm.Unlock()
+
+	if svm.unionMounts[mountName] != 1 {
+		svm.unionMounts[mountName]--
+		return nil
+	}
 
 	logrus.Debugf("Removing union mount %s", mountName)
 	err = svm.runProcess(fmt.Sprintf("umount %s", mountName), nil, nil, nil)
-	if err != nil {
-		return err
-	}
-
-	err = svm.hotRemoveVHDsNoLock(disks...)
 	if err != nil {
 		return err
 	}

@@ -32,27 +32,6 @@ var _ rootfs.RootFS = &lcowfs{}
 // ErrNotSupported is an error for unsupported operations in the remotefs
 var ErrNotSupported = fmt.Errorf("not supported")
 
-func (l *lcowfs) startVM() error {
-	l.Lock()
-	if l.currentSVM != nil {
-		l.Unlock()
-		return nil
-	}
-
-	defer l.Unlock()
-	svm, err := l.d.startServiceVMIfNotRunning(l.vmID, l.mappedDisks, fmt.Sprintf("lcowfs.startVM"))
-	if err != nil {
-		return err
-	}
-
-	err = svm.createUnionMount(l.root, l.mappedDisks...)
-	if err != nil {
-		return err
-	}
-	l.currentSVM = svm
-	return nil
-}
-
 // Functions to implement the rootfs interface
 func (l *lcowfs) Path() string {
 	return l.root
@@ -67,6 +46,8 @@ func (l *lcowfs) ResolveScopedPath(path string, rawPath bool) (string, error) {
 
 	arg1 := l.Join(l.root, path)
 	if !rawPath {
+		// The l.Join("/", path) will make path an absolute path and then clean it
+		// so if path = ../../X, it will become /X.
 		arg1 = l.Join(l.root, l.Join("/", path))
 	}
 	arg2 := l.root
@@ -159,4 +140,39 @@ func (l *lcowfs) ArchivePath(src string, opts *archive.TarOptions) (io.ReadClose
 		process.Close()
 	}()
 	return r, nil
+}
+
+// Helper functions
+func (l *lcowfs) startVM() error {
+	l.Lock()
+	if l.currentSVM != nil {
+		l.Unlock()
+		return nil
+	}
+
+	defer l.Unlock()
+	svm, err := l.d.startServiceVMIfNotRunning(l.vmID, l.mappedDisks, fmt.Sprintf("lcowfs.startVM"))
+	if err != nil {
+		return err
+	}
+
+	err = svm.createUnionMount(l.root, l.mappedDisks...)
+	if err != nil {
+		return err
+	}
+	l.currentSVM = svm
+	return nil
+}
+
+func (l *lcowfs) runProcess(cmd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+	if err := l.startVM(); err != nil {
+		return err
+	}
+
+	process, err := l.currentSVM.config.RunProcess(cmd, stdin, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	process.Close()
+	return nil
 }

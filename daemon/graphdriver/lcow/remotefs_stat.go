@@ -4,11 +4,10 @@ package lcow
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
-
-	"encoding/json"
 
 	"github.com/Sirupsen/logrus"
 )
@@ -17,14 +16,14 @@ type fileinfo struct {
 	NameVar    string
 	SizeVar    int64
 	ModeVar    os.FileMode
-	ModTimeVar time.Time
+	ModTimeVar int64
 	IsDirVar   bool
 }
 
 func (f *fileinfo) Name() string       { return f.NameVar }
 func (f *fileinfo) Size() int64        { return f.SizeVar }
 func (f *fileinfo) Mode() os.FileMode  { return f.ModeVar }
-func (f *fileinfo) ModTime() time.Time { return f.ModTimeVar }
+func (f *fileinfo) ModTime() time.Time { return time.Unix(0, f.ModTimeVar) }
 func (f *fileinfo) IsDir() bool        { return f.IsDirVar }
 func (f *fileinfo) Sys() interface{}   { return nil }
 

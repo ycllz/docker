@@ -3,11 +3,9 @@
 package lcow
 
 import (
+	"fmt"
 	"os"
 	"runtime"
-
-	"fmt"
-
 	"strconv"
 
 	"github.com/containerd/continuity/driver"

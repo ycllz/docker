@@ -30,6 +30,7 @@ func sameWord(a, b string) bool {
 	return a == b
 }
 
+// Implementation taken from the Go standard library
 func (l *lcowfs) Rel(basepath, targpath string) (string, error) {
 	baseVol := ""
 	targVol := ""
@@ -124,8 +125,8 @@ func (l *lcowfs) Abs(path string) (string, error) {
 	return "", ErrNotSupported
 }
 
+// Implementation taken from the Go standard library
 func (l *lcowfs) Walk(root string, walkFn filepath.WalkFunc) error {
-	// Implementation taken from the Go standard library
 	if err := l.startVM(); err != nil {
 		return err
 	}

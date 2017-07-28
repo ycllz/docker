@@ -67,6 +67,8 @@ import (
 	"sync"
 	"time"
 
+	"syscall"
+
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/graphdriver"
@@ -108,6 +110,9 @@ const (
 
 	// scratchDirectory is the sub-folder under the driver's data-root used for scratch VHDs in service VMs
 	scratchDirectory = "scratch"
+
+	// ErrOperationPending is the HRESULT returned by the HCS when the VM termination operation is still pending.
+	errOperationPending syscall.Errno = 0xc0370103
 )
 
 // Driver represents an LCOW graph driver.
@@ -204,6 +209,14 @@ func (d *Driver) getVMID(id string) string {
 	return id
 }
 
+// win32FromHresult is a helper function to get the win32 error code from an HRESULT
+func win32FromHresult(hr uintptr) uintptr {
+	if hr&0x1fff0000 == 0x00070000 {
+		return hr & 0xffff
+	}
+	return hr
+}
+
 // startServiceVMIfNotRunning starts a service utility VM if it is not currently running.
 // It can optionally be started with a mapped virtual disk. Returns a opengcs config structure
 // representing the VM.
@@ -298,6 +311,9 @@ func (d *Driver) startServiceVMIfNotRunning(id string, mvdToAdd []hcsshim.Mapped
 
 	// If requested to start it with a mapped virtual disk, add it now.
 	svm.config.MappedVirtualDisks = append(svm.config.MappedVirtualDisks, mvdToAdd...)
+	for _, mvd := range mvdToAdd {
+		svm.attachedVHDs[mvd.HostPath] = 1
+	}
 
 	// Start it.
 	logrus.Debugf("lcowdriver: startServiceVmIfNotRunning: (%s) starting %s", context, svm.config.Name)
@@ -394,7 +410,21 @@ func (d *Driver) terminateServiceVM(id, context string, force bool) (err error) 
 
 	logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - calling terminate", id, context)
 	if err := svm.config.Uvm.Terminate(); err != nil {
-		return fmt.Errorf("failed to terminate utility VM (%s): %s", context, err)
+		// We might get Operationg still pending from the HCS. In that case, we shouldn't return
+		// an error since we call wait right after.
+		underlyingError := err
+		if conterr, ok := err.(*hcsshim.ContainerError); ok {
+			underlyingError = conterr.Err
+		}
+
+		if syscallErr, ok := underlyingError.(syscall.Errno); ok {
+			underlyingError = syscallErr
+		}
+
+		if underlyingError != errOperationPending {
+			return fmt.Errorf("failed to terminate utility VM (%s): %s", context, err)
+		}
+		logrus.Debugf("lcowdriver: terminateservicevm: %s uvm.Terminate() returned operation pending", id)
 	}
 
 	logrus.Debugf("lcowdriver: terminateservicevm: %s (%s) - waiting for utility VM to terminate", id, context)
@@ -636,6 +666,11 @@ func (d *Driver) Put(id string) error {
 	err = svm.deleteUnionMount(unionMountName(disks), disks...)
 	if err != nil {
 		logrus.Debugf("%s failed to delete union mount %s: %s", title, id, err)
+	}
+
+	err = svm.hotRemoveVHDs(disks...)
+	if err != nil {
+		logrus.Debugf("%s failed to hot remove vhds %s: %s", title, id, err)
 	}
 
 	err1 := d.terminateServiceVM(id, fmt.Sprintf("Put %s", id), false)
@@ -903,7 +938,7 @@ func (d *Driver) getAllMounts(id string) ([]hcsshim.MappedVirtualDisk, error) {
 }
 
 func hostToGuest(hostpath string) string {
-	return fmt.Sprintf("/mnt/%s", filepath.Base(filepath.Dir(hostpath)))
+	return fmt.Sprintf("/tmp/%s", filepath.Base(filepath.Dir(hostpath)))
 }
 
 func unionMountName(disks []hcsshim.MappedVirtualDisk) string {
