@@ -3,8 +3,8 @@ package dockerfile
 import (
 	"testing"
 
-	"github.com/docker/docker/pkg/testutil/tempfile"
 	"github.com/docker/docker/pkg/rootfs"
+	"github.com/docker/docker/pkg/testutil/tempfile"
 	"github.com/stretchr/testify/assert"
 )
 
